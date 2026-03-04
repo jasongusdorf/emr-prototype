@@ -526,6 +526,12 @@ function initRegisterForm() {
       showToast('An account with that email already exists.', 'error'); return;
     }
 
+    // Map degree to appropriate RBAC role
+    const degreeToRole = { 'MD': 'attending', 'DO': 'attending', 'NP': 'nurse', 'PA': 'attending', 'RN': 'nurse', 'PhD': 'user' };
+    const degreeToProvRole = { 'MD': 'Attending', 'DO': 'Attending', 'NP': 'Nurse', 'PA': 'Attending', 'RN': 'Nurse', 'PhD': 'Attending' };
+    const userRole = degreeToRole[degree] || 'user';
+    const providerRole = degreeToProvRole[degree] || 'Attending';
+
     const passwordHash = await hashPassword(pw);
     const user = saveUser({
       firstName: first,
@@ -536,6 +542,7 @@ function initRegisterForm() {
       phone,
       degree,
       passwordHash,
+      role: userRole,
     });
 
     // Create matching provider record
@@ -544,7 +551,7 @@ function initRegisterForm() {
       firstName: first,
       lastName: last,
       degree,
-      role: 'Attending',
+      role: providerRole,
       npiNumber: npi,
       email,
       phone,
@@ -716,7 +723,15 @@ function initForcePasswordChange() {
 
     const user = getSessionUser();
     if (!user) { showLogin(); return; }
-    await changePassword(user.id, pw);
+    const result = await changePassword(user.id, pw);
+    if (result && result.error) {
+      showToast('Password: ' + result.errors.join(', '), 'error');
+      return;
+    }
+    if (result === false) {
+      showToast('Failed to change password. Please try again.', 'error');
+      return;
+    }
     form.reset();
     showToast('Password changed successfully!', 'success');
     showApp();

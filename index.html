@@ -98,12 +98,15 @@
       <div class="form-row">
         <div class="form-group">
           <label for="reg-password">Password *</label>
-          <input type="password" id="reg-password" required autocomplete="new-password" minlength="8" placeholder="Min 8 chars, upper+lower+number" />
+          <input type="password" id="reg-password" required autocomplete="new-password" minlength="8" placeholder="Min 8 chars, upper+lower+number+special" />
         </div>
         <div class="form-group">
           <label for="reg-confirm">Confirm Password *</label>
           <input type="password" id="reg-confirm" required autocomplete="new-password" placeholder="Repeat password" />
         </div>
+      </div>
+      <div class="password-requirements">
+        Password must contain: 8+ characters, uppercase, lowercase, a number, and a special character.
       </div>
       <button type="submit" class="btn btn-primary btn-block">Create Account</button>
       <p class="auth-toggle"><a href="#" id="show-login">Back to Sign In</a></p>
@@ -131,7 +134,7 @@
           <input type="password" id="confirm-new-password" required autocomplete="new-password" placeholder="Repeat password" />
         </div>
         <div class="password-requirements">
-          Password must contain: 8+ characters, uppercase, lowercase, and a number.
+          Password must contain: 8+ characters, uppercase, lowercase, a number, and a special character.
         </div>
         <button type="submit" class="btn btn-primary btn-block">Change Password</button>
       </form>
