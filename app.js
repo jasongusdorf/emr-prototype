@@ -478,16 +478,21 @@ function initLoginForm() {
     const pw    = document.getElementById('login-password').value;
     if (!email || !pw) { showToast('Please fill in all fields.', 'error'); return; }
 
-    const result = await login(email, pw);
-    if (!result.ok) { showToast(result.error, 'error'); return; }
+    try {
+      const result = await login(email, pw);
+      if (!result.ok) { showToast(result.error, 'error'); return; }
 
-    // Set current provider to matching provider
-    const providers = getProviders();
-    const match = providers.find(p => p.email === result.user.email);
-    if (match) setCurrentProvider(match.id);
+      // Set current provider to matching provider
+      const providers = getProviders();
+      const match = providers.find(p => p.email === result.user.email);
+      if (match) setCurrentProvider(match.id);
 
-    form.reset();
-    handlePostLogin(result.user);
+      form.reset();
+      handlePostLogin(result.user);
+    } catch (err) {
+      console.error('Login error:', err);
+      showToast('Login failed: ' + (err.message || 'Unknown error'), 'error');
+    }
   });
 
   document.getElementById('show-register').addEventListener('click', e => {
@@ -621,7 +626,12 @@ function initAppAfterAuth() {
 
 /* ---------- Init ---------- */
 async function init() {
+  try {
   await seedIfEmpty();
+  } catch (err) {
+    console.error('Seed error:', err);
+    // Continue — seed may partially work or data may already exist
+  }
   initDarkMode();
   initLoginDarkToggle();
   initLoginForm();

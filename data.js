@@ -1146,11 +1146,23 @@ function saveUser(data) {
 }
 
 async function hashPassword(pw) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pw);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  // crypto.subtle requires a secure context (HTTPS/localhost).
+  // For file:// protocol, fall back to a simple hash.
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(pw);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) { /* fall through to fallback */ }
+  }
+  // Simple fallback hash (djb2-based, not cryptographic — acceptable for prototype)
+  var hash = 5381;
+  for (var i = 0; i < pw.length; i++) {
+    hash = ((hash << 5) + hash + pw.charCodeAt(i)) >>> 0;
+  }
+  return 'fb' + hash.toString(16).padStart(8, '0');
 }
 
 /* ---------- Account Lockout Helpers (hardening) ---------- */
