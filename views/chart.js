@@ -9,7 +9,7 @@ let _notesSortDir          = 'desc';   // 'desc' | 'asc' | 'provider'
 let _notesView             = 'grouped'; // 'grouped' | 'timeline'
 let _searchOpen            = false;
 let _pendingScrollSection  = null;
-let _currentOverviewSubTab = 'all';
+let _currentOverviewSubTab = 'profile';
 let _currentEncSubTab      = 'notes';  // 'profile' | 'notes'
 
 /* ---------- Constants ---------- */
@@ -53,19 +53,33 @@ const DEGREE_LABEL = {
 };
 
 const OVERVIEW_SUBTABS = [
-  { key: 'all',           label: 'All',            color: 'all' },
   { key: 'profile',       label: 'Profile',        color: 'profile' },
-  { key: 'problems',      label: 'Problems/Hx',    color: 'problems' },
+  { key: 'notes',         label: 'Notes',           color: 'notes' },
   { key: 'medications',   label: 'Medications',     color: 'medications' },
   { key: 'results',       label: 'Results',         color: 'results' },
   { key: 'orders',        label: 'Orders',          color: 'orders' },
-  { key: 'immunizations', label: 'Immunizations',   color: 'immunizations' },
+  { key: 'communication', label: 'Communication',   color: 'notes' },
+];
+
+const PROFILE_SECTIONS = [
+  { id: 'section-demographics',    label: 'Demographics' },
+  { id: 'section-appointments',    label: 'Appointments' },
+  { id: 'section-vitals-trend',    label: 'Vitals' },
+  { id: 'section-social-history',  label: 'Social Hx' },
+  { id: 'section-problems',        label: 'Problems' },
+  { id: 'section-preventive-care', label: 'Preventive Care' },
+  { id: 'section-allergies',       label: 'Allergies' },
+  { id: 'section-pmh',             label: 'PMH' },
+  { id: 'section-family-history',  label: 'Family Hx' },
+  { id: 'section-surgeries',       label: 'Surgeries' },
+  { id: 'section-immunizations',   label: 'Immunizations' },
+  { id: 'section-encounters',      label: 'Encounters' },
 ];
 
 /* ============================================================
    MAIN ENTRY
    ============================================================ */
-function renderChart(patientId, tab) {
+function renderChart(patientId) {
   clearTimeout(autosaveTimer);
 
   if (!canViewChart()) {
@@ -77,16 +91,20 @@ function renderChart(patientId, tab) {
   }
 
   _currentChartPatientId = patientId;
-  _currentChartTab       = tab || 'overview';
+  _currentChartTab       = 'overview';
   _searchOpen            = false;
 
   const app = document.getElementById('app');
   app.innerHTML = '';
   app.classList.add('chart-view');
 
-  if (_currentChartTab !== 'overview') {
-    _currentOverviewSubTab = 'all';
-  }
+  // Create the chart header bar container in #main (above #app) so it never scrolls
+  const existingChartHeader = document.getElementById('chart-header-bars');
+  if (existingChartHeader) existingChartHeader.remove();
+  const chartHeaderBars = document.createElement('div');
+  chartHeaderBars.id = 'chart-header-bars';
+  const mainEl = document.getElementById('main');
+  mainEl.insertBefore(chartHeaderBars, app);
 
   const patient = getPatient(patientId);
   if (!patient) {
@@ -96,34 +114,27 @@ function renderChart(patientId, tab) {
   }
 
   setTopbar({
-    title:   patient.lastName + ', ' + patient.firstName,
-    meta:    patient.mrn,
-    actions: `<a href="#dashboard" class="btn btn-secondary btn-sm no-print">← Patients</a>
+    title:   '',
+    meta:    '',
+    actions: `<a href="#patients" class="btn btn-secondary btn-sm no-print">← Patients</a>
+              <button class="btn btn-secondary btn-sm no-print" id="chart-search-toggle">🔍 Search</button>
               <button class="btn btn-secondary btn-sm no-print" id="btn-print-summary">🖨 Print Summary</button>
               <button class="btn btn-primary btn-sm no-print" id="btn-new-encounter">+ New Encounter</button>`,
   });
   setActiveNav('dashboard');
 
-  // Patient identity banner
-  app.appendChild(buildPatientBanner(patientId));
+  // Patient identity banner — in #chart-header-bars so it never scrolls
+  chartHeaderBars.appendChild(buildPatientBanner(patientId));
 
-  // Sticky tab bar
-  app.appendChild(buildTabBar(patientId, _currentChartTab));
-
-  // Search panel (hidden by default)
+  // Search panel (sticky at top, hidden by default)
   const searchPanel = buildSearchPanel(patientId);
+  searchPanel.style.position = 'sticky';
+  searchPanel.style.top = '0';
+  searchPanel.style.zIndex = '40';
   app.appendChild(searchPanel);
 
-  // Main content by tab
-  if (_currentChartTab === 'outpatient') {
-    buildEncounterTabContent(app, patientId, 'Outpatient');
-  } else if (_currentChartTab === 'inpatient') {
-    buildEncounterTabContent(app, patientId, 'Inpatient');
-  } else if (_currentChartTab === 'emergency') {
-    buildEncounterTabContent(app, patientId, 'Emergency');
-  } else {
-    buildOverviewContent(app, patient, patientId);
-  }
+  // Always render overview content (no tab bar)
+  buildOverviewContent(app, patient, patientId);
 
   // Print Summary button
   const printBtn = document.getElementById('btn-print-summary');
@@ -131,8 +142,7 @@ function renderChart(patientId, tab) {
 
   // New Encounter button
   document.getElementById('btn-new-encounter').addEventListener('click', () => {
-    const prefill = _currentChartTab !== 'overview' ? _capitalizeFirst(_currentChartTab) : null;
-    openNewEncounterModal(patientId, prefill);
+    openNewEncounterModal(patientId);
   });
 
   // Search toggle
@@ -150,7 +160,7 @@ function renderChart(patientId, tab) {
 function refreshChart(patientId) {
   const app = document.getElementById('app');
   const savedScroll = app.scrollTop;
-  renderChart(patientId, _currentChartTab);
+  renderChart(patientId);
   requestAnimationFrame(() => { app.scrollTop = savedScroll; });
 }
 
@@ -199,18 +209,6 @@ function buildTabBar(patientId, activeTab) {
     bar.appendChild(btn);
   });
 
-  // Spacer
-  const spacer = document.createElement('span');
-  spacer.className = 'chart-tab-spacer';
-  bar.appendChild(spacer);
-
-  // Search button
-  const searchBtn = document.createElement('button');
-  searchBtn.className = 'chart-search-btn';
-  searchBtn.id = 'chart-search-toggle';
-  searchBtn.textContent = '🔍 Search Chart';
-  bar.appendChild(searchBtn);
-
   return bar;
 }
 
@@ -251,12 +249,10 @@ function _applySubTabFilter() {
   if (!container) return;
   const sections = container.querySelectorAll('[data-subtab-category]');
   sections.forEach(el => {
-    if (_currentOverviewSubTab === 'all') {
-      el.style.display = '';
-    } else {
-      el.style.display = el.getAttribute('data-subtab-category') === _currentOverviewSubTab ? '' : 'none';
-    }
+    el.style.display = el.getAttribute('data-subtab-category') === _currentOverviewSubTab ? '' : 'none';
   });
+  const nav = document.getElementById('profile-jump-nav');
+  if (nav) nav.style.display = _currentOverviewSubTab === 'profile' ? '' : 'none';
 }
 
 /* ============================================================
@@ -516,19 +512,20 @@ function _renderSearchResults(container, patientId, q) {
 function _scrollToSection(sectionId, patientId) {
   if (_currentChartTab !== 'overview') {
     _pendingScrollSection = sectionId;
-    navigate('#chart/' + patientId + '/overview');
+    navigate('#chart/' + patientId);
     return;
   }
-  // Auto-switch to 'all' if the target is hidden by current sub-tab filter
+  // Auto-switch to the correct subtab if the target is hidden
   const el = document.getElementById(sectionId);
   if (el && el.offsetParent === null) {
-    _currentOverviewSubTab = 'all';
+    const catEl = el.closest('[data-subtab-category]');
+    const cat = catEl ? catEl.getAttribute('data-subtab-category') : 'notes';
+    _currentOverviewSubTab = cat;
     _applySubTabFilter();
-    // Update active state on sub-tab buttons
     const bar = document.querySelector('.chart-subtab-bar');
     if (bar) {
       bar.querySelectorAll('.chart-subtab').forEach(b => {
-        b.classList.toggle('active', b.textContent === 'All');
+        b.classList.toggle('active', b.textContent === OVERVIEW_SUBTABS.find(s => s.key === cat)?.label);
       });
     }
   }
@@ -539,8 +536,9 @@ function _scrollToSection(sectionId, patientId) {
    OVERVIEW CONTENT (all sections)
    ============================================================ */
 function buildOverviewContent(app, patient, patientId) {
-  // Sub-tab bar
-  app.appendChild(buildSubTabBar(patientId));
+  // Sub-tab bar — goes in #chart-header-bars (above #app), not in #app
+  const headerBars = document.getElementById('chart-header-bars');
+  if (headerBars) headerBars.appendChild(buildSubTabBar(patientId));
 
   // Sections container
   const container = document.createElement('div');
@@ -554,37 +552,54 @@ function buildOverviewContent(app, patient, patientId) {
     container.appendChild(w);
   }
 
+  // Profile jump-nav bar — also in #chart-header-bars so it never scrolls
+  const profileNav = document.createElement('div');
+  profileNav.className = 'profile-jump-nav';
+  profileNav.id = 'profile-jump-nav';
+  PROFILE_SECTIONS.forEach(({ id, label }) => {
+    const btn = document.createElement('button');
+    btn.className = 'profile-jump-btn';
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    profileNav.appendChild(btn);
+  });
+  if (headerBars) headerBars.appendChild(profileNav);
+
   // Profile category
   wrap('profile', buildDemographicsCard(patient, patientId));
   const upcomingApptCard = buildUpcomingAppointmentsCard(patientId);
   if (upcomingApptCard) wrap('profile', upcomingApptCard);
   wrap('profile', buildVitalsTrendCard(patientId));
   wrap('profile', buildSocialHistoryCard(patientId));
-
-  // Problems/Hx category
-  wrap('problems', buildProblemsCard(patientId));
-  wrap('problems', buildPreventiveCareCard(patient, patientId));
-  wrap('problems', buildAllergiesCard(patientId));
-  wrap('problems', buildPMHCard(patientId));
-  wrap('problems', buildFamilyHistoryCard(patientId));
-  wrap('problems', buildSurgeriesCard(patientId));
+  wrap('profile', buildProblemsCard(patientId));
+  wrap('profile', buildPreventiveCareCard(patient, patientId));
+  wrap('profile', buildAllergiesCard(patientId));
+  wrap('profile', buildPMHCard(patientId));
+  wrap('profile', buildFamilyHistoryCard(patientId));
+  wrap('profile', buildSurgeriesCard(patientId));
+  wrap('profile', buildImmunizationsCard(patientId));
+  wrap('profile', buildEncountersCard(patientId));
 
   // Medications category
-  wrap('medications', buildMedicationsCard(patientId));
+  wrap('medications', buildMedicationsSection(patientId));
 
   // Results category
-  wrap('results', buildLabResultsCard(patientId));
+  wrap('results', buildResultsSection(patientId));
+
+  // Notes category
+  wrap('notes', buildPastNotesCard(patientId));
 
   // Orders category
   wrap('orders', buildChartOrdersCard(patientId));
   wrap('orders', buildReferralsCard(patientId));
-  wrap('orders', buildEncountersCard(patientId));
   wrap('orders', buildDocumentsCard(patientId));
-  wrap('orders', buildPastNotesCard(patientId));
   wrap('orders', buildAuditLogCard(patientId));
 
-  // Immunizations category
-  wrap('immunizations', buildImmunizationsCard(patientId));
+  // Communication category
+  wrap('communication', buildCommunicationSection(patientId));
 
   app.appendChild(container);
 
@@ -596,17 +611,20 @@ function buildOverviewContent(app, patient, patientId) {
     const id = _pendingScrollSection;
     _pendingScrollSection = null;
     requestAnimationFrame(() => {
-      // Switch to 'all' so the section is visible
-      _currentOverviewSubTab = 'all';
-      _applySubTabFilter();
-      const bar = document.querySelector('.chart-subtab-bar');
-      if (bar) {
-        bar.querySelectorAll('.chart-subtab').forEach(b => {
-          b.classList.toggle('active', b.textContent === 'All');
-        });
-      }
       const el = document.getElementById(id);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (el) {
+        const catEl = el.closest('[data-subtab-category]');
+        const cat = catEl ? catEl.getAttribute('data-subtab-category') : 'notes';
+        _currentOverviewSubTab = cat;
+        _applySubTabFilter();
+        const bar = document.querySelector('.chart-subtab-bar');
+        if (bar) {
+          bar.querySelectorAll('.chart-subtab').forEach(b => {
+            b.classList.toggle('active', b.textContent === (OVERVIEW_SUBTABS.find(s => s.key === cat) || {}).label);
+          });
+        }
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
   }
 }
@@ -1237,19 +1255,70 @@ function buildFamilyHistoryCard(patientId) {
 /* ============================================================
    MEDICATIONS
    ============================================================ */
-function buildMedicationsCard(patientId) {
-  const meds = getPatientMedications(patientId);
+let _currentMedSubTab = 'outpatient';
+
+function buildMedicationsSection(patientId) {
+  const section = document.createElement('div');
+  section.className = 'results-section';
+
+  const bar = document.createElement('div');
+  bar.className = 'results-subtab-bar';
+  const tabs = [
+    { key: 'outpatient', label: 'Outpatient Medications' },
+    { key: 'inpatient',  label: 'Inpatient Medications' },
+    { key: 'medrec',     label: 'Medication Reconciliation' },
+  ];
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'results-subtab' + (_currentMedSubTab === t.key ? ' active' : '');
+    btn.textContent = t.label;
+    btn.addEventListener('click', () => {
+      _currentMedSubTab = t.key;
+      bar.querySelectorAll('.results-subtab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderMedContent();
+    });
+    bar.appendChild(btn);
+  });
+  section.appendChild(bar);
+
+  const content = document.createElement('div');
+  section.appendChild(content);
+
+  function renderMedContent() {
+    content.innerHTML = '';
+    switch (_currentMedSubTab) {
+      case 'outpatient': content.appendChild(buildMedicationsCard(patientId, 'Outpatient')); break;
+      case 'inpatient':  content.appendChild(buildMedicationsCard(patientId, 'Inpatient')); break;
+      case 'medrec':     content.appendChild(buildMedRecTab(patientId)); break;
+    }
+  }
+  renderMedContent();
+  return section;
+}
+
+function buildMedicationsCard(patientId, setting) {
+  const allMeds = getPatientMedications(patientId);
+  let meds;
+  if (setting === 'Inpatient') {
+    meds = allMeds.filter(m => m.setting === 'Inpatient');
+  } else if (setting === 'Outpatient') {
+    meds = allMeds.filter(m => !m.setting || m.setting === 'Outpatient');
+  } else {
+    meds = allMeds;
+  }
+  const title = setting ? setting + ' Medications' : 'Medications';
   const addBtn = makeBtn('+ Add Medication', 'btn btn-primary btn-sm',
-    () => openMedicationModal(patientId, null));
-  const card = chartCard('Medications', addBtn);
+    () => openMedicationModal(patientId, null, setting));
+  const card = chartCard(title, addBtn);
   card.id = 'section-medications';
 
   const current = meds.filter(m => m.status === 'Current');
   const past    = meds.filter(m => m.status === 'Past');
 
   if (meds.length === 0) {
-    card.appendChild(buildEmptyState('💊', 'No medications recorded',
-      'Add current and past medications.'));
+    card.appendChild(buildEmptyState('💊', 'No ' + (setting ? setting.toLowerCase() + ' ' : '') + 'medications recorded',
+      'Add medications using the button above.'));
     return card;
   }
 
@@ -1325,6 +1394,100 @@ function buildMedicationsCard(patientId) {
   table.appendChild(tbody);
   wrap.appendChild(table);
   card.appendChild(wrap);
+  return card;
+}
+
+/* ============================================================
+   MEDICATION RECONCILIATION TAB
+   ============================================================ */
+function buildMedRecTab(patientId) {
+  const card = chartCard('Medication Reconciliation');
+  card.id = 'section-medrec';
+
+  const body = document.createElement('div');
+  body.className = 'medrec-columns';
+
+  // Left: Home Medications
+  const leftCol = document.createElement('div');
+  leftCol.className = 'medrec-col';
+  const leftTitle = document.createElement('h3');
+  leftTitle.textContent = 'Home Medications';
+  leftTitle.style.marginBottom = '12px';
+  leftCol.appendChild(leftTitle);
+
+  const homeMeds = getPatientMedications(patientId).filter(m => m.status === 'Current');
+  if (homeMeds.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'text-muted';
+    empty.textContent = 'No current home medications.';
+    leftCol.appendChild(empty);
+  } else {
+    homeMeds.forEach(med => {
+      const item = document.createElement('div');
+      item.className = 'medrec-item';
+      item.innerHTML = '<strong>' + esc(med.name) + '</strong><br><span class="text-muted text-sm">' +
+        esc([med.dose, med.unit, med.route, med.frequency].filter(Boolean).join(' ')) + '</span>';
+
+      const actions = document.createElement('div');
+      actions.style.marginTop = '6px';
+      actions.style.display = 'flex';
+      actions.style.gap = '4px';
+
+      const continueBtn = makeBtn('Continue', 'btn btn-primary btn-sm', () => {
+        showToast(med.name + ' continued.', 'success');
+      });
+      const holdBtn = makeBtn('Hold', 'btn btn-secondary btn-sm', () => {
+        showToast(med.name + ' held.', 'warning');
+      });
+      const dcBtn = makeBtn('D/C', 'btn btn-danger btn-sm', () => {
+        savePatientMedication({ id: med.id, status: 'Past' });
+        showToast(med.name + ' discontinued.', 'success');
+        refreshChart(patientId);
+      });
+      actions.appendChild(continueBtn);
+      actions.appendChild(holdBtn);
+      actions.appendChild(dcBtn);
+      item.appendChild(actions);
+      leftCol.appendChild(item);
+    });
+  }
+
+  // Right: Inpatient Medications (from orders)
+  const rightCol = document.createElement('div');
+  rightCol.className = 'medrec-col';
+  const rightTitle = document.createElement('h3');
+  rightTitle.textContent = 'Inpatient Medications';
+  rightTitle.style.marginBottom = '12px';
+  rightCol.appendChild(rightTitle);
+
+  const encounters = getEncountersByPatient(patientId);
+  const inptEncs = encounters.filter(e => e.visitType === 'Inpatient' && e.status !== 'Cancelled');
+  const inptMedOrders = [];
+  inptEncs.forEach(enc => {
+    const orders = getOrdersByEncounter(enc.id);
+    orders.filter(o => o.type === 'Medication' && o.status !== 'Cancelled').forEach(o => inptMedOrders.push(o));
+  });
+
+  if (inptMedOrders.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'text-muted';
+    empty.textContent = 'No active inpatient medication orders.';
+    rightCol.appendChild(empty);
+  } else {
+    inptMedOrders.forEach(ord => {
+      const item = document.createElement('div');
+      item.className = 'medrec-item';
+      const d = ord.detail || {};
+      item.innerHTML = '<strong>' + esc(d.drug || 'Unknown') + '</strong><br><span class="text-muted text-sm">' +
+        esc([d.dose, d.unit, d.route, d.frequency].filter(Boolean).join(' ')) +
+        ' — ' + esc(ord.status) + '</span>';
+      rightCol.appendChild(item);
+    });
+  }
+
+  body.appendChild(leftCol);
+  body.appendChild(rightCol);
+  card.appendChild(body);
   return card;
 }
 
@@ -1690,19 +1853,132 @@ function buildPreventiveCareCard(patient, patientId) {
 }
 
 /* ============================================================
+   RESULTS SECTION — subtabs: Labs, Imaging, Micro, Pathology
+   ============================================================ */
+let _currentResultsSubTab = 'labs';
+
+function buildResultsSection(patientId) {
+  const section = document.createElement('div');
+  section.className = 'results-section';
+
+  // Subtab bar
+  const bar = document.createElement('div');
+  bar.className = 'results-subtab-bar';
+  const tabs = [
+    { key: 'labs',      label: 'Labs' },
+    { key: 'imaging',   label: 'Imaging' },
+    { key: 'micro',     label: 'Micro' },
+    { key: 'pathology', label: 'Pathology' },
+  ];
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'results-subtab' + (_currentResultsSubTab === t.key ? ' active' : '');
+    btn.textContent = t.label;
+    btn.addEventListener('click', () => {
+      _currentResultsSubTab = t.key;
+      bar.querySelectorAll('.results-subtab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderResultsContent();
+    });
+    bar.appendChild(btn);
+  });
+  section.appendChild(bar);
+
+  const content = document.createElement('div');
+  content.id = 'results-subtab-content';
+  section.appendChild(content);
+
+  function renderResultsContent() {
+    content.innerHTML = '';
+    switch (_currentResultsSubTab) {
+      case 'labs':      content.appendChild(buildLabResultsCard(patientId)); break;
+      case 'imaging':   content.appendChild(buildImagingResultsCard(patientId)); break;
+      case 'micro':     content.appendChild(buildMicroResultsCard(patientId)); break;
+      case 'pathology': content.appendChild(buildPathResultsCard(patientId)); break;
+    }
+  }
+  renderResultsContent();
+  return section;
+}
+
+/* ============================================================
    LAB RESULTS
    ============================================================ */
+let _labViewMode = 'test'; // 'panel' | 'test' | 'date'
+
+function _labFlagIcon(flag) {
+  const f = (flag || 'Normal').toLowerCase();
+  if (f === 'critical-low' || f === 'critical-high') {
+    return '<span class="lab-flag-critical" title="' + esc(flag) + '">!</span>';
+  }
+  if (f === 'low' || f === 'high') {
+    return '<span class="lab-flag-abnormal" title="' + esc(flag) + '">!</span>';
+  }
+  return '';
+}
+
 function buildLabResultsCard(patientId) {
   const results = getLabResults(patientId);
-  const addBtn = makeBtn('+ Add Results', 'btn btn-primary btn-sm', () => openLabResultModal(patientId));
-  const card = chartCard('Lab Results', addBtn);
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.marginBottom = '20px';
   card.id = 'section-labs';
+
+  // Header with add button + view toggles
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  const titleEl = document.createElement('span');
+  titleEl.className = 'card-title';
+  titleEl.textContent = 'Lab Results';
+  hdr.appendChild(titleEl);
+
+  const controls = document.createElement('div');
+  controls.style.display = 'flex'; controls.style.gap = '6px'; controls.style.alignItems = 'center';
+
+  const viewBtns = document.createElement('div');
+  viewBtns.className = 'lab-view-toggle';
+  [{ key: 'test', label: 'By Test' }, { key: 'date', label: 'By Date' }, { key: 'panel', label: 'Panel' }].forEach(v => {
+    const btn = document.createElement('button');
+    btn.className = 'lab-view-btn' + (_labViewMode === v.key ? ' active' : '');
+    btn.textContent = v.label;
+    btn.addEventListener('click', () => {
+      _labViewMode = v.key;
+      viewBtns.querySelectorAll('.lab-view-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderLabBody();
+    });
+    viewBtns.appendChild(btn);
+  });
+  controls.appendChild(viewBtns);
+
+  const addBtn = makeBtn('+ Add Results', 'btn btn-primary btn-sm', () => openLabResultModal(patientId));
+  controls.appendChild(addBtn);
+  hdr.appendChild(controls);
+  card.appendChild(hdr);
 
   if (results.length === 0) {
     card.appendChild(buildEmptyState('🧪', 'No lab results', 'Add lab results for this patient.'));
     return card;
   }
 
+  const bodyContainer = document.createElement('div');
+  bodyContainer.id = 'lab-results-body';
+  card.appendChild(bodyContainer);
+
+  function renderLabBody() {
+    bodyContainer.innerHTML = '';
+    switch (_labViewMode) {
+      case 'panel': _renderLabPanelView(bodyContainer, results, patientId); break;
+      case 'test':  _renderLabTestView(bodyContainer, results); break;
+      case 'date':  _renderLabDateView(bodyContainer, results, patientId); break;
+    }
+  }
+  renderLabBody();
+  return card;
+}
+
+/* --- Panel View (original) --- */
+function _renderLabPanelView(container, results, patientId) {
   const body = document.createElement('div');
   body.style.padding = '12px 16px';
 
@@ -1716,34 +1992,34 @@ function buildLabResultsCard(patientId) {
     const title = document.createElement('span');
     title.textContent = result.panel;
 
+    // Check if any tests are abnormal/critical for panel-level indicator
+    const hasAbnormal = (result.tests || []).some(t => {
+      const f = (t.flag || 'Normal').toLowerCase();
+      return f !== 'normal';
+    });
+    if (hasAbnormal) {
+      const hasCritical = (result.tests || []).some(t => {
+        const f = (t.flag || 'Normal').toLowerCase();
+        return f === 'critical-low' || f === 'critical-high';
+      });
+      const icon = document.createElement('span');
+      icon.innerHTML = hasCritical
+        ? '<span class="lab-flag-critical" title="Contains critical values">!</span>'
+        : '<span class="lab-flag-abnormal" title="Contains abnormal values">!</span>';
+      title.appendChild(document.createTextNode(' '));
+      title.appendChild(icon);
+    }
+
     const meta = document.createElement('span');
     meta.className = 'text-muted text-sm';
     meta.textContent = formatDate(result.resultDate) + (result.resultedBy ? ' · ' + result.resultedBy : '');
 
-    const actions = document.createElement('span');
-    actions.style.display = 'flex';
-    actions.style.gap = '6px';
-    actions.style.alignItems = 'center';
-
     const toggle = document.createElement('span');
-    toggle.textContent = '▶';
-    toggle.style.fontSize = '11px';
-    toggle.style.color = 'var(--text-muted)';
+    toggle.textContent = '▶'; toggle.style.fontSize = '11px'; toggle.style.color = 'var(--text-muted)';
 
-    const delBtn = makeBtn('Delete', 'btn btn-danger btn-sm', e => {
-      e.stopPropagation();
-      confirmAction({ title: 'Delete Lab Result', message: 'Delete this ' + result.panel + ' result?', confirmLabel: 'Delete', danger: true,
-        onConfirm: () => { deleteLabResult(result.id); showToast('Lab result deleted.'); refreshChart(patientId); } });
-    });
-    actions.appendChild(delBtn);
-    actions.appendChild(toggle);
-
-    hdr.appendChild(title);
-    hdr.appendChild(meta);
-    hdr.appendChild(actions);
+    hdr.appendChild(title); hdr.appendChild(meta); hdr.appendChild(toggle);
     panel.appendChild(hdr);
 
-    // Collapsible tests table
     const detailDiv = document.createElement('div');
     detailDiv.style.display = 'none';
 
@@ -1755,11 +2031,12 @@ function buildLabResultsCard(patientId) {
       result.tests.forEach(t => {
         const tr = document.createElement('tr');
         const tdName = document.createElement('td'); tdName.textContent = t.name;
-        const tdVal  = document.createElement('td'); tdVal.textContent = t.value; tdVal.style.fontWeight = '600';
+        const tdVal = document.createElement('td'); tdVal.style.fontWeight = '600';
+        tdVal.innerHTML = esc(t.value) + ' ' + _labFlagIcon(t.flag);
         const tdUnit = document.createElement('td'); tdUnit.textContent = t.unit || '—';
-        const tdRef  = document.createElement('td'); tdRef.textContent = t.referenceRange || '—'; tdRef.style.fontSize = '12px';
+        const tdRef = document.createElement('td'); tdRef.textContent = t.referenceRange || '—'; tdRef.style.fontSize = '12px';
         const tdFlag = document.createElement('td');
-        const flagKey = (t.flag || 'Normal').toLowerCase().replace('-', '-').replace(/\s+/g, '-');
+        const flagKey = (t.flag || 'Normal').toLowerCase().replace(/\s+/g, '-');
         const flagSpan = document.createElement('span');
         flagSpan.className = 'flag-' + flagKey;
         flagSpan.textContent = t.flag || 'Normal';
@@ -1785,6 +2062,443 @@ function buildLabResultsCard(patientId) {
       toggle.textContent = open ? '▶' : '▼';
     });
 
+    body.appendChild(panel);
+  });
+
+  container.appendChild(body);
+}
+
+/* --- Organ system classifier for By Test view --- */
+const _LAB_SYSTEM_ORDER = [
+  'Hematology','Cardiac','Metabolic','Hepatic','Coagulation',
+  'Thyroid','Lipids','Inflammatory','Iron Studies','Diabetes',
+  'Blood Gas','Nutritional','Tumor Markers','Drug Levels','Urinalysis','Other',
+];
+function _getLabSystem(name) {
+  const n = name.toLowerCase().trim();
+  if (/\b(wbc|rbc|hgb|hct|mcv|mch|mchc|rdw|plt|cbc|hemoglobin|hematocrit|platelets?|neutrophils?|lymphocytes?|monocytes?|eosinophils?|basophils?|reticulocytes?|bands?)\b/.test(n)) return 'Hematology';
+  if (/\b(troponin|bnp|nt.probnp|pro.bnp|ck.mb|myoglobin)\b/.test(n)) return 'Cardiac';
+  if (/\b(sodium|potassium|chloride|bicarbonate|bun|creatinine|glucose|calcium|magnesium|phosphorus|phosphate|egfr|osmolality|anion.gap|bmp|cmp)\b/.test(n) || /^(na|k|cr|cl|co2)$/.test(n)) return 'Metabolic';
+  if (/\b(ast|alt|alp|ggt|ldh|bilirubin|tbili|dbili|albumin|alkaline.phosphatase|alk.phos|transaminase|total.protein)\b/.test(n)) return 'Hepatic';
+  if (/\b(inr|fibrinogen|d.dimer|anti.xa|thrombin)\b/.test(n) || /^(pt|ptt|aptt)$/.test(n)) return 'Coagulation';
+  if (/\b(tsh|thyroid|thyroglobulin)\b/.test(n) || /^(t3|t4|free t3|free t4)$/.test(n)) return 'Thyroid';
+  if (/\b(cholesterol|ldl|hdl|triglyceride|vldl)\b/.test(n)) return 'Lipids';
+  if (/\b(crp|esr|procalcitonin|c.reactive|sed.rate|interleukin)\b/.test(n)) return 'Inflammatory';
+  if (/\b(ferritin|tibc|transferrin|tsat|iron)\b/.test(n)) return 'Iron Studies';
+  if (/\b(a1c|hba1c|hemoglobin.a1c|insulin|c.peptide)\b/.test(n)) return 'Diabetes';
+  if (/\b(lactate|pco2|po2|hco3|fio2|base.excess)\b/.test(n) || /^ph$/.test(n)) return 'Blood Gas';
+  if (/\b(vitamin|folate|b12|zinc|thiamine|copper)\b/.test(n)) return 'Nutritional';
+  if (/\b(psa|cea|afp|hcg|ca.125|ca.19|ca.15)\b/.test(n)) return 'Tumor Markers';
+  if (/\b(vancomycin|gentamicin|digoxin|lithium|phenytoin|valproic|tacrolimus|cyclosporine|trough)\b/.test(n)) return 'Drug Levels';
+  if (/\b(urine|urinalysis|microalbumin|upcr|upci)\b/.test(n) || /^ua$/.test(n)) return 'Urinalysis';
+  return 'Other';
+}
+
+/* --- By Test View (grouped by test name, organized by organ system) --- */
+function _renderLabTestView(container, results) {
+  const testMap = {};
+  results.forEach(result => {
+    (result.tests || []).forEach(t => {
+      const key = (t.name || '').trim();
+      if (!key) return;
+      if (!testMap[key]) testMap[key] = [];
+      testMap[key].push({ value: t.value, unit: t.unit, referenceRange: t.referenceRange, flag: t.flag, date: result.resultDate, panel: result.panel });
+    });
+  });
+
+  const body = document.createElement('div');
+  body.style.padding = '8px 16px';
+
+  const testNames = Object.keys(testMap).sort();
+  if (testNames.length === 0) {
+    body.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px">No individual test results to display.</div>';
+    container.appendChild(body);
+    return;
+  }
+
+  // Group by organ system
+  const systemGroups = {};
+  testNames.forEach(name => {
+    const sys = _getLabSystem(name);
+    if (!systemGroups[sys]) systemGroups[sys] = [];
+    systemGroups[sys].push(name);
+  });
+  const orderedSystems = _LAB_SYSTEM_ORDER.filter(s => systemGroups[s]);
+
+  orderedSystems.forEach((sys, sysIdx) => {
+    // Section header
+    const sysHeader = document.createElement('div');
+    sysHeader.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);padding:10px 0 4px;' + (sysIdx > 0 ? 'border-top:1px solid var(--border);margin-top:6px;' : '');
+    sysHeader.textContent = sys;
+    body.appendChild(sysHeader);
+
+    // 2-column grid for tests in this system
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;';
+    body.appendChild(grid);
+
+    systemGroups[sys].forEach(name => {
+      const entries = testMap[name].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const panel = document.createElement('div');
+      panel.className = 'lab-result-panel';
+
+      const hdr = document.createElement('div');
+      hdr.className = 'lab-result-panel-header';
+
+      const title = document.createElement('span');
+      title.textContent = name;
+      title.style.fontSize = '11px'; title.style.fontWeight = '700'; title.style.textTransform = 'uppercase'; title.style.letterSpacing = '0.04em';
+
+      const toggle = document.createElement('span');
+      toggle.textContent = '▼'; toggle.style.fontSize = '10px'; toggle.style.color = 'var(--text-muted)';
+
+      hdr.appendChild(title); hdr.appendChild(toggle);
+      panel.appendChild(hdr);
+
+      const detailDiv = document.createElement('div');
+      detailDiv.style.display = 'block';
+
+      const tbl = document.createElement('table');
+      tbl.className = 'table';
+      tbl.style.fontSize = '12px';
+      const tb = document.createElement('tbody');
+      entries.forEach(e => {
+        const tr = document.createElement('tr');
+        const d = e.date ? (e.date.includes('T') ? new Date(e.date) : new Date(e.date + 'T00:00:00')) : null;
+        const compactDate = d && !isNaN(d) ? (d.getMonth()+1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2) : (e.date || '—');
+        const tdDate = document.createElement('td'); tdDate.textContent = compactDate; tdDate.style.color = 'var(--text-muted)';
+        const tdVal = document.createElement('td'); tdVal.style.fontWeight = '600';
+        tdVal.innerHTML = esc(e.value) + ' ' + _labFlagIcon(e.flag);
+        const tdUnit = document.createElement('td'); tdUnit.textContent = e.unit || '—'; tdUnit.style.color = 'var(--text-muted)';
+        const tdRef = document.createElement('td'); tdRef.textContent = e.referenceRange || '—'; tdRef.style.color = 'var(--text-muted)';
+        tr.appendChild(tdDate); tr.appendChild(tdVal); tr.appendChild(tdUnit); tr.appendChild(tdRef);
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      detailDiv.appendChild(tbl);
+      panel.appendChild(detailDiv);
+
+      hdr.addEventListener('click', () => {
+        const open = detailDiv.style.display !== 'none';
+        detailDiv.style.display = open ? 'none' : 'block';
+        toggle.textContent = open ? '▶' : '▼';
+      });
+
+      grid.appendChild(panel);
+    });
+  });
+
+  container.appendChild(body);
+}
+
+/* --- By Date View (grouped by date) --- */
+function _renderLabDateView(container, results, patientId) {
+  // Group results by date (YYYY-MM-DD)
+  const dateMap = {};
+  results.forEach(result => {
+    const dateKey = formatDate(result.resultDate);
+    if (!dateMap[dateKey]) dateMap[dateKey] = [];
+    dateMap[dateKey].push(result);
+  });
+
+  const body = document.createElement('div');
+  body.style.padding = '12px 16px';
+
+  const dates = Object.keys(dateMap).sort((a, b) => new Date(b) - new Date(a));
+
+  dates.forEach(dateStr => {
+    const dayResults = dateMap[dateStr];
+
+    const panel = document.createElement('div');
+    panel.className = 'lab-result-panel';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'lab-result-panel-header';
+
+    const title = document.createElement('span');
+    title.innerHTML = '<strong>' + esc(dateStr) + '</strong>';
+
+    const panelList = document.createElement('span');
+    panelList.className = 'text-muted text-sm';
+    const panelNames = dayResults.map(r => {
+      const hasAbnormal = (r.tests || []).some(t => {
+        const f = (t.flag || 'Normal').toLowerCase();
+        return f !== 'normal';
+      });
+      const hasCritical = (r.tests || []).some(t => {
+        const f = (t.flag || 'Normal').toLowerCase();
+        return f === 'critical-low' || f === 'critical-high';
+      });
+      let icon = '';
+      if (hasCritical) icon = ' <span class="lab-flag-critical" title="Critical">!</span>';
+      else if (hasAbnormal) icon = ' <span class="lab-flag-abnormal" title="Abnormal">!</span>';
+      return esc(r.panel) + icon;
+    });
+    panelList.innerHTML = panelNames.join(', ');
+
+    const toggle = document.createElement('span');
+    toggle.textContent = '▶'; toggle.style.fontSize = '11px'; toggle.style.color = 'var(--text-muted)';
+
+    hdr.appendChild(title); hdr.appendChild(panelList); hdr.appendChild(toggle);
+    panel.appendChild(hdr);
+
+    const detailDiv = document.createElement('div');
+    detailDiv.style.display = 'none';
+
+    dayResults.forEach(result => {
+      if (!result.tests || result.tests.length === 0) return;
+      const subHdr = document.createElement('div');
+      subHdr.style.cssText = 'padding:8px 14px 4px;font-weight:600;font-size:13px;color:var(--text-primary);border-top:1px solid var(--border)';
+      subHdr.textContent = result.panel;
+      if (result.resultedBy) {
+        const by = document.createElement('span');
+        by.style.cssText = 'font-weight:400;font-size:11px;color:var(--text-muted);margin-left:8px';
+        by.textContent = result.resultedBy;
+        subHdr.appendChild(by);
+      }
+      detailDiv.appendChild(subHdr);
+
+      const tbl = document.createElement('table');
+      tbl.className = 'table';
+      tbl.innerHTML = '<thead><tr><th>Test</th><th>Value</th><th>Units</th><th>Reference Range</th><th>Flag</th></tr></thead>';
+      const tb = document.createElement('tbody');
+      result.tests.forEach(t => {
+        const tr = document.createElement('tr');
+        const tdName = document.createElement('td'); tdName.textContent = t.name;
+        const tdVal = document.createElement('td'); tdVal.style.fontWeight = '600';
+        tdVal.innerHTML = esc(t.value) + ' ' + _labFlagIcon(t.flag);
+        const tdUnit = document.createElement('td'); tdUnit.textContent = t.unit || '—';
+        const tdRef = document.createElement('td'); tdRef.textContent = t.referenceRange || '—'; tdRef.style.fontSize = '12px';
+        const tdFlag = document.createElement('td');
+        const flagKey = (t.flag || 'Normal').toLowerCase().replace(/\s+/g, '-');
+        const flagSpan = document.createElement('span');
+        flagSpan.className = 'flag-' + flagKey;
+        flagSpan.textContent = t.flag || 'Normal';
+        tdFlag.appendChild(flagSpan);
+        tr.appendChild(tdName); tr.appendChild(tdVal); tr.appendChild(tdUnit);
+        tr.appendChild(tdRef); tr.appendChild(tdFlag);
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      detailDiv.appendChild(tbl);
+    });
+    panel.appendChild(detailDiv);
+
+    hdr.addEventListener('click', () => {
+      const open = detailDiv.style.display !== 'none';
+      detailDiv.style.display = open ? 'none' : 'block';
+      toggle.textContent = open ? '▶' : '▼';
+    });
+
+    body.appendChild(panel);
+  });
+
+  container.appendChild(body);
+}
+
+/* ============================================================
+   IMAGING RESULTS
+   ============================================================ */
+function buildImagingResultsCard(patientId) {
+  const results = getImagingResults(patientId);
+  const addBtn = makeBtn('+ Add Result', 'btn btn-primary btn-sm', () => openImagingResultModal(patientId));
+  const card = chartCard('Imaging Results', addBtn);
+
+  if (results.length === 0) {
+    card.appendChild(buildEmptyState('📷', 'No imaging results', 'Add imaging results for this patient.'));
+    return card;
+  }
+
+  const body = document.createElement('div');
+  body.style.padding = '12px 16px';
+
+  results.forEach(r => {
+    const panel = document.createElement('div');
+    panel.className = 'lab-result-panel';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'lab-result-panel-header';
+
+    const title = document.createElement('span');
+    title.innerHTML = '<strong>' + esc(r.studyType) + '</strong>';
+    if (r.modality) title.innerHTML += ' <span class="text-muted text-sm">(' + esc(r.modality) + ')</span>';
+
+    const meta = document.createElement('span');
+    meta.className = 'text-muted text-sm';
+    meta.textContent = formatDate(r.resultDate) + (r.readBy ? ' · ' + r.readBy : '');
+
+    const actions = document.createElement('span');
+    actions.style.display = 'flex'; actions.style.gap = '6px'; actions.style.alignItems = 'center';
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'badge badge-' + (r.status === 'Final' ? 'signed' : 'open');
+    statusBadge.textContent = r.status || 'Final';
+    actions.appendChild(statusBadge);
+    const toggle = document.createElement('span');
+    toggle.textContent = '▶'; toggle.style.fontSize = '11px'; toggle.style.color = 'var(--text-muted)';
+    actions.appendChild(toggle);
+
+    hdr.appendChild(title); hdr.appendChild(meta); hdr.appendChild(actions);
+    panel.appendChild(hdr);
+
+    const detailDiv = document.createElement('div');
+    detailDiv.style.display = 'none';
+    detailDiv.style.padding = '12px 14px';
+    detailDiv.style.fontSize = '13px';
+    detailDiv.style.lineHeight = '1.6';
+
+    if (r.indication) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Indication:</strong> ' + esc(r.indication) + '</div>';
+    if (r.findings) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Findings:</strong><br><span style="white-space:pre-wrap">' + esc(r.findings) + '</span></div>';
+    if (r.impression) detailDiv.innerHTML += '<div><strong>Impression:</strong><br><span style="white-space:pre-wrap">' + esc(r.impression) + '</span></div>';
+
+    panel.appendChild(detailDiv);
+    hdr.addEventListener('click', () => {
+      const open = detailDiv.style.display !== 'none';
+      detailDiv.style.display = open ? 'none' : 'block';
+      toggle.textContent = open ? '▶' : '▼';
+    });
+    body.appendChild(panel);
+  });
+
+  card.appendChild(body);
+  return card;
+}
+
+/* ============================================================
+   MICROBIOLOGY RESULTS
+   ============================================================ */
+function buildMicroResultsCard(patientId) {
+  const results = getMicroResults(patientId);
+  const addBtn = makeBtn('+ Add Result', 'btn btn-primary btn-sm', () => openMicroResultModal(patientId));
+  const card = chartCard('Microbiology Results', addBtn);
+
+  if (results.length === 0) {
+    card.appendChild(buildEmptyState('🦠', 'No microbiology results', 'Add micro results for this patient.'));
+    return card;
+  }
+
+  const body = document.createElement('div');
+  body.style.padding = '12px 16px';
+
+  results.forEach(r => {
+    const panel = document.createElement('div');
+    panel.className = 'lab-result-panel';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'lab-result-panel-header';
+
+    const title = document.createElement('span');
+    title.innerHTML = '<strong>' + esc(r.cultureSite) + '</strong>';
+
+    const meta = document.createElement('span');
+    meta.className = 'text-muted text-sm';
+    meta.textContent = formatDate(r.collectionDate);
+
+    const actions = document.createElement('span');
+    actions.style.display = 'flex'; actions.style.gap = '6px'; actions.style.alignItems = 'center';
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'badge badge-' + (r.status === 'Final' ? 'signed' : 'open');
+    statusBadge.textContent = r.status || 'Final';
+    actions.appendChild(statusBadge);
+    const toggle = document.createElement('span');
+    toggle.textContent = '▶'; toggle.style.fontSize = '11px'; toggle.style.color = 'var(--text-muted)';
+    actions.appendChild(toggle);
+
+    hdr.appendChild(title); hdr.appendChild(meta); hdr.appendChild(actions);
+    panel.appendChild(hdr);
+
+    const detailDiv = document.createElement('div');
+    detailDiv.style.display = 'none';
+    detailDiv.style.padding = '12px 14px';
+    detailDiv.style.fontSize = '13px';
+    detailDiv.style.lineHeight = '1.6';
+
+    if (r.gramStain) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Gram Stain:</strong> ' + esc(r.gramStain) + '</div>';
+    if (r.organism) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Organism:</strong> ' + esc(r.organism) + '</div>';
+    if (r.sensitivities && r.sensitivities.length > 0) {
+      let sensHtml = '<div style="margin-bottom:8px"><strong>Sensitivities:</strong><table class="table" style="margin-top:4px"><thead><tr><th>Antibiotic</th><th>Result</th><th>MIC</th></tr></thead><tbody>';
+      r.sensitivities.forEach(s => {
+        const cls = s.result === 'Sensitive' ? 'flag-normal' : s.result === 'Resistant' ? 'flag-high' : 'flag-low';
+        sensHtml += '<tr><td>' + esc(s.antibiotic) + '</td><td><span class="' + cls + '">' + esc(s.result) + '</span></td><td>' + esc(s.mic || '—') + '</td></tr>';
+      });
+      sensHtml += '</tbody></table></div>';
+      detailDiv.innerHTML += sensHtml;
+    }
+    if (r.notes) detailDiv.innerHTML += '<div><strong>Notes:</strong> ' + esc(r.notes) + '</div>';
+
+    panel.appendChild(detailDiv);
+    hdr.addEventListener('click', () => {
+      const open = detailDiv.style.display !== 'none';
+      detailDiv.style.display = open ? 'none' : 'block';
+      toggle.textContent = open ? '▶' : '▼';
+    });
+    body.appendChild(panel);
+  });
+
+  card.appendChild(body);
+  return card;
+}
+
+/* ============================================================
+   PATHOLOGY RESULTS
+   ============================================================ */
+function buildPathResultsCard(patientId) {
+  const results = getPathResults(patientId);
+  const addBtn = makeBtn('+ Add Result', 'btn btn-primary btn-sm', () => openPathResultModal(patientId));
+  const card = chartCard('Pathology Results', addBtn);
+
+  if (results.length === 0) {
+    card.appendChild(buildEmptyState('🔬', 'No pathology results', 'Add pathology results for this patient.'));
+    return card;
+  }
+
+  const body = document.createElement('div');
+  body.style.padding = '12px 16px';
+
+  results.forEach(r => {
+    const panel = document.createElement('div');
+    panel.className = 'lab-result-panel';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'lab-result-panel-header';
+
+    const title = document.createElement('span');
+    title.innerHTML = '<strong>' + esc(r.specimenType) + '</strong>';
+    if (r.specimenSite) title.innerHTML += ' <span class="text-muted text-sm">(' + esc(r.specimenSite) + ')</span>';
+
+    const meta = document.createElement('span');
+    meta.className = 'text-muted text-sm';
+    meta.textContent = formatDate(r.resultDate) + (r.pathologist ? ' · ' + r.pathologist : '');
+
+    const actions = document.createElement('span');
+    actions.style.display = 'flex'; actions.style.gap = '6px'; actions.style.alignItems = 'center';
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'badge badge-' + (r.status === 'Final' ? 'signed' : 'open');
+    statusBadge.textContent = r.status || 'Final';
+    actions.appendChild(statusBadge);
+    const toggle = document.createElement('span');
+    toggle.textContent = '▶'; toggle.style.fontSize = '11px'; toggle.style.color = 'var(--text-muted)';
+    actions.appendChild(toggle);
+
+    hdr.appendChild(title); hdr.appendChild(meta); hdr.appendChild(actions);
+    panel.appendChild(hdr);
+
+    const detailDiv = document.createElement('div');
+    detailDiv.style.display = 'none';
+    detailDiv.style.padding = '12px 14px';
+    detailDiv.style.fontSize = '13px';
+    detailDiv.style.lineHeight = '1.6';
+
+    if (r.grossDesc) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Gross Description:</strong><br><span style="white-space:pre-wrap">' + esc(r.grossDesc) + '</span></div>';
+    if (r.microDesc) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Microscopic Description:</strong><br><span style="white-space:pre-wrap">' + esc(r.microDesc) + '</span></div>';
+    if (r.diagnosis) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Diagnosis:</strong><br><span style="white-space:pre-wrap">' + esc(r.diagnosis) + '</span></div>';
+    if (r.notes) detailDiv.innerHTML += '<div><strong>Notes:</strong> ' + esc(r.notes) + '</div>';
+
+    panel.appendChild(detailDiv);
+    hdr.addEventListener('click', () => {
+      const open = detailDiv.style.display !== 'none';
+      detailDiv.style.display = open ? 'none' : 'block';
+      toggle.textContent = open ? '▶' : '▼';
+    });
     body.appendChild(panel);
   });
 
@@ -2095,7 +2809,7 @@ function buildChartOrdersCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table';
-  table.innerHTML = '<thead><tr><th>Type</th><th>Order</th><th>Priority</th><th>Status</th><th>Ordered</th><th>Encounter</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th>Type</th><th>Order</th><th>Duration</th><th>Priority</th><th>Status</th><th>Ordered</th><th>Encounter</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   allOrders.forEach(order => {
@@ -2111,6 +2825,10 @@ function buildChartOrdersCard(patientId) {
     const tdName = document.createElement('td');
     tdName.style.fontWeight = '500';
     tdName.textContent = getChartOrderName(order);
+
+    const tdDur = document.createElement('td');
+    tdDur.style.color = 'var(--text-muted)';
+    tdDur.textContent = order.type === 'Medication' && order.detail?.duration ? order.detail.duration : '—';
 
     const tdPrio = document.createElement('td');
     const prioBadge = document.createElement('span');
@@ -2146,7 +2864,7 @@ function buildChartOrdersCard(patientId) {
         () => navigate('#orders/' + enc.id)));
     }
 
-    tr.appendChild(tdType); tr.appendChild(tdName); tr.appendChild(tdPrio);
+    tr.appendChild(tdType); tr.appendChild(tdName); tr.appendChild(tdDur); tr.appendChild(tdPrio);
     tr.appendChild(tdStatus); tr.appendChild(tdDate); tr.appendChild(tdEnc); tr.appendChild(tdAct);
     tbody.appendChild(tr);
   });
@@ -2273,6 +2991,7 @@ function buildEncountersCard(patientId) {
    ============================================================ */
 function buildPastNotesCard(patientId) {
   const encounters = getEncountersByPatient(patientId);
+  const allProviders = getProviders();
 
   const noteItems = [];
   encounters.forEach(enc => {
@@ -2282,234 +3001,248 @@ function buildPastNotesCard(patientId) {
     noteItems.push({ enc, note, prov });
   });
 
-  const card = chartCard('Past Notes');
+  const newNoteBtn = makeBtn('+ New Note', 'btn btn-primary btn-sm', () => openNewNoteForPatient(patientId));
+  const card = chartCard('Notes', newNoteBtn);
   card.id = 'past-notes-card';
 
-  // Sort / View bar
-  const sortBar = document.createElement('div');
-  sortBar.className = 'notes-sort-bar';
-  sortBar.style.cssText = 'padding:8px 16px;border-bottom:1px solid var(--border)';
+  // Filter toolbar
+  const filterBar = document.createElement('div');
+  filterBar.className = 'notes-filter-bar';
 
-  const sortLabel = document.createElement('span');
-  sortLabel.className = 'text-muted text-sm';
-  sortLabel.textContent = 'Sort:';
-  sortBar.appendChild(sortLabel);
+  const searchInp = document.createElement('input');
+  searchInp.type = 'search';
+  searchInp.className = 'form-control';
+  searchInp.placeholder = 'Search notes…';
+  searchInp.style.flex = '1';
+  searchInp.style.minWidth = '150px';
+  filterBar.appendChild(searchInp);
 
-  const sortChips = [
-    { key: 'desc',     label: 'Newest' },
-    { key: 'asc',      label: 'Oldest' },
-    { key: 'provider', label: 'By Provider' },
-  ];
-  sortChips.forEach(({ key, label }) => {
-    const chip = document.createElement('button');
-    chip.className = 'sort-chip' + (_notesSortDir === key ? ' active' : '');
-    chip.textContent = label;
-    chip.addEventListener('click', () => {
-      _notesSortDir = key;
-      const old = document.getElementById('past-notes-card');
-      if (old) old.replaceWith(buildPastNotesCard(patientId));
-    });
-    sortBar.appendChild(chip);
+  const dateFrom = document.createElement('input');
+  dateFrom.type = 'date';
+  dateFrom.className = 'form-control';
+  dateFrom.title = 'From date';
+  dateFrom.style.width = '140px';
+  filterBar.appendChild(dateFrom);
+
+  const dateTo = document.createElement('input');
+  dateTo.type = 'date';
+  dateTo.className = 'form-control';
+  dateTo.title = 'To date';
+  dateTo.style.width = '140px';
+  filterBar.appendChild(dateTo);
+
+  const provSelect = document.createElement('select');
+  provSelect.className = 'form-control';
+  provSelect.style.width = '160px';
+  provSelect.innerHTML = '<option value="">All Providers</option>';
+  const provIds = new Set();
+  noteItems.forEach(ni => { if (ni.prov) provIds.add(ni.prov.id); });
+  allProviders.filter(p => provIds.has(p.id)).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.lastName + ', ' + p.firstName;
+    provSelect.appendChild(opt);
   });
+  filterBar.appendChild(provSelect);
 
-  const divider = document.createElement('span');
-  divider.className = 'sort-divider';
-  divider.textContent = '|';
-  sortBar.appendChild(divider);
+  const signedSelect = document.createElement('select');
+  signedSelect.className = 'form-control';
+  signedSelect.style.width = '130px';
+  signedSelect.innerHTML = '<option value="">All Status</option><option value="signed">Signed</option><option value="unsigned">Unsigned</option>';
+  filterBar.appendChild(signedSelect);
 
-  const viewLabel = document.createElement('span');
-  viewLabel.className = 'text-muted text-sm';
-  viewLabel.textContent = 'View:';
-  sortBar.appendChild(viewLabel);
+  card.appendChild(filterBar);
 
-  const viewChips = [
-    { key: 'grouped',  label: 'Grouped' },
-    { key: 'timeline', label: 'Timeline' },
-  ];
-  viewChips.forEach(({ key, label }) => {
-    const chip = document.createElement('button');
-    chip.className = 'sort-chip' + (_notesView === key ? ' active' : '');
-    chip.textContent = label;
-    chip.addEventListener('click', () => {
-      _notesView = key;
-      const old = document.getElementById('past-notes-card');
-      if (old) old.replaceWith(buildPastNotesCard(patientId));
+  // Cards container
+  const cardsContainer = document.createElement('div');
+  cardsContainer.className = 'note-cards-container';
+  cardsContainer.id = 'note-cards-container';
+  card.appendChild(cardsContainer);
+
+  function renderNoteCards() {
+    cardsContainer.innerHTML = '';
+    const query = searchInp.value.toLowerCase().trim();
+    const from = dateFrom.value ? new Date(dateFrom.value + 'T00:00:00') : null;
+    const to = dateTo.value ? new Date(dateTo.value + 'T23:59:59') : null;
+    const provFilter = provSelect.value;
+    const signedFilter = signedSelect.value;
+
+    let filtered = noteItems.filter(({ enc, note, prov }) => {
+      if (query) {
+        const noteText = (note.noteBody || note.chiefComplaint || '').toLowerCase();
+        const provName = prov ? (prov.firstName + ' ' + prov.lastName).toLowerCase() : '';
+        if (!noteText.includes(query) && !provName.includes(query) && !enc.visitType.toLowerCase().includes(query)) return false;
+      }
+      if (from && new Date(enc.dateTime) < from) return false;
+      if (to && new Date(enc.dateTime) > to) return false;
+      if (provFilter && (!prov || prov.id !== provFilter)) return false;
+      if (signedFilter === 'signed' && !note.signed) return false;
+      if (signedFilter === 'unsigned' && note.signed) return false;
+      return true;
     });
-    sortBar.appendChild(chip);
-  });
 
-  card.appendChild(sortBar);
-
-  if (noteItems.length === 0) {
-    card.appendChild(buildEmptyState('📝', 'No notes yet',
-      'Notes will appear here after encounters are created.'));
-    return card;
-  }
-
-  // Apply sort
-  const sorted = [...noteItems].sort((a, b) => {
-    if (_notesSortDir === 'asc') {
-      return new Date(a.enc.dateTime) - new Date(b.enc.dateTime);
-    }
-    if (_notesSortDir === 'provider') {
-      const aName = a.prov ? a.prov.lastName : 'ZZZ';
-      const bName = b.prov ? b.prov.lastName : 'ZZZ';
-      if (aName !== bName) return aName.localeCompare(bName);
+    // Sort: pinned first, then newest
+    filtered.sort((a, b) => {
+      if (a.note.pinned && !b.note.pinned) return -1;
+      if (!a.note.pinned && b.note.pinned) return 1;
       return new Date(b.enc.dateTime) - new Date(a.enc.dateTime);
+    });
+
+    if (filtered.length === 0) {
+      cardsContainer.appendChild(buildEmptyState('📝', 'No notes match', 'Try adjusting your filters.'));
+      return;
     }
-    // desc (default)
-    return new Date(b.enc.dateTime) - new Date(a.enc.dateTime);
-  });
 
-  if (_notesView === 'timeline') {
-    card.appendChild(_buildNotesTimeline(sorted, patientId));
-  } else {
-    card.appendChild(_buildNotesGrouped(sorted, patientId));
-  }
+    const list = document.createElement('div');
+    list.className = 'note-list';
 
-  return card;
-}
+    filtered.forEach(({ enc, note, prov }) => {
+      const row = document.createElement('div');
+      row.className = 'note-list-row' + (note.pinned ? ' pinned' : '');
 
-function _buildNotesTimeline(items, patientId) {
-  const wrap = document.createElement('div');
+      const d = enc.dateTime ? new Date(enc.dateTime) : null;
+      const compactDate = d && !isNaN(d)
+        ? (d.getMonth()+1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2)
+        : '—';
 
-  const table = document.createElement('table');
-  table.className = 'table';
-  table.innerHTML = '<thead><tr><th>Date</th><th>Visit</th><th>Provider</th><th>Degree</th><th>Chief Complaint</th><th>Status</th><th></th></tr></thead>';
-  const tbody = document.createElement('tbody');
+      const dateEl = document.createElement('span');
+      dateEl.className = 'note-list-date';
+      dateEl.textContent = compactDate;
 
-  items.forEach(({ enc, note, prov }) => {
-    const tr = document.createElement('tr');
+      const titleEl = document.createElement('span');
+      titleEl.className = 'note-list-title';
+      titleEl.textContent = enc.visitSubtype || enc.visitType || '—';
 
-    const tdDate = document.createElement('td');
-    tdDate.style.whiteSpace = 'nowrap';
-    tdDate.textContent = formatDateTime(enc.dateTime);
+      const locationEl = document.createElement('span');
+      locationEl.className = 'note-list-meta';
+      locationEl.textContent = enc.visitType || '—';
 
-    const tdVisit = document.createElement('td');
-    tdVisit.textContent = enc.visitType + (enc.visitSubtype ? ' — ' + enc.visitSubtype : '');
+      const specialtyEl = document.createElement('span');
+      specialtyEl.className = 'note-list-meta';
+      specialtyEl.textContent = (prov && prov.specialty) ? prov.specialty : '—';
 
-    const tdProv = document.createElement('td');
-    tdProv.textContent = prov ? prov.firstName + ' ' + prov.lastName : '[Removed]';
-
-    const tdDeg = document.createElement('td');
-    tdDeg.textContent = prov ? prov.degree : '—';
-
-    const tdCC = document.createElement('td');
-    tdCC.style.maxWidth = '200px';
-    tdCC.style.overflow = 'hidden';
-    tdCC.style.textOverflow = 'ellipsis';
-    tdCC.style.whiteSpace = 'nowrap';
-    tdCC.title = note.chiefComplaint || '';
-    tdCC.textContent = note.chiefComplaint || '(not documented)';
-
-    const tdStatus = document.createElement('td');
-    const statusBadge = document.createElement('span');
-    statusBadge.className = note.signed ? 'badge badge-signed' : 'badge badge-open';
-    statusBadge.textContent = note.signed ? 'Signed' : 'Unsigned';
-    tdStatus.appendChild(statusBadge);
-
-    const tdAct = document.createElement('td');
-    tdAct.style.textAlign = 'right';
-    const viewBtn = document.createElement('button');
-    viewBtn.className = 'table-link';
-    viewBtn.textContent = note.signed ? 'Review →' : 'Edit →';
-    viewBtn.onclick = () => navigate('#encounter/' + enc.id);
-    tdAct.appendChild(viewBtn);
-
-    tr.appendChild(tdDate); tr.appendChild(tdVisit); tr.appendChild(tdProv);
-    tr.appendChild(tdDeg); tr.appendChild(tdCC); tr.appendChild(tdStatus); tr.appendChild(tdAct);
-    tbody.appendChild(tr);
-  });
-
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  return wrap;
-}
-
-function _buildNotesGrouped(items, patientId) {
-  // Group by degree (preserving sort order within each group)
-  const byDegree = {};
-  const degreeInsertOrder = [];
-
-  items.forEach(item => {
-    const degree = item.prov ? item.prov.degree : 'Unknown';
-    if (!byDegree[degree]) {
-      byDegree[degree] = [];
-      degreeInsertOrder.push(degree);
-    }
-    byDegree[degree].push(item);
-  });
-
-  // Use clinical priority order, then any remaining
-  const orderedDegrees = [
-    ...DEGREE_ORDER.filter(d => byDegree[d]),
-    ...degreeInsertOrder.filter(d => !DEGREE_ORDER.includes(d) && byDegree[d]),
-  ];
-
-  const sections = document.createElement('div');
-
-  orderedDegrees.forEach(degree => {
-    const degItems = byDegree[degree];
-
-    const section = document.createElement('div');
-    section.className = 'note-degree-group';
-
-    const groupHeader = document.createElement('div');
-    groupHeader.className = 'note-degree-header';
-    groupHeader.textContent = DEGREE_LABEL[degree] || (degree + ' Notes');
-    section.appendChild(groupHeader);
-
-    const table = document.createElement('table');
-    table.className = 'table';
-    table.innerHTML = '<thead><tr><th>Date</th><th>Visit</th><th>Provider</th><th>Chief Complaint</th><th>Status</th><th></th></tr></thead>';
-    const tbody = document.createElement('tbody');
-
-    degItems.forEach(({ enc, note, prov }) => {
-      const tr = document.createElement('tr');
-
-      const tdDate = document.createElement('td');
-      tdDate.style.whiteSpace = 'nowrap';
-      tdDate.textContent = formatDateTime(enc.dateTime);
-
-      const tdVisit = document.createElement('td');
-      tdVisit.textContent = enc.visitType + (enc.visitSubtype ? ' — ' + enc.visitSubtype : '');
-
-      const tdProv = document.createElement('td');
-      tdProv.textContent = prov ? prov.firstName + ' ' + prov.lastName : '[Removed]';
-
-      const tdCC = document.createElement('td');
-      tdCC.style.maxWidth = '220px';
-      tdCC.style.overflow = 'hidden';
-      tdCC.style.textOverflow = 'ellipsis';
-      tdCC.style.whiteSpace = 'nowrap';
-      tdCC.title = note.chiefComplaint || '';
-      tdCC.textContent = note.chiefComplaint || '(not documented)';
-
-      const tdStatus = document.createElement('td');
       const statusBadge = document.createElement('span');
       statusBadge.className = note.signed ? 'badge badge-signed' : 'badge badge-open';
       statusBadge.textContent = note.signed ? 'Signed' : 'Unsigned';
-      tdStatus.appendChild(statusBadge);
 
-      const tdAct = document.createElement('td');
-      tdAct.style.textAlign = 'right';
-      const viewBtn = document.createElement('button');
-      viewBtn.className = 'table-link';
-      viewBtn.textContent = note.signed ? 'Review →' : 'Edit →';
-      viewBtn.onclick = () => navigate('#encounter/' + enc.id);
-      tdAct.appendChild(viewBtn);
+      row.appendChild(dateEl);
+      row.appendChild(titleEl);
+      row.appendChild(locationEl);
+      row.appendChild(specialtyEl);
+      row.appendChild(statusBadge);
 
-      tr.appendChild(tdDate); tr.appendChild(tdVisit); tr.appendChild(tdProv);
-      tr.appendChild(tdCC); tr.appendChild(tdStatus); tr.appendChild(tdAct);
-      tbody.appendChild(tr);
+      row.addEventListener('click', () => openNoteReadModal(enc, note, prov));
+      list.appendChild(row);
     });
 
-    table.appendChild(tbody);
-    section.appendChild(table);
-    sections.appendChild(section);
-  });
+    cardsContainer.appendChild(list);
+  }
 
-  return sections;
+  // Attach filter listeners
+  searchInp.addEventListener('input', renderNoteCards);
+  dateFrom.addEventListener('change', renderNoteCards);
+  dateTo.addEventListener('change', renderNoteCards);
+  provSelect.addEventListener('change', renderNoteCards);
+  signedSelect.addEventListener('change', renderNoteCards);
+
+  renderNoteCards();
+  return card;
+}
+
+/* ============================================================
+   NOTE READER MODAL
+   ============================================================ */
+function openNoteReadModal(enc, note, prov) {
+  const d = enc.dateTime ? new Date(enc.dateTime) : null;
+  const dateStr = d && !isNaN(d)
+    ? d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '—';
+  const timeStr = d && !isNaN(d)
+    ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : '';
+  const provName = prov
+    ? prov.firstName + ' ' + prov.lastName + (prov.degree ? ', ' + prov.degree : '')
+    : '[Removed Provider]';
+  const noteType = enc.visitSubtype || enc.visitType || 'Clinical Note';
+
+  const sections = [];
+  if (note.chiefComplaint) sections.push({ label: 'Chief Complaint',          text: note.chiefComplaint });
+  if (note.hpi)            sections.push({ label: 'History of Present Illness', text: note.hpi });
+  if (note.ros)            sections.push({ label: 'Review of Systems',          text: note.ros });
+  if (note.physicalExam)   sections.push({ label: 'Physical Examination',       text: note.physicalExam });
+  if (note.assessment)     sections.push({ label: 'Assessment',                 text: note.assessment });
+  if (note.plan)           sections.push({ label: 'Plan',                       text: note.plan });
+  if (note.noteBody && sections.length === 0) sections.push({ label: 'Note', text: note.noteBody });
+
+  const sectionsHTML = sections.length > 0
+    ? sections.map(s =>
+        '<div class="note-reader-section">' +
+          '<div class="note-reader-section-label">' + esc(s.label) + '</div>' +
+          '<div class="note-reader-section-body">' + esc(s.text) + '</div>' +
+        '</div>'
+      ).join('')
+    : '<div class="note-reader-empty">No note content documented.</div>';
+
+  let signatureHTML;
+  if (note.signed) {
+    const sa = note.signedAt ? new Date(note.signedAt) : null;
+    const saStr = sa && !isNaN(sa)
+      ? sa.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+        ' at ' + sa.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : '';
+    signatureHTML =
+      '<div class="note-reader-signature">' +
+        '<span class="note-reader-sig-check">&#10003;</span>' +
+        ' Electronically signed by <strong>' + esc(note.signedBy || provName) + '</strong>' +
+        (saStr ? ' &mdash; ' + esc(saStr) : '') +
+      '</div>';
+  } else {
+    signatureHTML = '<div class="note-reader-unsigned">&#9888; Unsigned &mdash; not finalized</div>';
+  }
+
+  let addendaHTML = '';
+  if (note.addenda && note.addenda.length > 0) {
+    addendaHTML = '<div class="note-reader-addenda">' +
+      note.addenda.map(a =>
+        '<div class="note-reader-addendum">' +
+          '<div class="note-reader-addendum-hdr">Addendum' +
+            (a.author ? ' &mdash; ' + esc(a.author) : '') +
+            (a.date ? ' &mdash; ' + esc(a.date) : '') +
+          '</div>' +
+          '<div class="note-reader-section-body">' + esc(a.text || '') + '</div>' +
+        '</div>'
+      ).join('') +
+    '</div>';
+  }
+
+  const metaParts = [
+    dateStr + (timeStr ? ' &middot; ' + timeStr : ''),
+    provName,
+    prov && prov.specialty ? prov.specialty : null,
+    enc.visitType || null,
+  ].filter(Boolean);
+
+  const bodyHTML =
+    '<div class="note-reader">' +
+      '<div class="note-reader-header">' +
+        '<div class="note-reader-title">' + esc(noteType) + '</div>' +
+        '<div class="note-reader-meta">' + metaParts.join(' &nbsp;&middot;&nbsp; ') + '</div>' +
+      '</div>' +
+      '<div class="note-reader-body">' + sectionsHTML + '</div>' +
+      signatureHTML +
+      addendaHTML +
+    '</div>';
+
+  const footerHTML =
+    '<button class="btn btn-secondary" id="note-reader-close">Close</button>' +
+    '<button class="btn btn-primary" id="note-reader-edit">Edit Note</button>';
+
+  openModal({ title: '', bodyHTML, footerHTML, size: 'lg' });
+  document.getElementById('note-reader-close').addEventListener('click', closeModal);
+  document.getElementById('note-reader-edit').addEventListener('click', () => {
+    closeModal();
+    navigate('#encounter/' + enc.id);
+  });
 }
 
 /* ============================================================
@@ -2630,10 +3363,11 @@ function openPMHModal(patientId, id) {
 /* ============================================================
    MODALS — Medication
    ============================================================ */
-function openMedicationModal(patientId, id) {
+function openMedicationModal(patientId, id, defaultSetting) {
   if (!canEditPatient()) { showToast('You do not have permission to edit patient data.', 'error'); return; }
   const existing = id ? getPatientMedications(patientId).find(m => m.id === id) : null;
   const isEdit = !!existing;
+  const curSetting = existing ? (existing.setting || 'Outpatient') : (defaultSetting || 'Outpatient');
   const units  = ['mg', 'mcg', 'g', 'mEq', 'units', 'mL', 'mg/dL', 'Other'];
   const routes = ['PO', 'IV', 'IM', 'SQ', 'SL', 'Topical', 'Inhaled', 'PR', 'NG', 'Other'];
   const freqs  = ['QDay', 'BID', 'TID', 'QID', 'Q4h', 'Q6h', 'Q8h', 'Q12h', 'QWeek', 'PRN', 'Once', 'Other'];
@@ -2677,6 +3411,13 @@ function openMedicationModal(patientId, id) {
         <select class="form-control" id="med-status">
           <option${!existing || existing.status === 'Current' ? ' selected' : ''}>Current</option>
           <option${existing && existing.status === 'Past' ? ' selected' : ''}>Past</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Setting</label>
+        <select class="form-control" id="med-setting">
+          <option value="Outpatient"${curSetting === 'Outpatient' ? ' selected' : ''}>Outpatient</option>
+          <option value="Inpatient"${curSetting === 'Inpatient' ? ' selected' : ''}>Inpatient</option>
         </select>
       </div>
     </div>
@@ -2790,6 +3531,7 @@ function openMedicationModal(patientId, id) {
       route:        document.getElementById('med-route').value,
       frequency:    document.getElementById('med-freq').value,
       status:       document.getElementById('med-status').value,
+      setting:      document.getElementById('med-setting').value,
       startDate:    document.getElementById('med-start').value,
       endDate:      document.getElementById('med-end').value,
       indication:   document.getElementById('med-indication').value.trim(),
@@ -3037,26 +3779,50 @@ function openFamilyHistoryModal(patientId) {
 /* ============================================================
    MODALS — New Encounter
    ============================================================ */
-function openNewEncounterModal(patientId, prefillType) {
-  const providers = getProviders();
-  if (providers.length === 0) {
+function openNewNoteForPatient(patientId) {
+  const openEncs = getEncountersByPatient(patientId).filter(e => e.status === 'Open');
+  if (openEncs.length === 0) {
     openModal({
-      title: 'No Providers',
-      bodyHTML: `<p style="color:var(--text-secondary);line-height:1.6">
-        You must add at least one provider before creating an encounter.
-        <a href="#providers" id="goto-providers">Go to Providers →</a></p>`,
-      footerHTML: `<button class="btn btn-secondary" id="ne-cancel">Close</button>`,
+      title: 'No Open Encounters',
+      bodyHTML: '<p style="color:var(--text-secondary);line-height:1.6">There are no open encounters for this patient. Create an encounter first, then add a note.</p>',
+      footerHTML: '<button class="btn btn-secondary" id="nn-close">Close</button><button class="btn btn-primary" id="nn-create">Create Encounter</button>',
     });
-    document.getElementById('ne-cancel').addEventListener('click', closeModal);
-    document.getElementById('goto-providers').addEventListener('click', () => {
-      closeModal(); navigate('#providers');
-    });
+    document.getElementById('nn-close').addEventListener('click', closeModal);
+    document.getElementById('nn-create').addEventListener('click', () => { closeModal(); openNewEncounterModal(patientId); });
     return;
   }
+  if (openEncs.length === 1) {
+    navigate('#encounter/' + openEncs[0].id);
+    return;
+  }
+  const opts = openEncs.map(e => {
+    const prov = getProvider(e.providerId);
+    const provName = prov ? prov.lastName + ', ' + prov.firstName : '[Removed]';
+    return `<option value="${esc(e.id)}">${esc(formatDateTime(e.dateTime))} — ${esc(e.visitType)} (${esc(provName)})</option>`;
+  }).join('');
+  openModal({
+    title: 'Select Encounter',
+    bodyHTML: `<div class="form-group">
+      <label class="form-label">Which encounter is this note for?</label>
+      <select class="form-control" id="nn-enc-pick">${opts}</select>
+    </div>`,
+    footerHTML: '<button class="btn btn-secondary" id="nn-cancel">Cancel</button><button class="btn btn-primary" id="nn-go">Open Note</button>',
+  });
+  document.getElementById('nn-cancel').addEventListener('click', closeModal);
+  document.getElementById('nn-go').addEventListener('click', () => {
+    const encId = document.getElementById('nn-enc-pick').value;
+    closeModal();
+    navigate('#encounter/' + encId);
+  });
+}
 
-  const provOpts = providers.map(p =>
-    `<option value="${esc(p.id)}">${esc(p.lastName)}, ${esc(p.firstName)} — ${esc(p.degree)}</option>`
-  ).join('');
+function openNewEncounterModal(patientId, prefillType) {
+  const currentUser = getSessionUser();
+  const currentProvider = currentUser ? getProvider(currentUser.id) : null;
+  if (!currentProvider) {
+    showToast('Your account is not linked to a provider profile.', 'error');
+    return;
+  }
 
   const modeDefault = getEncounterMode() === 'inpatient' ? 'Inpatient' : 'Outpatient';
   const effectivePrefill = prefillType && VISIT_TYPES[prefillType] !== undefined ? prefillType : modeDefault;
@@ -3065,11 +3831,12 @@ function openNewEncounterModal(patientId, prefillType) {
   ).join('');
   const initialType = effectivePrefill || Object.keys(VISIT_TYPES)[0];
   const initialSubtypes = VISIT_TYPES[initialType] || [];
+  const providerName = currentProvider.lastName + ', ' + currentProvider.firstName + ' — ' + currentProvider.degree;
 
   const bodyHTML = `
     <div class="form-group">
-      <label class="form-label">Provider *</label>
-      <select class="form-control" id="ne-provider">${provOpts}</select>
+      <label class="form-label">Provider</label>
+      <div class="form-control" style="background:var(--surface-2);cursor:default;">${esc(providerName)}</div>
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -3107,11 +3874,10 @@ function openNewEncounterModal(patientId, prefillType) {
 
   document.getElementById('ne-cancel').addEventListener('click', closeModal);
   document.getElementById('ne-save').addEventListener('click', () => {
-    const providerId   = document.getElementById('ne-provider').value;
+    const providerId   = currentProvider.id;
     const visitType    = document.getElementById('ne-type').value;
     const visitSubtype = document.getElementById('ne-subtype').value;
     const dtVal        = document.getElementById('ne-datetime').value;
-    if (!providerId) { showToast('Please select a provider.', 'error'); return; }
     const dateTime = dtVal ? new Date(dtVal).toISOString() : new Date().toISOString();
     const encounter = saveEncounter({ patientId, providerId, visitType, visitSubtype, dateTime, status: 'Open' });
     saveNote({ encounterId: encounter.id });
@@ -3178,6 +3944,14 @@ function openEditPatientModal(patient, onSave) {
       <div class="form-group">
         <label class="form-label">Insurance</label>
         <input class="form-control" id="ep-insurance" value="${esc(patient.insurance)}" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Code Status</label>
+        <select class="form-control" id="ep-code-status">
+          ${['Full Code','DNR','DNR/DNI','DNI','Comfort Care'].map(s =>
+            `<option value="${s}"${(patient.codeStatus || 'Full Code') === s ? ' selected' : ''}>${s}</option>`
+          ).join('')}
+        </select>
       </div>
     </div>
     <h4 style="font-size:13px;font-weight:600;color:var(--text-secondary);margin:12px 0 6px">Address</h4>
@@ -3279,7 +4053,8 @@ function openEditPatientModal(patient, onSave) {
       sex:       document.getElementById('ep-sex').value,
       phone:     document.getElementById('ep-phone').value.trim(),
       email:     document.getElementById('ep-email').value.trim(),
-      insurance: document.getElementById('ep-insurance').value.trim(),
+      insurance:  document.getElementById('ep-insurance').value.trim(),
+      codeStatus: document.getElementById('ep-code-status').value,
       addressStreet: document.getElementById('ep-street').value.trim(),
       addressCity:   document.getElementById('ep-city').value.trim(),
       addressState:  document.getElementById('ep-state').value.trim(),
@@ -3500,6 +4275,299 @@ function openLabResultModal(patientId) {
     });
     closeModal();
     showToast('Lab results saved.', 'success');
+    refreshChart(patientId);
+  });
+}
+
+/* ============================================================
+   MODAL — Imaging Result
+   ============================================================ */
+function openImagingResultModal(patientId) {
+  const bodyHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Study Type *</label>
+        <input class="form-control" id="ir-study" placeholder="e.g. Chest X-Ray PA/Lateral" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Modality</label>
+        <select class="form-control" id="ir-modality">
+          <option value="">Select…</option>
+          <option>X-Ray</option><option>CT</option><option>MRI</option><option>Ultrasound</option>
+          <option>Nuclear Medicine</option><option>Fluoroscopy</option><option>PET/CT</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Body Region</label>
+        <input class="form-control" id="ir-region" placeholder="e.g. Chest" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Result Date</label>
+        <input class="form-control" id="ir-date" type="date" value="${new Date().toISOString().slice(0,10)}" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Ordered By</label>
+        <input class="form-control" id="ir-ordered" placeholder="Ordering provider" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Read By</label>
+        <input class="form-control" id="ir-readby" placeholder="Radiologist" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Indication</label>
+      <input class="form-control" id="ir-indication" placeholder="Clinical indication" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Findings</label>
+      <textarea class="note-textarea" id="ir-findings" style="min-height:80px" placeholder="Findings…"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Impression</label>
+      <textarea class="note-textarea" id="ir-impression" style="min-height:60px" placeholder="Impression…"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select class="form-control" id="ir-status">
+        <option>Final</option><option>Preliminary</option><option>Addendum</option>
+      </select>
+    </div>
+  `;
+
+  openModal({
+    title: 'Add Imaging Result',
+    bodyHTML,
+    footerHTML: `<button class="btn btn-secondary" id="ir-cancel">Cancel</button>
+                 <button class="btn btn-primary" id="ir-save">Save Result</button>`,
+    size: 'lg',
+  });
+
+  document.getElementById('ir-cancel').addEventListener('click', closeModal);
+  document.getElementById('ir-save').addEventListener('click', () => {
+    const studyType = document.getElementById('ir-study').value.trim();
+    if (!studyType) { showToast('Study type is required.', 'error'); return; }
+    const dateVal = document.getElementById('ir-date').value;
+    saveImagingResult({
+      patientId,
+      studyType,
+      modality:   document.getElementById('ir-modality').value,
+      bodyRegion: document.getElementById('ir-region').value.trim(),
+      resultDate: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
+      orderedBy:  document.getElementById('ir-ordered').value.trim(),
+      readBy:     document.getElementById('ir-readby').value.trim(),
+      indication: document.getElementById('ir-indication').value.trim(),
+      findings:   document.getElementById('ir-findings').value,
+      impression: document.getElementById('ir-impression').value,
+      status:     document.getElementById('ir-status').value,
+    });
+    closeModal();
+    showToast('Imaging result saved.', 'success');
+    refreshChart(patientId);
+  });
+}
+
+/* ============================================================
+   MODAL — Microbiology Result
+   ============================================================ */
+function openMicroResultModal(patientId) {
+  let sensCount = 2;
+
+  function buildSensRows(n) {
+    let html = '';
+    for (let i = 0; i < n; i++) {
+      html += `<div class="form-row" style="margin-bottom:6px">
+        <input class="form-control" id="sens-abx-${i}" placeholder="Antibiotic" />
+        <select class="form-control" id="sens-result-${i}">
+          <option>Sensitive</option><option>Intermediate</option><option>Resistant</option>
+        </select>
+        <input class="form-control" id="sens-mic-${i}" placeholder="MIC (optional)" />
+      </div>`;
+    }
+    return html;
+  }
+
+  const bodyHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Culture Site *</label>
+        <input class="form-control" id="mr-site" placeholder="e.g. Blood, Urine, Wound" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Collection Date</label>
+        <input class="form-control" id="mr-date" type="date" value="${new Date().toISOString().slice(0,10)}" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Gram Stain</label>
+      <input class="form-control" id="mr-gram" placeholder="e.g. Gram positive cocci in clusters" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Organism</label>
+      <input class="form-control" id="mr-organism" placeholder="e.g. Staphylococcus aureus" />
+    </div>
+    <div class="form-label" style="margin-bottom:6px;font-size:12px;font-weight:600;color:var(--text-secondary)">
+      Sensitivities
+    </div>
+    <div id="mr-sens">${buildSensRows(sensCount)}</div>
+    <button class="btn btn-ghost btn-sm" id="mr-add-sens" style="margin-top:4px">+ Add Row</button>
+    <div class="form-row" style="margin-top:12px">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-control" id="mr-status">
+          <option>Final</option><option>Preliminary</option><option>No Growth</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="note-textarea" id="mr-notes" style="min-height:60px" placeholder="Additional notes…"></textarea>
+    </div>
+  `;
+
+  openModal({
+    title: 'Add Microbiology Result',
+    bodyHTML,
+    footerHTML: `<button class="btn btn-secondary" id="mr-cancel">Cancel</button>
+                 <button class="btn btn-primary" id="mr-save">Save Result</button>`,
+    size: 'lg',
+  });
+
+  document.getElementById('mr-cancel').addEventListener('click', closeModal);
+  document.getElementById('mr-add-sens').addEventListener('click', () => {
+    sensCount++;
+    const container = document.getElementById('mr-sens');
+    const row = document.createElement('div');
+    row.className = 'form-row';
+    row.style.marginBottom = '6px';
+    row.innerHTML = `
+      <input class="form-control" id="sens-abx-${sensCount-1}" placeholder="Antibiotic" />
+      <select class="form-control" id="sens-result-${sensCount-1}">
+        <option>Sensitive</option><option>Intermediate</option><option>Resistant</option>
+      </select>
+      <input class="form-control" id="sens-mic-${sensCount-1}" placeholder="MIC (optional)" />`;
+    container.appendChild(row);
+  });
+
+  document.getElementById('mr-save').addEventListener('click', () => {
+    const cultureSite = document.getElementById('mr-site').value.trim();
+    if (!cultureSite) { showToast('Culture site is required.', 'error'); return; }
+    const sensitivities = [];
+    for (let i = 0; i < sensCount; i++) {
+      const abx = document.getElementById('sens-abx-' + i)?.value.trim();
+      const res = document.getElementById('sens-result-' + i)?.value;
+      if (abx) {
+        sensitivities.push({
+          antibiotic: abx,
+          result: res || 'Sensitive',
+          mic: document.getElementById('sens-mic-' + i)?.value.trim() || '',
+        });
+      }
+    }
+    const dateVal = document.getElementById('mr-date').value;
+    saveMicroResult({
+      patientId,
+      cultureSite,
+      collectionDate: dateVal ? new Date(dateVal).toISOString() : new Date().toISOString(),
+      gramStain:      document.getElementById('mr-gram').value.trim(),
+      organism:       document.getElementById('mr-organism').value.trim(),
+      sensitivities,
+      status:         document.getElementById('mr-status').value,
+      notes:          document.getElementById('mr-notes').value,
+    });
+    closeModal();
+    showToast('Microbiology result saved.', 'success');
+    refreshChart(patientId);
+  });
+}
+
+/* ============================================================
+   MODAL — Pathology Result
+   ============================================================ */
+function openPathResultModal(patientId) {
+  const bodyHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Specimen Type *</label>
+        <input class="form-control" id="pr-type" placeholder="e.g. Biopsy, Excision, Cytology" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Specimen Site</label>
+        <input class="form-control" id="pr-site" placeholder="e.g. Left breast, Skin (back)" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Collection Date</label>
+        <input class="form-control" id="pr-cdate" type="date" value="${new Date().toISOString().slice(0,10)}" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Result Date</label>
+        <input class="form-control" id="pr-rdate" type="date" value="${new Date().toISOString().slice(0,10)}" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Pathologist</label>
+      <input class="form-control" id="pr-path" placeholder="Pathologist name" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Gross Description</label>
+      <textarea class="note-textarea" id="pr-gross" style="min-height:60px" placeholder="Gross description…"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Microscopic Description</label>
+      <textarea class="note-textarea" id="pr-micro" style="min-height:60px" placeholder="Microscopic description…"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Diagnosis</label>
+      <textarea class="note-textarea" id="pr-dx" style="min-height:60px" placeholder="Pathologic diagnosis…"></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-control" id="pr-status">
+          <option>Final</option><option>Preliminary</option><option>Addendum</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="note-textarea" id="pr-notes" style="min-height:60px" placeholder="Additional notes…"></textarea>
+    </div>
+  `;
+
+  openModal({
+    title: 'Add Pathology Result',
+    bodyHTML,
+    footerHTML: `<button class="btn btn-secondary" id="pr-cancel">Cancel</button>
+                 <button class="btn btn-primary" id="pr-save">Save Result</button>`,
+    size: 'lg',
+  });
+
+  document.getElementById('pr-cancel').addEventListener('click', closeModal);
+  document.getElementById('pr-save').addEventListener('click', () => {
+    const specimenType = document.getElementById('pr-type').value.trim();
+    if (!specimenType) { showToast('Specimen type is required.', 'error'); return; }
+    const cDate = document.getElementById('pr-cdate').value;
+    const rDate = document.getElementById('pr-rdate').value;
+    savePathResult({
+      patientId,
+      specimenType,
+      specimenSite:   document.getElementById('pr-site').value.trim(),
+      collectionDate: cDate ? new Date(cDate).toISOString() : new Date().toISOString(),
+      resultDate:     rDate ? new Date(rDate).toISOString() : new Date().toISOString(),
+      pathologist:    document.getElementById('pr-path').value.trim(),
+      grossDesc:      document.getElementById('pr-gross').value,
+      microDesc:      document.getElementById('pr-micro').value,
+      diagnosis:      document.getElementById('pr-dx').value,
+      status:         document.getElementById('pr-status').value,
+      notes:          document.getElementById('pr-notes').value,
+    });
+    closeModal();
+    showToast('Pathology result saved.', 'success');
     refreshChart(patientId);
   });
 }
@@ -3914,4 +4982,220 @@ function makeBtn(text, className, onclick, extraStyle) {
 function toLocalDateTimeValue(date) {
   const pad = n => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/* ============================================================
+   COMMUNICATION TAB
+   ============================================================ */
+function buildCommunicationSection(patientId) {
+  const user = getSessionUser();
+  const patient = getPatient(patientId);
+
+  // Get all messages involving this patient, sorted newest first
+  const messages = getMessagesByPatient(patientId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const card = chartCard('Patient Communication', (() => {
+    const btn = makeBtn('+ New Message', 'btn btn-sm btn-primary', () => openNewMessageModal(patientId));
+    return btn;
+  })());
+  card.id = 'section-communication';
+
+  if (messages.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'text-muted';
+    empty.style.padding = '12px 16px';
+    empty.textContent = 'No messages on file for this patient.';
+    card.appendChild(empty);
+    return card;
+  }
+
+  // Group messages into threads (by threadId)
+  const threadMap = new Map();
+  messages.forEach(m => {
+    const tid = m.threadId || m.id;
+    if (!threadMap.has(tid)) threadMap.set(tid, []);
+    threadMap.get(tid).push(m);
+  });
+
+  const list = document.createElement('div');
+  list.className = 'comm-thread-list';
+
+  threadMap.forEach((msgs, threadId) => {
+    // Use the first message (newest) as thread header
+    const latest = msgs[0];
+    const unread = msgs.some(m => m.toId === user.id && m.toType === 'provider' && m.status === 'Sent');
+
+    const row = document.createElement('div');
+    row.className = 'comm-thread-row' + (unread ? ' comm-unread' : '');
+    row.style.cssText = 'padding:10px 16px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; gap:12px; align-items:flex-start;';
+
+    // Direction indicator
+    const dir = document.createElement('span');
+    dir.className = 'comm-dir';
+    const toPatient = latest.toType === 'patient';
+    dir.textContent = toPatient ? '→' : '←';
+    dir.title = toPatient ? 'To patient' : 'From patient';
+    dir.style.cssText = `font-size:16px; color:${toPatient ? 'var(--text-muted)' : 'var(--primary)'}; flex-shrink:0; margin-top:2px;`;
+    row.appendChild(dir);
+
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1; min-width:0;';
+
+    const topLine = document.createElement('div');
+    topLine.style.cssText = 'display:flex; justify-content:space-between; gap:8px;';
+
+    const subject = document.createElement('span');
+    subject.style.cssText = 'font-weight:' + (unread ? '700' : '500') + '; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    subject.textContent = latest.subject || '(no subject)';
+    topLine.appendChild(subject);
+
+    const dateEl = document.createElement('span');
+    dateEl.style.cssText = 'font-size:11px; color:var(--text-muted); flex-shrink:0;';
+    dateEl.textContent = formatDateTime(latest.createdAt);
+    topLine.appendChild(dateEl);
+
+    info.appendChild(topLine);
+
+    const preview = document.createElement('div');
+    preview.style.cssText = 'font-size:12px; color:var(--text-muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    const fromLabel = latest.fromName || (latest.fromType === 'patient' ? (patient ? patient.firstName + ' ' + patient.lastName : 'Patient') : 'Provider');
+    preview.textContent = fromLabel + ': ' + (latest.body || '').replace(/\s+/g, ' ').trim();
+    info.appendChild(preview);
+
+    if (msgs.length > 1) {
+      const count = document.createElement('span');
+      count.style.cssText = 'font-size:11px; color:var(--text-muted); margin-top:2px; display:block;';
+      count.textContent = msgs.length + ' messages in thread';
+      info.appendChild(count);
+    }
+
+    row.appendChild(info);
+
+    row.addEventListener('click', () => openMessageThreadModal(threadId, patientId));
+    list.appendChild(row);
+  });
+
+  card.appendChild(list);
+  return card;
+}
+
+function openNewMessageModal(patientId) {
+  const user = getSessionUser();
+  const patient = getPatient(patientId);
+  if (!patient) return;
+  const patientName = patient.firstName + ' ' + patient.lastName;
+
+  openModal({
+    title: 'New Message to ' + esc(patientName),
+    bodyHTML: `
+      <div class="form-group">
+        <label>Subject</label>
+        <input id="msg-subject" class="form-control" placeholder="Subject" />
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea id="msg-body" class="form-control" rows="5" placeholder="Type your message..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="msg-priority" class="form-control">
+          <option>Normal</option>
+          <option>High</option>
+          <option>Urgent</option>
+        </select>
+      </div>`,
+    footerHTML: `
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="send-msg-btn">Send</button>`,
+  });
+
+  document.getElementById('send-msg-btn').addEventListener('click', () => {
+    const subject = document.getElementById('msg-subject').value.trim();
+    const body    = document.getElementById('msg-body').value.trim();
+    const priority = document.getElementById('msg-priority').value;
+    if (!body) { showToast('Please enter a message body.', 'error'); return; }
+
+    saveMessage({
+      fromType: 'provider',
+      fromId:   user.id,
+      fromName: user.firstName + ' ' + user.lastName + (user.degree ? ', ' + user.degree : ''),
+      toType:   'patient',
+      toId:     patientId,
+      toName:   patientName,
+      patientId,
+      subject:  subject || '(no subject)',
+      body,
+      priority,
+      status:   'Sent',
+    });
+
+    closeModal();
+    showToast('Message sent.', 'success');
+    // Refresh the chart to show new message
+    renderChart(patientId);
+  });
+}
+
+function openMessageThreadModal(threadId, patientId) {
+  const user = getSessionUser();
+  const patient = getPatient(patientId);
+  const thread = getMessageThread(threadId);
+  if (!thread.length) return;
+
+  // Mark unread messages as read
+  thread.forEach(m => {
+    if (m.toId === user.id && m.toType === 'provider' && m.status === 'Sent') {
+      markMessageRead(m.id);
+    }
+  });
+
+  const subject = thread[0].subject || '(no subject)';
+
+  const messagesHTML = thread.map(m => {
+    const fromPatient = m.fromType === 'patient';
+    const name = m.fromName || (fromPatient ? 'Patient' : 'Provider');
+    return `
+      <div class="comm-msg-bubble ${fromPatient ? 'comm-from-patient' : 'comm-from-provider'}">
+        <div class="comm-msg-meta">${esc(name)} · ${esc(formatDateTime(m.createdAt))}</div>
+        <div class="comm-msg-body">${esc(m.body || '')}</div>
+      </div>`;
+  }).join('');
+
+  openModal({
+    title: esc(subject),
+    bodyHTML: `
+      <div class="comm-thread-view">${messagesHTML}</div>
+      <hr style="margin:12px 0;">
+      <div class="form-group" style="margin:0;">
+        <label>Reply</label>
+        <textarea id="reply-body" class="form-control" rows="3" placeholder="Type your reply..."></textarea>
+      </div>`,
+    footerHTML: `
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" id="send-reply-btn">Send Reply</button>`,
+  });
+
+  document.getElementById('send-reply-btn').addEventListener('click', () => {
+    const body = document.getElementById('reply-body').value.trim();
+    if (!body) { showToast('Please enter a reply.', 'error'); return; }
+    const patientName = patient ? patient.firstName + ' ' + patient.lastName : '';
+    saveMessage({
+      threadId,
+      fromType: 'provider',
+      fromId:   user.id,
+      fromName: user.firstName + ' ' + user.lastName + (user.degree ? ', ' + user.degree : ''),
+      toType:   'patient',
+      toId:     patientId,
+      toName:   patientName,
+      patientId,
+      subject,
+      body,
+      priority: 'Normal',
+      status:   'Sent',
+    });
+    closeModal();
+    showToast('Reply sent.', 'success');
+    renderChart(patientId);
+  });
 }

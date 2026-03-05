@@ -21,7 +21,6 @@ function renderEncounter(encounterId) {
   const patient  = getPatient(encounter.patientId);
   const provider = getProvider(encounter.providerId);
   const note     = getNoteByEncounter(encounterId) || saveNote({ encounterId });
-  const vitals   = getEncounterVitals(encounterId);
 
   const patName    = patient  ? patient.firstName + ' ' + patient.lastName : 'Unknown Patient';
   const provName   = provider ? provider.firstName + ' ' + provider.lastName + ', ' + provider.degree : '[Removed Provider]';
@@ -34,6 +33,7 @@ function renderEncounter(encounterId) {
     actions: `
       <a href="${patient ? '#chart/' + patient.id : '#dashboard'}" class="btn btn-secondary btn-sm">← Chart</a>
       <a href="#orders/${encounterId}" class="btn btn-secondary btn-sm">Orders</a>
+      <button class="btn btn-secondary btn-sm" id="btn-patient-summary">Patient Summary</button>
     `,
   });
   setActiveNav('dashboard');
@@ -84,16 +84,10 @@ function renderEncounter(encounterId) {
   ctxBar.appendChild(statusWrap);
   app.appendChild(ctxBar);
 
-  /* ---------- Vitals section ---------- */
-  app.appendChild(buildVitalsSection(encounter, vitals, isSigned));
-
   /* ---------- Medication Reconciliation Banner (unsigned only) ---------- */
   if (!isSigned) {
     app.appendChild(buildMedRecBanner(encounter, note));
   }
-
-  /* ---------- Diagnoses & Billing card ---------- */
-  app.appendChild(buildBillingSection(encounter, isSigned));
 
   /* ---------- Clinical Note card ---------- */
   const noteCard = document.createElement('div');
@@ -141,99 +135,100 @@ function renderEncounter(encounterId) {
     noteBody.appendChild(banner);
   }
 
-  // Note field definitions
-  const fields = [
-    { key: 'chiefComplaint', label: 'Chief Complaint',                tall: false },
-    { key: 'hpi',            label: 'History of Present Illness',     tall: true  },
-    { key: 'ros',            label: 'Review of Systems',              tall: true  },
-    { key: 'physicalExam',   label: 'Physical Examination',          tall: true  },
-    { key: 'assessment',     label: 'Assessment',                     tall: true  },
-    { key: 'plan',           label: 'Plan',                           tall: true  },
-  ];
+  // Migrate old structured notes into freeform noteBody
+  let noteBodyText = note.noteBody || '';
+  if (!noteBodyText) {
+    const oldFields = [
+      { key: 'chiefComplaint', label: 'Chief Complaint' },
+      { key: 'hpi',            label: 'History of Present Illness' },
+      { key: 'ros',            label: 'Review of Systems' },
+      { key: 'physicalExam',   label: 'Physical Examination' },
+      { key: 'assessment',     label: 'Assessment' },
+      { key: 'plan',           label: 'Plan' },
+    ];
+    const parts = [];
+    oldFields.forEach(f => {
+      if (note[f.key]) {
+        parts.push(f.label + ':\n' + note[f.key]);
+      }
+    });
+    if (parts.length > 0) noteBodyText = parts.join('\n\n');
+  }
 
   const textareas = {};
 
-  fields.forEach(f => {
+  if (isSigned) {
     const section = document.createElement('div');
     section.className = 'note-section';
-    const label = document.createElement('div');
-    label.className = 'note-section-label';
-    label.textContent = f.label;
-
-    if (isSigned) {
-      const readDiv = document.createElement('div');
-      readDiv.className = 'note-readonly';
-      if (note[f.key]) {
-        readDiv.textContent = note[f.key];
-      } else {
-        readDiv.textContent = '(not documented)';
-        readDiv.classList.add('note-readonly-empty');
-      }
-      section.appendChild(label);
-      section.appendChild(readDiv);
+    const readDiv = document.createElement('div');
+    readDiv.className = 'note-readonly';
+    readDiv.style.whiteSpace = 'pre-wrap';
+    if (noteBodyText) {
+      readDiv.textContent = noteBodyText;
     } else {
-      const ta = document.createElement('textarea');
-      ta.className = 'note-textarea' + (f.tall ? ' tall' : '');
-      ta.placeholder = f.label + '…';
-      ta.value = note[f.key] || '';
-      ta.id = 'note-' + f.key;
-      textareas[f.key] = ta;
-      section.appendChild(label);
-      section.appendChild(ta);
+      readDiv.textContent = '(not documented)';
+      readDiv.classList.add('note-readonly-empty');
     }
+    section.appendChild(readDiv);
     noteBody.appendChild(section);
-  });
+  } else {
+    const section = document.createElement('div');
+    section.className = 'note-section';
+    const ta = document.createElement('textarea');
+    ta.className = 'note-textarea freeform';
+    ta.placeholder = 'Clinical note…';
+    ta.value = noteBodyText;
+    ta.id = 'note-noteBody';
+    textareas['noteBody'] = ta;
+    section.appendChild(ta);
+    noteBody.appendChild(section);
+  }
 
   noteCard.appendChild(noteBody);
 
-  /* ---------- Unsigned: Sign area + autosave ---------- */
+  /* ---------- Unsigned: Sign button + modal ---------- */
   if (!isSigned) {
-    const signArea = document.createElement('div');
-    signArea.id = 'sign-area';
-    signArea.style.display = 'none';
-    signArea.className = 'sign-area';
-    signArea.style.margin = '0 20px 0';
+    function openSignModal() {
+      const currentUser = getSessionUser();
+      const signingProvider = currentUser ? getProvider(currentUser.id) : null;
+      if (!signingProvider) {
+        showToast('Your account is not linked to a provider profile.', 'error');
+        return;
+      }
+      const signerName = signingProvider.firstName + ' ' + signingProvider.lastName + ', ' + signingProvider.degree;
 
-    const signTitle = document.createElement('div');
-    signTitle.className = 'sign-area-title';
-    signTitle.textContent = 'Signing as:';
+      openModal({
+        title: 'Sign Note',
+        bodyHTML:
+          '<div class="form-group">' +
+            '<label class="form-label">Signing as:</label>' +
+            '<div class="form-control" style="background:var(--surface-2);cursor:default;">' + esc(signerName) + '</div>' +
+          '</div>',
+        footerHTML:
+          '<button class="btn btn-secondary" id="sign-modal-cancel">Cancel</button>' +
+          '<button class="btn btn-success" id="sign-modal-confirm">Confirm Signature</button>',
+      });
 
-    const providers = getProviders();
-    const signingSelect = document.createElement('select');
-    signingSelect.className = 'form-control';
-    signingSelect.style.marginBottom = '12px';
-
-    const encProvider = getProvider(encounter.providerId);
-    const sorted = encProvider
-      ? [encProvider, ...providers.filter(p => p.id !== encounter.providerId)]
-      : providers;
-    sorted.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.firstName + ' ' + p.lastName + ', ' + p.degree;
-      signingSelect.appendChild(opt);
-    });
-
-    const signBtns = document.createElement('div');
-    signBtns.style.display = 'flex'; signBtns.style.gap = '8px';
-
-    const cancelSignBtn = makeEncBtn('Cancel', 'btn btn-secondary', () => { signArea.style.display = 'none'; });
-    const confirmSignBtn = makeEncBtn('Confirm Signature', 'btn btn-success', () => {
-      const providerId = signingSelect.value;
-      if (!providerId) { showToast('Please select a provider.', 'error'); return; }
-      saveNote({ ...readNoteFields(textareas), encounterId, signed: false });
-      saveNote({ encounterId, signed: true, signedBy: providerId, signedAt: new Date().toISOString() });
-      saveEncounter({ id: encounterId, status: 'Signed' });
-      clearTimeout(autosaveTimer); autosaveTimer = null;
-      showToast('Note signed successfully.', 'success');
-      renderEncounter(encounterId);
-    });
-
-    signBtns.appendChild(cancelSignBtn);
-    signBtns.appendChild(confirmSignBtn);
-    signArea.appendChild(signTitle);
-    signArea.appendChild(signingSelect);
-    signArea.appendChild(signBtns);
+      document.getElementById('sign-modal-cancel').addEventListener('click', closeModal);
+      document.getElementById('sign-modal-confirm').addEventListener('click', () => {
+        const providerId = signingProvider.id;
+        const noteFields = readNoteFields(textareas);
+        const signedAt = new Date();
+        const sigName = signerName;
+        const sigDate = (signedAt.getMonth() + 1).toString().padStart(2, '0') + '/' +
+                        signedAt.getDate().toString().padStart(2, '0') + '/' +
+                        signedAt.getFullYear() + ' ' +
+                        signedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        noteFields.noteBody = (noteFields.noteBody || '') + '\n\n---\nElectronically signed by: ' + sigName + '\nDate: ' + sigDate;
+        saveNote({ ...noteFields, encounterId, signed: false });
+        saveNote({ encounterId, signed: true, signedBy: providerId, signedAt: signedAt.toISOString() });
+        saveEncounter({ id: encounterId, status: 'Signed' });
+        clearTimeout(autosaveTimer); autosaveTimer = null;
+        closeModal();
+        showToast('Note signed successfully.', 'success');
+        renderEncounter(encounterId);
+      });
+    }
 
     // Card footer
     const footer = document.createElement('div');
@@ -247,7 +242,7 @@ function renderEncounter(encounterId) {
     const signBtn = makeEncBtn('Sign Note', 'btn btn-success', () => {
       if (!canSignNotes()) { showToast('Only attending physicians can sign notes.', 'error'); return; }
       if (!getProviders().length) { showToast('Add a provider first.', 'error'); return; }
-      signArea.style.display = signArea.style.display === 'none' ? 'block' : 'none';
+      openSignModal();
     });
     if (!canSignNotes()) {
       signBtn.disabled = true;
@@ -257,7 +252,9 @@ function renderEncounter(encounterId) {
     footer.appendChild(lastModEl); footer.appendChild(signBtn);
     noteCard.appendChild(footer);
     app.appendChild(noteCard);
-    app.appendChild(signArea);
+
+    /* ---------- Diagnoses & Billing card ---------- */
+    app.appendChild(buildBillingSection(encounter, isSigned));
 
     // Autosave
     function triggerAutosave() {
@@ -282,6 +279,15 @@ function renderEncounter(encounterId) {
     app.appendChild(noteCard);
     // Addenda section for signed notes
     app.appendChild(buildAddendaSection(encounterId, note, encounter));
+
+    /* ---------- Diagnoses & Billing card ---------- */
+    app.appendChild(buildBillingSection(encounter, isSigned));
+  }
+
+  // Patient Summary button
+  const summaryBtn = document.getElementById('btn-patient-summary');
+  if (summaryBtn) {
+    summaryBtn.addEventListener('click', () => openEncounterSummaryModal(encounterId));
   }
 }
 
@@ -517,20 +523,17 @@ function buildAddendaSection(encounterId, note, encounter) {
   form.className = 'addendum-form';
   form.hidden = true;
 
+  const currentUser = getSessionUser();
+  const signingProv = currentUser ? getProvider(currentUser.id) : null;
+
   const provLbl = document.createElement('label');
   provLbl.className = 'form-label'; provLbl.textContent = 'Signing as';
-  const provSelect = document.createElement('select');
-  provSelect.className = 'form-control'; provSelect.style.marginBottom = '10px';
-
-  const providers = getProviders();
-  const encProv = getProvider(encounter.providerId);
-  const sortedProvs = encProv ? [encProv, ...providers.filter(p => p.id !== encounter.providerId)] : providers;
-  sortedProvs.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.firstName + ' ' + p.lastName + ', ' + p.degree;
-    provSelect.appendChild(opt);
-  });
+  const provDisplay = document.createElement('div');
+  provDisplay.className = 'form-control';
+  provDisplay.style.cssText = 'background:var(--surface-2);cursor:default;margin-bottom:10px;';
+  provDisplay.textContent = signingProv
+    ? signingProv.firstName + ' ' + signingProv.lastName + ', ' + signingProv.degree
+    : '[No provider linked to your account]';
 
   const taLbl = document.createElement('label');
   taLbl.className = 'form-label'; taLbl.textContent = 'Addendum Text';
@@ -547,9 +550,9 @@ function buildAddendaSection(encounterId, note, encounter) {
   });
   const saveBtn = makeEncBtn('Sign Addendum', 'btn btn-primary btn-sm', () => {
     const text = textarea.value.trim();
-    const addedBy = provSelect.value;
     if (!text) { showToast('Addendum text is required.', 'error'); return; }
-    if (!addedBy) { showToast('Select a signing provider.', 'error'); return; }
+    if (!signingProv) { showToast('Your account is not linked to a provider profile.', 'error'); return; }
+    const addedBy = signingProv.id;
     const updated = addNoteAddendum(encounterId, { text, addedBy });
     if (updated) {
       const newAd = updated.addenda[updated.addenda.length - 1];
@@ -561,7 +564,7 @@ function buildAddendaSection(encounterId, note, encounter) {
   });
 
   formBtns.appendChild(cancelBtn); formBtns.appendChild(saveBtn);
-  form.appendChild(provLbl); form.appendChild(provSelect);
+  form.appendChild(provLbl); form.appendChild(provDisplay);
   form.appendChild(taLbl); form.appendChild(textarea); form.appendChild(formBtns);
   section.appendChild(addBtn);
   section.appendChild(form);
@@ -590,12 +593,7 @@ function renderAddendumItem(ad) {
    ============================================================ */
 function readNoteFields(textareas) {
   return {
-    chiefComplaint: textareas['chiefComplaint']?.value,
-    hpi:            textareas['hpi']?.value,
-    ros:            textareas['ros']?.value,
-    physicalExam:   textareas['physicalExam']?.value,
-    assessment:     textareas['assessment']?.value,
-    plan:           textareas['plan']?.value,
+    noteBody: textareas['noteBody']?.value || '',
   };
 }
 
@@ -803,13 +801,46 @@ function buildMedRecBanner(encounter, note) {
       patientId,
     }));
     saveMedRec(encounterId, records);
+
+    // Create inpatient medication orders for continued medications
+    const currentUser = getSessionUser();
+    let ordersCreated = 0;
+    records.forEach(rec => {
+      if (rec.action !== 'Continued') return;
+      const med = currentMeds.find(m => m.id === rec.medId);
+      if (!med) return;
+      const result = saveOrder({
+        encounterId,
+        patientId,
+        orderedBy:  currentUser ? currentUser.id : '',
+        type:       'Medication',
+        priority:   'Routine',
+        status:     'Active',
+        detail: {
+          drug:       med.name,
+          dose:       med.dose       || '',
+          unit:       med.unit       || '',
+          route:      med.route      || '',
+          frequency:  med.frequency  || '',
+          indication: med.indication || '',
+          duration:   'Ongoing',
+        },
+        notes: rec.notes || 'Continued from home medication reconciliation',
+      });
+      if (result && !result.error) ordersCreated++;
+    });
+
     banner.remove();
     const badge = document.createElement('div');
     badge.className = 'med-rec-complete-badge';
     const actions = records.map(r => r.medName + ': ' + r.action).join(', ');
     badge.textContent = '✓ Medication reconciliation complete — ' + actions;
     container.appendChild(badge);
-    showToast('Medication reconciliation saved.', 'success');
+
+    const msg = ordersCreated > 0
+      ? 'Medication reconciliation saved. ' + ordersCreated + ' inpatient order(s) created.'
+      : 'Medication reconciliation saved.';
+    showToast(msg, 'success');
   });
 
   footerDiv.appendChild(completeBtn);
@@ -1103,5 +1134,103 @@ function openCPTEntry(encounter) {
     closeModal();
     showToast('CPT code added.', 'success');
     renderEncounter(encounter.id);
+  });
+}
+
+/* ============================================================
+   Patient Summary Modal
+   ============================================================ */
+function openEncounterSummaryModal(encounterId) {
+  const encounter = getEncounter(encounterId);
+  if (!encounter) return;
+  const patient = getPatient(encounter.patientId);
+  const provider = getProvider(encounter.providerId);
+  const note = getNoteByEncounter(encounterId);
+  const vitals = getEncounterVitals(encounterId);
+  const orders = getOrdersByEncounter(encounterId);
+  const diagnoses = encounter.diagnoses || [];
+  const cptCodes = encounter.cptCodes || [];
+
+  const patName = patient ? patient.firstName + ' ' + patient.lastName : 'Unknown';
+  const provName = provider ? provider.firstName + ' ' + provider.lastName + ', ' + provider.degree : 'Unknown';
+
+  let html = '<div class="encounter-summary" id="encounter-summary-content">';
+
+  // Patient Info
+  html += '<h3>Patient Information</h3>';
+  html += '<p><strong>' + esc(patName) + '</strong>';
+  if (patient) html += ' | MRN: ' + esc(patient.mrn) + ' | DOB: ' + esc(patient.dob || '');
+  html += '</p>';
+  html += '<p>Provider: ' + esc(provName) + ' | Date: ' + formatDateTime(encounter.dateTime) + '</p>';
+
+  // Vitals
+  if (vitals && vitals.length > 0) {
+    const v = vitals[vitals.length - 1];
+    html += '<h3>Vital Signs</h3><p>';
+    if (v.tempF) html += 'Temp: ' + v.tempF + '°F ';
+    if (v.bpSystolic) html += 'BP: ' + v.bpSystolic + '/' + v.bpDiastolic + ' ';
+    if (v.heartRate) html += 'HR: ' + v.heartRate + ' ';
+    if (v.respRate) html += 'RR: ' + v.respRate + ' ';
+    if (v.spo2) html += 'SpO2: ' + v.spo2 + '% ';
+    html += '</p>';
+  }
+
+  // Clinical Note
+  if (note) {
+    const bodyText = note.noteBody || '';
+    html += '<h3>Clinical Note</h3>';
+    html += '<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;background:var(--bg-base);padding:12px;border-radius:6px;">' + esc(bodyText || '(not documented)') + '</pre>';
+  }
+
+  // Diagnoses
+  if (diagnoses.length > 0) {
+    html += '<h3>Diagnoses</h3><ul>';
+    diagnoses.forEach(d => { html += '<li>' + esc(d.code || '') + ' — ' + esc(d.description || '') + '</li>'; });
+    html += '</ul>';
+  }
+
+  // CPT Codes
+  if (cptCodes.length > 0) {
+    html += '<h3>CPT Codes</h3><ul>';
+    cptCodes.forEach(c => { html += '<li>' + esc(c.code) + ' — ' + esc(c.description) + '</li>'; });
+    html += '</ul>';
+  }
+
+  // Orders
+  if (orders.length > 0) {
+    html += '<h3>Orders</h3><ul>';
+    orders.forEach(o => {
+      const desc = o.type === 'Medication' ? (o.detail.drug || '') + ' ' + (o.detail.dose || '') : (o.detail.panel || o.detail.study || o.type);
+      html += '<li><strong>' + esc(o.type) + ':</strong> ' + esc(desc) + ' (' + esc(o.priority) + ', ' + esc(o.status) + ')</li>';
+    });
+    html += '</ul>';
+  }
+
+  // Doctor's recommendations textarea
+  html += '<h3>Additional Recommendations</h3>';
+  html += '<textarea class="form-control" id="summary-recommendations" rows="4" placeholder="Add recommendations for the patient…"></textarea>';
+
+  html += '</div>';
+
+  const footerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+    <button class="btn btn-primary" id="btn-print-encounter-summary">Print Summary</button>
+  `;
+
+  openModal({ title: 'Patient Summary', bodyHTML: html, footerHTML, size: 'lg' });
+
+  document.getElementById('btn-print-encounter-summary').addEventListener('click', () => {
+    const content = document.getElementById('encounter-summary-content');
+    const recs = document.getElementById('summary-recommendations');
+    const printWin = window.open('', '_blank', 'width=800,height=600');
+    let printHTML = '<html><head><title>Patient Summary</title><style>body{font-family:sans-serif;padding:20px;font-size:13px}h3{margin:16px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px}pre{background:#f5f5f5;padding:12px;border-radius:6px}ul{margin:4px 0}@media print{button{display:none}}</style></head><body>';
+    printHTML += content.innerHTML;
+    if (recs && recs.value.trim()) {
+      printHTML += '<h3>Additional Recommendations</h3><p>' + esc(recs.value) + '</p>';
+    }
+    printHTML += '</body></html>';
+    printWin.document.write(printHTML);
+    printWin.document.close();
+    printWin.print();
   });
 }

@@ -35,6 +35,17 @@ const KEYS = {
   systemAuditLog:  'emr_system_audit_log',
   messages:        'emr_messages',
   loginAttempts:   'emr_login_attempts',
+  hospitals:       'emr_hospitals',
+  wards:           'emr_wards',
+  bedAssignments:  'emr_bed_assignments',
+  patientLists:    'emr_patient_lists',
+  imagingResults:  'emr_imaging_results',
+  microResults:    'emr_micro_results',
+  pathResults:     'emr_path_results',
+  patientListPrefs:'emr_patient_list_prefs',
+  smartLists:      'emr_smart_lists',
+  handoffNotes:    'emr_handoff_notes',
+  listSubscriptions:'emr_list_subscriptions',
 };
 
 /* ---------- Utility ---------- */
@@ -364,6 +375,7 @@ function saveNote(data) {
     const newNote = {
       id:             generateId(),
       encounterId:    '',
+      noteBody:       '',
       chiefComplaint: '',
       hpi:            '',
       ros:            '',
@@ -373,6 +385,7 @@ function saveNote(data) {
       signed:         false,
       signedBy:       null,
       signedAt:       null,
+      pinned:         false,
       lastModified:   new Date().toISOString(),
       addenda:        [],
       ...data,
@@ -663,6 +676,7 @@ function savePatientMedication(data) {
       route:        'PO',
       frequency:    'QDay',
       status:       'Current',
+      setting:      'Outpatient',
       startDate:    '',
       endDate:      '',
       indication:   '',
@@ -809,6 +823,117 @@ function saveLabResult(data) {
 
 function deleteLabResult(id) {
   saveAll(KEYS.labResults, loadAll(KEYS.labResults).filter(l => l.id !== id));
+}
+
+/* ============================================================
+   Imaging Results
+   ============================================================ */
+function getImagingResults(patientId) {
+  return loadAll(KEYS.imagingResults)
+    .filter(r => r.patientId === patientId)
+    .sort((a, b) => new Date(b.resultDate) - new Date(a.resultDate));
+}
+
+function saveImagingResult(data) {
+  const all = loadAll(KEYS.imagingResults);
+  const idx = all.findIndex(r => r.id === data.id);
+  if (idx >= 0) {
+    all[idx] = { ...all[idx], ...data };
+  } else {
+    all.push({
+      id:           generateId(),
+      patientId:    '',
+      studyType:    '',
+      modality:     '',
+      bodyRegion:   '',
+      resultDate:   new Date().toISOString(),
+      orderedBy:    '',
+      readBy:       '',
+      indication:   '',
+      findings:     '',
+      impression:   '',
+      status:       'Final',
+      ...data,
+    });
+  }
+  saveAll(KEYS.imagingResults, all);
+}
+
+function deleteImagingResult(id) {
+  saveAll(KEYS.imagingResults, loadAll(KEYS.imagingResults).filter(r => r.id !== id));
+}
+
+/* ============================================================
+   Microbiology Results
+   ============================================================ */
+function getMicroResults(patientId) {
+  return loadAll(KEYS.microResults)
+    .filter(r => r.patientId === patientId)
+    .sort((a, b) => new Date(b.collectionDate) - new Date(a.collectionDate));
+}
+
+function saveMicroResult(data) {
+  const all = loadAll(KEYS.microResults);
+  const idx = all.findIndex(r => r.id === data.id);
+  if (idx >= 0) {
+    all[idx] = { ...all[idx], ...data };
+  } else {
+    all.push({
+      id:              generateId(),
+      patientId:       '',
+      cultureSite:     '',
+      collectionDate:  new Date().toISOString(),
+      organism:        '',
+      gramStain:       '',
+      sensitivities:   [],
+      status:          'Final',
+      notes:           '',
+      ...data,
+    });
+  }
+  saveAll(KEYS.microResults, all);
+}
+
+function deleteMicroResult(id) {
+  saveAll(KEYS.microResults, loadAll(KEYS.microResults).filter(r => r.id !== id));
+}
+
+/* ============================================================
+   Pathology Results
+   ============================================================ */
+function getPathResults(patientId) {
+  return loadAll(KEYS.pathResults)
+    .filter(r => r.patientId === patientId)
+    .sort((a, b) => new Date(b.resultDate) - new Date(a.resultDate));
+}
+
+function savePathResult(data) {
+  const all = loadAll(KEYS.pathResults);
+  const idx = all.findIndex(r => r.id === data.id);
+  if (idx >= 0) {
+    all[idx] = { ...all[idx], ...data };
+  } else {
+    all.push({
+      id:            generateId(),
+      patientId:     '',
+      specimenType:  '',
+      specimenSite:  '',
+      collectionDate:new Date().toISOString(),
+      resultDate:    new Date().toISOString(),
+      pathologist:   '',
+      grossDesc:     '',
+      microDesc:     '',
+      diagnosis:     '',
+      status:        'Final',
+      notes:         '',
+      ...data,
+    });
+  }
+  saveAll(KEYS.pathResults, all);
+}
+
+function deletePathResult(id) {
+  saveAll(KEYS.pathResults, loadAll(KEYS.pathResults).filter(r => r.id !== id));
 }
 
 /* ============================================================
@@ -1228,7 +1353,7 @@ async function login(email, password) {
   if (!user) {
     recordFailedLogin(email);
     logSystemAudit('LOGIN_FAILED', '', '', 'Invalid email: ' + email, email);
-    return { ok: false, error: 'Invalid email or password.' };
+    return { ok: false, error: 'No user exists with this email.' };
   }
   const hash = await hashPassword(password);
   if (hash !== user.passwordHash) {
@@ -1238,7 +1363,7 @@ async function login(email, password) {
     if (afterLock.locked) {
       return { ok: false, error: 'Account locked. Try again in ' + afterLock.minutesRemaining + ' minutes.' };
     }
-    return { ok: false, error: 'Invalid email or password.' };
+    return { ok: false, error: 'Incorrect password.' };
   }
   // Backwards compat: treat missing status as active
   const status = user.status || 'active';
@@ -1461,14 +1586,28 @@ function isAdmin(userId) {
 var ROLE_HIERARCHY = ['admin', 'attending', 'resident', 'nurse', 'medical_assistant', 'front_desk'];
 
 var ROLE_PERMISSIONS = {
-  admin:              ['view_admin', 'place_orders', 'sign_notes', 'edit_patient', 'view_chart', 'send_messages', 'prescribe_controlled', 'export_data'],
-  attending:          ['place_orders', 'sign_notes', 'edit_patient', 'view_chart', 'send_messages', 'prescribe_controlled', 'export_data'],
-  resident:           ['place_orders', 'edit_patient', 'view_chart', 'send_messages'],
-  nurse:              ['edit_patient', 'view_chart', 'send_messages'],
+  admin:              ['view_admin', 'place_orders', 'sign_notes', 'write_notes', 'edit_patient', 'view_chart', 'send_messages', 'prescribe_controlled', 'export_data'],
+  attending:          ['place_orders', 'sign_notes', 'write_notes', 'edit_patient', 'view_chart', 'send_messages', 'prescribe_controlled', 'export_data'],
+  resident:           ['place_orders', 'write_notes', 'edit_patient', 'view_chart', 'send_messages'],
+  nurse:              ['write_notes', 'edit_patient', 'view_chart', 'send_messages'],
   medical_assistant:  ['view_chart', 'send_messages'],
   front_desk:         ['send_messages'],
   user:               ['view_chart', 'send_messages'],
 };
+
+var ALL_PERMISSIONS = ['view_admin', 'place_orders', 'sign_notes', 'write_notes', 'edit_patient', 'view_chart', 'send_messages', 'prescribe_controlled', 'export_data'];
+
+function getCustomRolePermissions() {
+  try { return JSON.parse(localStorage.getItem('emr_custom_role_permissions') || '{}'); } catch(e) { return {}; }
+}
+function saveCustomRolePermissions(perms) {
+  localStorage.setItem('emr_custom_role_permissions', JSON.stringify(perms));
+}
+function getEffectivePermissions(role) {
+  const custom = getCustomRolePermissions();
+  if (custom[role]) return custom[role];
+  return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS['user'];
+}
 
 /**
  * Normalize role string from user record to lowercase key matching ROLE_PERMISSIONS.
@@ -1491,7 +1630,7 @@ function hasPermission(permission) {
   var user = getSessionUser();
   if (!user) return false;
   var role = normalizeRole(user.role);
-  var perms = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS['user'];
+  var perms = getEffectivePermissions(role);
   return perms.indexOf(permission) >= 0;
 }
 
@@ -1756,6 +1895,294 @@ function exportPatientData(patientId) {
   var user = getSessionUser();
   logSystemAudit('PATIENT_DATA_EXPORT', user ? user.id : '', patientId, 'Patient data export: ' + patient.firstName + ' ' + patient.lastName, user ? user.email : '');
   return JSON.stringify(exportData, null, 2);
+}
+
+/* ============================================================
+   Hospitals, Wards, Bed Assignments
+   ============================================================ */
+function getHospitals() { return loadAll(KEYS.hospitals); }
+function getHospital(id) { return getHospitals().find(h => h.id === id) || null; }
+function saveHospital(data) {
+  const all = getHospitals();
+  const idx = all.findIndex(h => h.id === data.id);
+  if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
+  else { all.push({ id: generateId(), name: '', ...data }); }
+  saveAll(KEYS.hospitals, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+function getWards() { return loadAll(KEYS.wards); }
+function getWard(id) { return getWards().find(w => w.id === id) || null; }
+function getWardsByHospital(hospitalId) { return getWards().filter(w => w.hospitalId === hospitalId); }
+function saveWard(data) {
+  const all = getWards();
+  const idx = all.findIndex(w => w.id === data.id);
+  if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
+  else { all.push({ id: generateId(), hospitalId: '', floor: '', unit: '', name: '', beds: 0, ...data }); }
+  saveAll(KEYS.wards, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+function getBedAssignments() { return loadAll(KEYS.bedAssignments); }
+function getBedAssignment(patientId) { return getBedAssignments().find(b => b.patientId === patientId && b.active) || null; }
+function getBedAssignmentsByWard(wardId) { return getBedAssignments().filter(b => b.wardId === wardId && b.active); }
+function saveBedAssignment(data) {
+  const all = getBedAssignments();
+  const idx = all.findIndex(b => b.id === data.id);
+  if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
+  else { all.push({ id: generateId(), patientId: '', wardId: '', bed: '', active: true, assignedAt: new Date().toISOString(), ...data }); }
+  saveAll(KEYS.bedAssignments, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+/* ============================================================
+   Patient Lists
+   ============================================================ */
+function getPatientLists() { return loadAll(KEYS.patientLists); }
+function getPatientList(id) { return getPatientLists().find(l => l.id === id) || null; }
+function getPatientListsByOwner(ownerId) { return getPatientLists().filter(l => l.ownerId === ownerId); }
+function getSharedPatientLists() { return getPatientLists().filter(l => l.shared); }
+function savePatientList(data) {
+  const all = getPatientLists();
+  const idx = all.findIndex(l => l.id === data.id);
+  if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
+  else { all.push({ id: generateId(), name: '', ownerId: '', patientIds: [], shared: false, createdAt: new Date().toISOString(), ...data }); }
+  saveAll(KEYS.patientLists, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+function deletePatientList(id) {
+  const all = getPatientLists().filter(l => l.id !== id);
+  saveAll(KEYS.patientLists, all);
+}
+function addPatientToList(listId, patientId) {
+  const list = getPatientList(listId);
+  if (!list) return null;
+  if (!list.patientIds.includes(patientId)) {
+    list.patientIds.push(patientId);
+    return savePatientList(list);
+  }
+  return list;
+}
+function removePatientFromList(listId, patientId) {
+  const list = getPatientList(listId);
+  if (!list) return null;
+  list.patientIds = list.patientIds.filter(id => id !== patientId);
+  return savePatientList(list);
+}
+
+/* ============================================================
+   Patient List Column/View Preferences (per provider)
+   ============================================================ */
+const PATIENT_COLUMNS = [
+  { key: 'name',          label: 'Name',                default: true,  sortable: true  },
+  { key: 'age',           label: 'Age',                 default: true,  sortable: true  },
+  { key: 'sex',           label: 'Sex',                 default: true,  sortable: false },
+  { key: 'dob',           label: 'DOB',                 default: true,  sortable: true  },
+  { key: 'lastEncounter', label: 'Last Encounter',      default: true,  sortable: true  },
+  { key: 'mrn',           label: 'MRN',                 default: true,  sortable: true  },
+  { key: 'phone',         label: 'Phone',               default: false, sortable: false },
+  { key: 'insurance',     label: 'Insurance',           default: false, sortable: false },
+  { key: 'alerts',        label: 'Alerts',              default: true,  sortable: false },
+  { key: 'codeStatus',    label: 'Code Status',         default: false, sortable: false },
+  { key: 'allergies',     label: 'Allergies',           default: false, sortable: false },
+  { key: 'activeMeds',    label: 'Active Meds',         default: false, sortable: true  },
+  { key: 'problems',      label: 'Problems',            default: false, sortable: false },
+  { key: 'provider',      label: 'Provider(s)',         default: false, sortable: true  },
+  { key: 'lastVitals',    label: 'Last Vitals (BP/HR)', default: false, sortable: false },
+  { key: 'pendingOrders', label: 'Pending Orders',      default: false, sortable: true  },
+];
+
+function getDefaultColumnKeys() {
+  return PATIENT_COLUMNS.filter(c => c.default).map(c => c.key);
+}
+
+function getPatientListPrefs(providerId) {
+  const all = loadAll(KEYS.patientListPrefs);
+  const pref = all.find(p => p.providerId === providerId);
+  if (pref) return pref;
+  return { providerId: providerId, columns: getDefaultColumnKeys(), defaultSort: { col: 'name', dir: 'asc' }, pageSize: 25 };
+}
+
+function savePatientListPrefs(providerId, prefs) {
+  const all = loadAll(KEYS.patientListPrefs);
+  const idx = all.findIndex(p => p.providerId === providerId);
+  const record = { providerId: providerId, ...prefs };
+  if (idx >= 0) { all[idx] = { ...all[idx], ...record }; }
+  else { all.push(record); }
+  saveAll(KEYS.patientListPrefs, all);
+}
+
+/* ============================================================
+   Smart / Dynamic Lists
+   ============================================================ */
+function getSmartLists() { return loadAll(KEYS.smartLists); }
+
+function getSmartListsByOwner(ownerId) {
+  return getSmartLists().filter(l => l.ownerId === ownerId);
+}
+
+function getSmartList(id) { return getSmartLists().find(l => l.id === id) || null; }
+
+function saveSmartList(data) {
+  const all = getSmartLists();
+  const idx = all.findIndex(l => l.id === data.id);
+  if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
+  else {
+    all.push({
+      id: generateId(),
+      name: '',
+      ownerId: '',
+      shared: false,
+      type: 'smart',
+      criteria: { provider: '', sex: '', ageMin: null, ageMax: null, insurance: '', codeStatus: '',
+                  hasOverdueScreenings: false, hasUnsignedNotes: false, hasPendingOrders: false, diagnosis: '' },
+      createdAt: new Date().toISOString(),
+      ...data,
+    });
+  }
+  saveAll(KEYS.smartLists, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+function deleteSmartList(id) {
+  saveAll(KEYS.smartLists, getSmartLists().filter(l => l.id !== id));
+}
+
+function evaluateSmartList(listId) {
+  const sl = getSmartList(listId);
+  if (!sl) return [];
+  return evaluateSmartCriteria(sl.criteria);
+}
+
+function evaluateSmartCriteria(criteria) {
+  let patients = getPatients();
+  if (!criteria) return patients;
+
+  if (criteria.provider) {
+    patients = patients.filter(p => (p.panelProviders || []).includes(criteria.provider));
+  }
+  if (criteria.sex) {
+    patients = patients.filter(p => (p.sex || '').toLowerCase() === criteria.sex.toLowerCase());
+  }
+  if (criteria.ageMin != null && criteria.ageMin !== '') {
+    patients = patients.filter(p => {
+      const age = _calcPatientAge(p.dob);
+      return age !== null && age >= Number(criteria.ageMin);
+    });
+  }
+  if (criteria.ageMax != null && criteria.ageMax !== '') {
+    patients = patients.filter(p => {
+      const age = _calcPatientAge(p.dob);
+      return age !== null && age <= Number(criteria.ageMax);
+    });
+  }
+  if (criteria.insurance) {
+    const q = criteria.insurance.toLowerCase();
+    patients = patients.filter(p => (p.insurance || '').toLowerCase().includes(q));
+  }
+  if (criteria.codeStatus) {
+    patients = patients.filter(p => (p.codeStatus || '').toLowerCase() === criteria.codeStatus.toLowerCase());
+  }
+  if (criteria.hasOverdueScreenings) {
+    patients = patients.filter(p => typeof getOverdueScreeningsCount === 'function' && getOverdueScreeningsCount(p) > 0);
+  }
+  if (criteria.hasUnsignedNotes) {
+    patients = patients.filter(p => typeof getUnsignedNotesCount === 'function' && getUnsignedNotesCount(p.id) > 0);
+  }
+  if (criteria.hasPendingOrders) {
+    patients = patients.filter(p => getOrdersByPatient(p.id).filter(o => o.status === 'Pending').length > 0);
+  }
+  if (criteria.diagnosis) {
+    const q = criteria.diagnosis.toLowerCase();
+    patients = patients.filter(p => {
+      const probs = typeof getActiveProblems === 'function' ? getActiveProblems(p.id) : [];
+      return probs.some(pr => (pr.name || '').toLowerCase().includes(q));
+    });
+  }
+  return patients;
+}
+
+function _calcPatientAge(dob) {
+  if (!dob) return null;
+  const d = new Date(dob + 'T00:00:00');
+  if (isNaN(d)) return null;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age;
+}
+
+/* ============================================================
+   Handoff Notes (per patient per list)
+   ============================================================ */
+function getHandoffNotes(listId, patientId) {
+  return loadAll(KEYS.handoffNotes)
+    .filter(n => n.listId === listId && n.patientId === patientId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function getHandoffNotesByList(listId) {
+  return loadAll(KEYS.handoffNotes)
+    .filter(n => n.listId === listId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function saveHandoffNote(data) {
+  const all = loadAll(KEYS.handoffNotes);
+  all.push({
+    id: generateId(),
+    listId: '',
+    patientId: '',
+    authorId: '',
+    text: '',
+    category: 'update',
+    createdAt: new Date().toISOString(),
+    ...data,
+  });
+  saveAll(KEYS.handoffNotes, all);
+  return all[all.length - 1];
+}
+
+function deleteHandoffNote(id) {
+  saveAll(KEYS.handoffNotes, loadAll(KEYS.handoffNotes).filter(n => n.id !== id));
+}
+
+/* ============================================================
+   List Subscriptions (live references to shared lists)
+   ============================================================ */
+function getListSubscriptions(providerId) {
+  return loadAll(KEYS.listSubscriptions).filter(s => s.subscriberId === providerId);
+}
+
+function subscribeToList(listId, subscriberId) {
+  const all = loadAll(KEYS.listSubscriptions);
+  if (all.some(s => s.listId === listId && s.subscriberId === subscriberId)) return null;
+  const sub = { id: generateId(), listId: listId, subscriberId: subscriberId, createdAt: new Date().toISOString() };
+  all.push(sub);
+  saveAll(KEYS.listSubscriptions, all);
+  return sub;
+}
+
+function unsubscribeFromList(listId, subscriberId) {
+  const all = loadAll(KEYS.listSubscriptions).filter(s => !(s.listId === listId && s.subscriberId === subscriberId));
+  saveAll(KEYS.listSubscriptions, all);
+}
+
+/* ============================================================
+   Enhanced Patient List Meta (priority, notes per patient per list)
+   ============================================================ */
+function getPatientListMeta(listId) {
+  const list = getPatientList(listId);
+  return (list && list.patientMeta) ? list.patientMeta : {};
+}
+
+function setPatientListMeta(listId, patientId, meta) {
+  const list = getPatientList(listId);
+  if (!list) return null;
+  if (!list.patientMeta) list.patientMeta = {};
+  list.patientMeta[patientId] = { ...(list.patientMeta[patientId] || {}), ...meta };
+  return savePatientList(list);
 }
 
 /* ============================================================
@@ -2169,4 +2596,585 @@ async function seedIfEmpty() {
   saveAppointment({ patientId: pat2.id, providerId: prov1.id, dateTime: apptDate(3, 14, 0), duration: 45, visitType: 'Annual Physical',  reason: 'Annual wellness exam',   status: 'Scheduled' });
   saveAppointment({ patientId: pat3.id, providerId: prov2.id, dateTime: apptDate(7, 10, 30), duration: 30, visitType: 'Follow-Up',       reason: 'Sore throat follow-up',  status: 'Scheduled' });
   saveAppointment({ patientId: pat1.id, providerId: prov1.id, dateTime: apptDate(9, 11, 0), duration: 60, visitType: 'New Patient',      reason: 'Comprehensive evaluation', status: 'Scheduled' });
+
+  // ===== Inpatient Infrastructure Seed Data =====
+  const hospital = saveHospital({ id: generateId(), name: 'Gusdorf Hospital' });
+
+  const wardCardio = saveWard({ id: generateId(), hospitalId: hospital.id, floor: 'Goose 1', unit: 'Cardiology', name: 'Cardiology - Goose 1', beds: 12 });
+  const wardNephro = saveWard({ id: generateId(), hospitalId: hospital.id, floor: 'Goose 2', unit: 'Nephrology', name: 'Nephrology - Goose 2', beds: 10 });
+  const wardHosp = saveWard({ id: generateId(), hospitalId: hospital.id, floor: 'Goose 3', unit: 'Hospitalist', name: 'Hospitalist - Goose 3', beds: 14 });
+  const wardHepat = saveWard({ id: generateId(), hospitalId: hospital.id, floor: 'Goose 3', unit: 'Hepatology', name: 'Hepatology - Goose 3', beds: 8 });
+  const wardSurg = saveWard({ id: generateId(), hospitalId: hospital.id, floor: 'Goose 4', unit: 'Surgery', name: 'Surgery - Goose 4', beds: 12 });
+  const wardNeuro = saveWard({ id: generateId(), hospitalId: hospital.id, floor: 'Goose 5', unit: 'Neurology', name: 'Neurology - Goose 5', beds: 10 });
+
+  // --- Cardiology (Goose 1) - 5 patients ---
+  const ip01 = savePatient({ id: generateId(), mrn: 'MRN001004', firstName: 'Harold', lastName: 'Jennings', dob: '1948-03-14', sex: 'M', phone: '(555) 201-1001', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc01 = saveEncounter({ id: generateId(), patientId: ip01.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Cardiology', dateTime: new Date('2026-02-20T07:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc01.id, chiefComplaint: 'CHF exacerbation with worsening dyspnea and bilateral lower extremity edema', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip01.id, wardId: wardCardio.id, bed: '1-01' });
+
+  const ip02 = savePatient({ id: generateId(), mrn: 'MRN001005', firstName: 'Gloria', lastName: 'Whitfield', dob: '1955-07-22', sex: 'F', phone: '(555) 201-1002', insurance: 'Aetna', createdAt: new Date().toISOString() });
+  const ipEnc02 = saveEncounter({ id: generateId(), patientId: ip02.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Cardiology', dateTime: new Date('2026-02-21T08:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc02.id, chiefComplaint: 'NSTEMI with troponin elevation and substernal chest pain', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip02.id, wardId: wardCardio.id, bed: '1-02' });
+
+  const ip03 = savePatient({ id: generateId(), mrn: 'MRN001006', firstName: 'Raymond', lastName: 'Okamoto', dob: '1960-11-05', sex: 'M', phone: '(555) 201-1003', insurance: 'BlueCross', createdAt: new Date().toISOString() });
+  const ipEnc03 = saveEncounter({ id: generateId(), patientId: ip03.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Cardiology', dateTime: new Date('2026-02-22T06:45:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc03.id, chiefComplaint: 'New-onset atrial fibrillation with rapid ventricular response', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip03.id, wardId: wardCardio.id, bed: '1-03' });
+
+  const ip04 = savePatient({ id: generateId(), mrn: 'MRN001007', firstName: 'Dolores', lastName: 'Pereira', dob: '1943-09-30', sex: 'F', phone: '(555) 201-1004', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc04 = saveEncounter({ id: generateId(), patientId: ip04.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Cardiology', dateTime: new Date('2026-02-23T10:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc04.id, chiefComplaint: 'Hypertensive emergency with SBP >220 and end-organ damage', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip04.id, wardId: wardCardio.id, bed: '1-04' });
+
+  const ip05 = savePatient({ id: generateId(), mrn: 'MRN001008', firstName: 'Winston', lastName: 'Abernathy', dob: '1970-01-18', sex: 'M', phone: '(555) 201-1005', insurance: 'UnitedHealth', createdAt: new Date().toISOString() });
+  const ipEnc05 = saveEncounter({ id: generateId(), patientId: ip05.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Cardiology', dateTime: new Date('2026-02-24T07:15:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc05.id, chiefComplaint: 'Acute pericarditis with pleuritic chest pain and diffuse ST elevation', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip05.id, wardId: wardCardio.id, bed: '1-05' });
+
+  // --- Nephrology (Goose 2) - 4 patients ---
+  const ip06 = savePatient({ id: generateId(), mrn: 'MRN001009', firstName: 'Evelyn', lastName: 'Matsuda', dob: '1952-04-09', sex: 'F', phone: '(555) 202-2001', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc06 = saveEncounter({ id: generateId(), patientId: ip06.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Nephrology', dateTime: new Date('2026-02-21T09:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc06.id, chiefComplaint: 'Acute kidney injury with creatinine rise from 1.2 to 4.8', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip06.id, wardId: wardNephro.id, bed: '2-01' });
+
+  const ip07 = savePatient({ id: generateId(), mrn: 'MRN001010', firstName: 'Terrence', lastName: 'McAllister', dob: '1965-12-27', sex: 'M', phone: '(555) 202-2002', insurance: 'Cigna', createdAt: new Date().toISOString() });
+  const ipEnc07 = saveEncounter({ id: generateId(), patientId: ip07.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Nephrology', dateTime: new Date('2026-02-22T11:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc07.id, chiefComplaint: 'CKD Stage 4 exacerbation with hyperkalemia and metabolic acidosis', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip07.id, wardId: wardNephro.id, bed: '2-02' });
+
+  const ip08 = savePatient({ id: generateId(), mrn: 'MRN001011', firstName: 'Priya', lastName: 'Raghavan', dob: '1978-06-03', sex: 'F', phone: '(555) 202-2003', insurance: 'BlueCross', createdAt: new Date().toISOString() });
+  const ipEnc08 = saveEncounter({ id: generateId(), patientId: ip08.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Nephrology', dateTime: new Date('2026-02-23T08:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc08.id, chiefComplaint: 'Nephrotic syndrome with 3+ proteinuria and anasarca', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip08.id, wardId: wardNephro.id, bed: '2-03' });
+
+  const ip09 = savePatient({ id: generateId(), mrn: 'MRN001012', firstName: 'Leonard', lastName: 'Dubois', dob: '1940-08-15', sex: 'M', phone: '(555) 202-2004', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc09 = saveEncounter({ id: generateId(), patientId: ip09.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Nephrology', dateTime: new Date('2026-02-24T07:45:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc09.id, chiefComplaint: 'ESRD requiring urgent hemodialysis initiation for volume overload', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip09.id, wardId: wardNephro.id, bed: '2-04' });
+
+  // --- Hospitalist (Goose 3) - 7 patients ---
+  const ip10 = savePatient({ id: generateId(), mrn: 'MRN001013', firstName: 'Margaret', lastName: 'Kowalski', dob: '1958-02-11', sex: 'F', phone: '(555) 203-3001', insurance: 'Aetna', createdAt: new Date().toISOString() });
+  const ipEnc10 = saveEncounter({ id: generateId(), patientId: ip10.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-20T14:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc10.id, chiefComplaint: 'Community-acquired pneumonia with fever, productive cough, and hypoxia', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip10.id, wardId: wardHosp.id, bed: '3-01' });
+
+  const ip11 = savePatient({ id: generateId(), mrn: 'MRN001014', firstName: 'Carlos', lastName: 'Delgado', dob: '1972-10-25', sex: 'M', phone: '(555) 203-3002', insurance: 'UnitedHealth', createdAt: new Date().toISOString() });
+  const ipEnc11 = saveEncounter({ id: generateId(), patientId: ip11.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-21T06:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc11.id, chiefComplaint: 'Sepsis secondary to urinary source with lactate 4.2', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip11.id, wardId: wardHosp.id, bed: '3-02' });
+
+  const ip12 = savePatient({ id: generateId(), mrn: 'MRN001015', firstName: 'Dorothy', lastName: 'Flemming', dob: '1946-05-19', sex: 'F', phone: '(555) 203-3003', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc12 = saveEncounter({ id: generateId(), patientId: ip12.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-22T09:15:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc12.id, chiefComplaint: 'Acute COPD exacerbation with increased work of breathing and wheezing', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip12.id, wardId: wardHosp.id, bed: '3-03' });
+
+  const ip13 = savePatient({ id: generateId(), mrn: 'MRN001016', firstName: 'Andre', lastName: 'Washington', dob: '1985-03-08', sex: 'M', phone: '(555) 203-3004', insurance: 'Cigna', createdAt: new Date().toISOString() });
+  const ipEnc13 = saveEncounter({ id: generateId(), patientId: ip13.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-23T12:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc13.id, chiefComplaint: 'Diabetic ketoacidosis with blood glucose 485 and anion gap 22', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip13.id, wardId: wardHosp.id, bed: '3-04' });
+
+  const ip14 = savePatient({ id: generateId(), mrn: 'MRN001017', firstName: 'Sandra', lastName: 'Nygaard', dob: '1968-07-14', sex: 'F', phone: '(555) 203-3005', insurance: 'BlueCross', createdAt: new Date().toISOString() });
+  const ipEnc14 = saveEncounter({ id: generateId(), patientId: ip14.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-25T08:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc14.id, chiefComplaint: 'Left lower extremity cellulitis with spreading erythema and fever', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip14.id, wardId: wardHosp.id, bed: '3-05' });
+
+  const ip15 = savePatient({ id: generateId(), mrn: 'MRN001018', firstName: 'James', lastName: 'Okonkwo', dob: '1953-11-02', sex: 'M', phone: '(555) 203-3006', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc15 = saveEncounter({ id: generateId(), patientId: ip15.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-26T07:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc15.id, chiefComplaint: 'Complicated UTI with pyelonephritis, fever 102.4, and flank pain', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip15.id, wardId: wardHosp.id, bed: '3-06' });
+
+  const ip16 = savePatient({ id: generateId(), mrn: 'MRN001019', firstName: 'Beatrice', lastName: 'Tanaka', dob: '1961-09-20', sex: 'F', phone: '(555) 203-3007', insurance: 'Aetna', createdAt: new Date().toISOString() });
+  const ipEnc16 = saveEncounter({ id: generateId(), patientId: ip16.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Hospitalist', dateTime: new Date('2026-02-27T10:45:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc16.id, chiefComplaint: 'Upper GI bleed with melena and hemoglobin drop from 12 to 7.8', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip16.id, wardId: wardHosp.id, bed: '3-07' });
+
+  // --- Hepatology (Goose 3) - 3 patients ---
+  const ip17 = savePatient({ id: generateId(), mrn: 'MRN001020', firstName: 'Victor', lastName: 'Salazar', dob: '1957-04-06', sex: 'M', phone: '(555) 203-4001', insurance: 'UnitedHealth', createdAt: new Date().toISOString() });
+  const ipEnc17 = saveEncounter({ id: generateId(), patientId: ip17.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Hepatology', dateTime: new Date('2026-02-22T13:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc17.id, chiefComplaint: 'Hepatic encephalopathy grade II with confusion and asterixis', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip17.id, wardId: wardHepat.id, bed: '3H-01' });
+
+  const ip18 = savePatient({ id: generateId(), mrn: 'MRN001021', firstName: 'Irene', lastName: 'Baxter', dob: '1950-12-31', sex: 'F', phone: '(555) 203-4002', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc18 = saveEncounter({ id: generateId(), patientId: ip18.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Hepatology', dateTime: new Date('2026-02-24T15:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc18.id, chiefComplaint: 'Esophageal variceal bleeding with hematemesis and hemodynamic instability', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip18.id, wardId: wardHepat.id, bed: '3H-02' });
+
+  const ip19 = savePatient({ id: generateId(), mrn: 'MRN001022', firstName: 'Nathan', lastName: 'Cho', dob: '1980-08-23', sex: 'M', phone: '(555) 203-4003', insurance: 'BlueCross', createdAt: new Date().toISOString() });
+  const ipEnc19 = saveEncounter({ id: generateId(), patientId: ip19.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Hepatology', dateTime: new Date('2026-02-26T09:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc19.id, chiefComplaint: 'Acute hepatitis with jaundice, AST 1200, ALT 1450', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip19.id, wardId: wardHepat.id, bed: '3H-03' });
+
+  // --- Surgery (Goose 4) - 5 patients ---
+  const ip20 = savePatient({ id: generateId(), mrn: 'MRN001023', firstName: 'Denise', lastName: 'Rivera', dob: '1974-01-29', sex: 'F', phone: '(555) 204-5001', insurance: 'Cigna', createdAt: new Date().toISOString() });
+  const ipEnc20 = saveEncounter({ id: generateId(), patientId: ip20.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Surgery', dateTime: new Date('2026-02-20T16:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc20.id, chiefComplaint: 'Post-appendectomy POD 1, monitoring for surgical site infection', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip20.id, wardId: wardSurg.id, bed: '4-01' });
+
+  const ip21 = savePatient({ id: generateId(), mrn: 'MRN001024', firstName: 'Franklin', lastName: 'Bergstrom', dob: '1966-06-12', sex: 'M', phone: '(555) 204-5002', insurance: 'Aetna', createdAt: new Date().toISOString() });
+  const ipEnc21 = saveEncounter({ id: generateId(), patientId: ip21.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Surgery', dateTime: new Date('2026-02-21T11:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc21.id, chiefComplaint: 'Post-laparoscopic cholecystectomy POD 2, tolerating clear liquids', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip21.id, wardId: wardSurg.id, bed: '4-02' });
+
+  const ip22 = savePatient({ id: generateId(), mrn: 'MRN001025', firstName: 'Miriam', lastName: 'Al-Rashid', dob: '1945-10-07', sex: 'F', phone: '(555) 204-5003', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc22 = saveEncounter({ id: generateId(), patientId: ip22.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Surgery', dateTime: new Date('2026-02-23T05:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc22.id, chiefComplaint: 'Small bowel obstruction with abdominal distension and vomiting, NGT placed', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip22.id, wardId: wardSurg.id, bed: '4-03' });
+
+  const ip23 = savePatient({ id: generateId(), mrn: 'MRN001026', firstName: 'George', lastName: 'Petrov', dob: '1941-02-14', sex: 'M', phone: '(555) 204-5004', insurance: 'Medicare', createdAt: new Date().toISOString() });
+  const ipEnc23 = saveEncounter({ id: generateId(), patientId: ip23.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Surgery', dateTime: new Date('2026-02-25T07:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc23.id, chiefComplaint: 'Right hip fracture s/p ORIF, weight bearing as tolerated, PT consult', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip23.id, wardId: wardSurg.id, bed: '4-04' });
+
+  const ip24 = savePatient({ id: generateId(), mrn: 'MRN001027', firstName: 'Catherine', lastName: 'Huang', dob: '1959-08-30', sex: 'F', phone: '(555) 204-5005', insurance: 'UnitedHealth', createdAt: new Date().toISOString() });
+  const ipEnc24 = saveEncounter({ id: generateId(), patientId: ip24.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Surgery', dateTime: new Date('2026-02-27T08:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc24.id, chiefComplaint: 'Post-sigmoid colectomy POD 3 for diverticular perforation, drain in place', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip24.id, wardId: wardSurg.id, bed: '4-05' });
+
+  // --- Neurology (Goose 5) - 4 patients ---
+  const ip25 = savePatient({ id: generateId(), mrn: 'MRN001028', firstName: 'Robert', lastName: 'Lindqvist', dob: '1956-05-17', sex: 'M', phone: '(555) 205-6001', insurance: 'BlueCross', createdAt: new Date().toISOString() });
+  const ipEnc25 = saveEncounter({ id: generateId(), patientId: ip25.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Neurology', dateTime: new Date('2026-02-22T04:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc25.id, chiefComplaint: 'Acute ischemic stroke with left-sided hemiparesis, tPA administered', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip25.id, wardId: wardNeuro.id, bed: '5-01' });
+
+  const ip26 = savePatient({ id: generateId(), mrn: 'MRN001029', firstName: 'Angela', lastName: 'Baptiste', dob: '1990-11-08', sex: 'F', phone: '(555) 205-6002', insurance: 'Cigna', createdAt: new Date().toISOString() });
+  const ipEnc26 = saveEncounter({ id: generateId(), patientId: ip26.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Neurology', dateTime: new Date('2026-02-24T22:15:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc26.id, chiefComplaint: 'New-onset seizure disorder with two witnessed generalized tonic-clonic seizures', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip26.id, wardId: wardNeuro.id, bed: '5-02' });
+
+  const ip27 = savePatient({ id: generateId(), mrn: 'MRN001030', firstName: 'Thomas', lastName: 'Eriksson', dob: '1982-03-26', sex: 'M', phone: '(555) 205-6003', insurance: 'Aetna', createdAt: new Date().toISOString() });
+  const ipEnc27 = saveEncounter({ id: generateId(), patientId: ip27.id, providerId: prov1.id, visitType: 'Inpatient', visitSubtype: 'Neurology', dateTime: new Date('2026-02-25T11:00:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc27.id, chiefComplaint: 'Guillain-Barre syndrome with progressive ascending weakness and areflexia', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip27.id, wardId: wardNeuro.id, bed: '5-03' });
+
+  const ip28 = savePatient({ id: generateId(), mrn: 'MRN001031', firstName: 'Yolanda', lastName: 'Fischer', dob: '1976-07-04', sex: 'F', phone: '(555) 205-6004', insurance: 'UnitedHealth', createdAt: new Date().toISOString() });
+  const ipEnc28 = saveEncounter({ id: generateId(), patientId: ip28.id, providerId: prov2.id, visitType: 'Inpatient', visitSubtype: 'Neurology', dateTime: new Date('2026-02-28T08:30:00').toISOString(), status: 'Open' });
+  saveNote({ id: generateId(), encounterId: ipEnc28.id, chiefComplaint: 'Multiple sclerosis exacerbation with optic neuritis and new sensory deficits', signed: false, lastModified: new Date().toISOString() });
+  saveBedAssignment({ patientId: ip28.id, wardId: wardNeuro.id, bed: '5-04' });
+
+  // Update MRN counter to account for 28 new patients (MRN001004-MRN001031 -> next is 1032)
+  safeSave(KEYS.mrnCounter, '1032');
+}
+
+function seedExtraPatients() {
+  if (getPatients().find(p => p.mrn === 'MRN002001')) return; // already seeded
+  const provs = getProviders();
+  const p1 = provs[0] || { id: 'prov1' };
+  const p2 = provs[1] || p1;
+
+  /* ── 1. Margaret Chen ── */
+  const s1 = savePatient({ id: generateId(), mrn: 'MRN002001', firstName: 'Margaret', lastName: 'Chen', dob: '1959-03-14', sex: 'Female', phone: '(555) 310-1001', insurance: 'Medicare Advantage', email: 'margaret.chen@email.com', addressStreet: '84 Birchwood Lane', addressCity: 'Springfield', addressState: 'IL', addressZip: '62703', emergencyContactName: 'David Chen', emergencyContactPhone: '(555) 310-2001', emergencyContactRelationship: 'Son', pharmacyName: 'CVS Pharmacy #1122', pharmacyPhone: '(555) 400-1001', pharmacyFax: '(555) 400-1002', panelProviders: [p1.id], createdAt: new Date('2023-02-10').toISOString() });
+  savePatientAllergy({ patientId: s1.id, allergen: 'Penicillin', reaction: 'Urticaria, angioedema', severity: 'Severe', type: 'Drug' });
+  savePatientAllergy({ patientId: s1.id, allergen: 'Contrast dye (iodinated)', reaction: 'Anaphylaxis', severity: 'Life-threatening', type: 'Drug' });
+  savePatientMedication({ patientId: s1.id, name: 'Metformin', dose: '1000', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2016-05-01', indication: 'Type 2 Diabetes', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s1.id, name: 'Lisinopril', dose: '20', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2014-08-01', indication: 'HTN / CKD nephroprotection', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s1.id, name: 'Atorvastatin', dose: '40', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2017-01-15', indication: 'Dyslipidemia / CAD', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s1.id, name: 'Aspirin', dose: '81', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2017-01-15', indication: 'CAD secondary prevention', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s1.id, name: 'Amlodipine', dose: '5', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2020-03-01', indication: 'Hypertension', prescribedBy: 'Dr. Chen' });
+  saveActiveProblem({ patientId: s1.id, name: 'Type 2 Diabetes Mellitus', icd10: 'E11.9', onset: '2016-05-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-15', notes: 'HbA1c 7.4% (Oct 2025). On metformin, monitoring for CKD progression.' });
+  saveActiveProblem({ patientId: s1.id, name: 'CKD Stage 3a', icd10: 'N18.31', onset: '2019-06-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-15', notes: 'eGFR 48 mL/min. Avoid NSAIDs, contrast. Annual nephrology follow-up.' });
+  saveActiveProblem({ patientId: s1.id, name: 'Essential Hypertension', icd10: 'I10', onset: '2014-08-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-10-15', notes: 'BP 136/82 at last visit. On lisinopril + amlodipine.' });
+  saveActiveProblem({ patientId: s1.id, name: 'Coronary Artery Disease', icd10: 'I25.10', onset: '2017-01-10', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-15', notes: 'Single-vessel disease on cath 2017, medically managed. On statin + ASA.' });
+  savePatientDiagnosis({ patientId: s1.id, name: 'Type 2 Diabetes Mellitus', icd10: 'E11.9', onsetDate: '2016-05-01', evidenceNotes: 'Fasting glucose 228 mg/dL (May 2016). HbA1c 9.1% at diagnosis. Now 7.4% (Oct 2025).' });
+  savePatientDiagnosis({ patientId: s1.id, name: 'CKD Stage 3a', icd10: 'N18.31', onsetDate: '2019-06-01', evidenceNotes: 'eGFR 48 (stable). Urinalysis with microalbuminuria 45 mg/g. Lisinopril for nephroprotection.' });
+  savePatientDiagnosis({ patientId: s1.id, name: 'Coronary Artery Disease', icd10: 'I25.10', onsetDate: '2017-01-10', evidenceNotes: 'Cath Jan 2017: 70% stenosis LAD, medically managed. Stress test 2024: no ischemia.' });
+  saveSocialHistory({ patientId: s1.id, smokingStatus: 'Former smoker (quit 2010)', tobaccoUse: '15 pack-years', alcoholUse: 'None', substanceUse: 'None', occupation: 'Retired accountant', maritalStatus: 'Married', livingSituation: 'Lives with husband', exercise: 'Light — 20 min walks daily', diet: 'Low carb, low sodium', notes: '' });
+  saveFamilyHistory({ patientId: s1.id, mother: 'T2DM, HTN — deceased age 78 (stroke)', father: 'MI age 60 — deceased age 62', siblings: '1 brother: T2DM, CKD', maternalGrandparents: 'T2DM, HTN', paternalGrandparents: 'CAD', other: '', notes: 'Strong cardiometabolic family history.' });
+  savePatientSurgery({ patientId: s1.id, procedure: 'Coronary Angiography', date: '2017-01-10', hospital: 'University Medical Center', surgeon: 'Dr. Rodriguez', notes: 'Single-vessel LAD disease, medical management elected.' });
+  savePatientSurgery({ patientId: s1.id, procedure: 'Cholecystectomy (laparoscopic)', date: '2009-07-22', hospital: 'General Hospital', surgeon: 'Dr. Kim', notes: 'Symptomatic cholelithiasis, uncomplicated.' });
+  const e1a = saveEncounter({ id: generateId(), patientId: s1.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-10-15T10:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e1a.id, chiefComplaint: 'Diabetes and CKD management follow-up.', hpi: 'Margaret is a 66-year-old female with T2DM, CKD 3a, CAD, and HTN presenting for routine follow-up. Reports good medication compliance. Home BP logs averaging 138/84. Denies chest pain, dyspnea, edema. Mild fatigue.', ros: 'Constitutional: Mild fatigue. CV: No chest pain. Pulmonary: No dyspnea. GI: No nausea. GU: No dysuria. Neuro: No focal deficits.', physicalExam: 'Vitals: See above. General: Well-appearing, no distress. CV: RRR, no murmurs. Lungs: CTA bilaterally. Abdomen: Soft, non-tender. Extremities: No edema. Skin: No lesions.', assessment: '1. T2DM (E11.9) — HbA1c 7.4%, adequate control.\n2. CKD 3a (N18.31) — eGFR 48, stable.\n3. HTN (I10) — near goal, continue current regimen.\n4. CAD (I25.10) — stable, no anginal symptoms.', plan: '1. Continue metformin 1000mg BID; add empagliflozin 10mg QDay for cardiorenal benefit.\n2. Repeat BMP and urine ACR in 3 months.\n3. Refer to nephrology for CKD co-management.\n4. Continue ASA 81mg and atorvastatin 40mg.\n5. Follow-up in 3 months.', signed: true, signedBy: p1.id, signedAt: new Date('2025-10-15T11:00:00').toISOString(), lastModified: new Date('2025-10-15T11:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e1a.id, patientId: s1.id, bpSystolic: '138', bpDiastolic: '84', heartRate: '76', respiratoryRate: '16', tempF: '98.2', spo2: '97', weightLbs: '168', heightIn: '62', recordedAt: new Date('2025-10-15T10:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s1.id, encounterId: e1a.id, panel: 'Comprehensive Metabolic Panel', resultDate: new Date('2025-10-15T13:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'Sodium', value: '138', unit: 'mEq/L', referenceRange: '136–145', flag: 'Normal' }, { name: 'Potassium', value: '4.3', unit: 'mEq/L', referenceRange: '3.5–5.1', flag: 'Normal' }, { name: 'BUN', value: '22', unit: 'mg/dL', referenceRange: '7–20', flag: 'High' }, { name: 'Creatinine', value: '1.3', unit: 'mg/dL', referenceRange: '0.6–1.2', flag: 'High' }, { name: 'eGFR', value: '48', unit: 'mL/min/1.73m²', referenceRange: '>60', flag: 'Low' }, { name: 'Glucose', value: '142', unit: 'mg/dL', referenceRange: '70–99', flag: 'High' }, { name: 'ALT', value: '28', unit: 'U/L', referenceRange: '7–56', flag: 'Normal' }], notes: 'Stable CKD. Elevated glucose consistent with T2DM.' });
+  saveLabResult({ patientId: s1.id, encounterId: e1a.id, panel: 'HbA1c', resultDate: new Date('2025-10-15T13:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'HbA1c', value: '7.4', unit: '%', referenceRange: '<7.0', flag: 'High' }], notes: 'Mildly above target. Consider medication optimization.' });
+  saveImmunization({ patientId: s1.id, vaccine: 'Influenza (IIV4)', date: '2024-10-01', lot: 'FL24-C', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+  saveImmunization({ patientId: s1.id, vaccine: 'Pneumococcal (PPSV23)', date: '2022-03-15', lot: 'PN22-A', manufacturer: 'Merck', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'Indicated for CKD and DM.' });
+  saveReferral({ patientId: s1.id, encounterId: e1a.id, specialty: 'Nephrology', providerName: 'Dr. Anita Sharma', reason: 'CKD 3a co-management, empagliflozin initiation, proteinuria monitoring.', urgency: 'Routine', status: 'Sent', referralDate: new Date('2025-10-15').toISOString(), appointmentDate: '', responseNotes: '' });
+
+  /* ── 2. David Washington ── */
+  const s2 = savePatient({ id: generateId(), mrn: 'MRN002002', firstName: 'David', lastName: 'Washington', dob: '1972-08-05', sex: 'Male', phone: '(555) 310-1002', insurance: 'BlueCross PPO', email: 'david.washington@email.com', addressStreet: '312 Elm Street', addressCity: 'Springfield', addressState: 'IL', addressZip: '62701', emergencyContactName: 'Tamara Washington', emergencyContactPhone: '(555) 310-2002', emergencyContactRelationship: 'Wife', pharmacyName: 'Walgreens #2255', pharmacyPhone: '(555) 400-2001', pharmacyFax: '(555) 400-2002', panelProviders: [p1.id], createdAt: new Date('2023-05-20').toISOString() });
+  savePatientAllergy({ patientId: s2.id, allergen: 'Codeine', reaction: 'Nausea, vomiting, dysphoria', severity: 'Moderate', type: 'Drug' });
+  savePatientMedication({ patientId: s2.id, name: 'Lisinopril', dose: '10', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2019-04-01', indication: 'Hypertension', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s2.id, name: 'CPAP therapy', dose: '10', unit: 'cmH2O', route: 'Inhaled', frequency: 'QNight', status: 'Current', startDate: '2021-09-01', indication: 'Obstructive Sleep Apnea', prescribedBy: 'Dr. Nguyen' });
+  savePatientMedication({ patientId: s2.id, name: 'Omeprazole', dose: '20', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2022-01-01', indication: 'GERD', prescribedBy: 'Dr. Chen' });
+  saveActiveProblem({ patientId: s2.id, name: 'Essential Hypertension', icd10: 'I10', onset: '2019-04-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-09-10', notes: 'BP 142/88 at last visit. On lisinopril 10mg.' });
+  saveActiveProblem({ patientId: s2.id, name: 'Obesity', icd10: 'E66.9', onset: '2015-01-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-09-10', notes: 'BMI 36.2. Counseled on diet, exercise, weight loss program referral pending.' });
+  saveActiveProblem({ patientId: s2.id, name: 'Obstructive Sleep Apnea', icd10: 'G47.33', onset: '2021-09-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-09-10', notes: 'AHI 28 on PSG. On CPAP 10 cmH2O. Compliance ~70%.' });
+  saveActiveProblem({ patientId: s2.id, name: 'GERD', icd10: 'K21.0', onset: '2022-01-01', status: 'Active', priority: 'Low', lastReviewDate: '2025-09-10', notes: 'Typical heartburn, responds to PPI.' });
+  savePatientDiagnosis({ patientId: s2.id, name: 'Obstructive Sleep Apnea', icd10: 'G47.33', onsetDate: '2021-09-01', evidenceNotes: 'PSG Sept 2021: AHI 28, O2 nadir 82%. CPAP initiated, good symptomatic response.' });
+  savePatientDiagnosis({ patientId: s2.id, name: 'Obesity', icd10: 'E66.9', onsetDate: '2015-01-01', evidenceNotes: 'BMI 36.2 (weight 245 lbs, height 69 in). Metabolic panel normal. No T2DM yet.' });
+  saveSocialHistory({ patientId: s2.id, smokingStatus: 'Never smoker', tobaccoUse: 'None', alcoholUse: '2–3 drinks/week', substanceUse: 'None', occupation: 'High school football coach', maritalStatus: 'Married', livingSituation: 'Lives with wife and two children', exercise: 'Moderate — coaching activities, light gym', diet: 'High calorie, working on improvement', notes: '' });
+  saveFamilyHistory({ patientId: s2.id, mother: 'T2DM, HTN — alive, age 72', father: 'HTN, MI age 55 — deceased age 67', siblings: '2 brothers — both HTN, 1 T2DM', maternalGrandparents: 'T2DM, HTN', paternalGrandparents: 'CAD, stroke', other: '', notes: 'Strong family history of HTN and metabolic disease.' });
+  const e2a = saveEncounter({ id: generateId(), patientId: s2.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-09-10T14:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e2a.id, chiefComplaint: 'HTN follow-up, weight management.', hpi: 'David is a 53-year-old male with HTN, obesity, OSA, and GERD presenting for follow-up. BP home logs averaging 146/90. CPAP compliance ~70%, reports improved energy. Weight up 4 lbs since last visit. Denies chest pain or dyspnea.', assessment: '1. HTN (I10) — suboptimally controlled, uptitrate lisinopril.\n2. Obesity (E66.9) — BMI 36.2, refer to weight management.\n3. OSA (G47.33) — on CPAP, improve compliance.\n4. GERD (K21.0) — stable on omeprazole.', plan: '1. Increase lisinopril to 20mg QDay.\n2. Refer to weight management program.\n3. Reinforce CPAP compliance; follow-up with sleep medicine.\n4. Continue omeprazole 20mg QDay.\n5. CBC, BMP, lipid panel ordered.\n6. Follow-up 6 weeks.', signed: true, signedBy: p1.id, signedAt: new Date('2025-09-10T15:00:00').toISOString(), lastModified: new Date('2025-09-10T15:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e2a.id, patientId: s2.id, bpSystolic: '144', bpDiastolic: '90', heartRate: '82', respiratoryRate: '16', tempF: '98.6', spo2: '96', weightLbs: '245', heightIn: '69', recordedAt: new Date('2025-09-10T14:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s2.id, encounterId: e2a.id, panel: 'Lipid Panel', resultDate: new Date('2025-09-10T17:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'Total Cholesterol', value: '218', unit: 'mg/dL', referenceRange: '<200', flag: 'High' }, { name: 'LDL', value: '138', unit: 'mg/dL', referenceRange: '<100', flag: 'High' }, { name: 'HDL', value: '38', unit: 'mg/dL', referenceRange: '>40', flag: 'Low' }, { name: 'Triglycerides', value: '212', unit: 'mg/dL', referenceRange: '<150', flag: 'High' }], notes: 'Dyslipidemia. Consider statin therapy.' });
+  saveImmunization({ patientId: s2.id, vaccine: 'Influenza (IIV4)', date: '2024-10-15', lot: 'FL24-D', manufacturer: 'AstraZeneca', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+
+  /* ── 3. Sarah O'Brien ── */
+  const s3 = savePatient({ id: generateId(), mrn: 'MRN002003', firstName: 'Sarah', lastName: "O'Brien", dob: '1986-11-30', sex: 'Female', phone: '(555) 310-1003', insurance: 'Aetna HMO', email: 'sarah.obrien@email.com', addressStreet: '57 Willow Court', addressCity: 'Springfield', addressState: 'IL', addressZip: '62706', emergencyContactName: 'Patrick O\'Brien', emergencyContactPhone: '(555) 310-2003', emergencyContactRelationship: 'Husband', pharmacyName: 'Rite Aid #3341', pharmacyPhone: '(555) 400-3001', pharmacyFax: '(555) 400-3002', panelProviders: [p1.id], createdAt: new Date('2022-08-15').toISOString() });
+  savePatientAllergy({ patientId: s3.id, allergen: 'Sulfonamides', reaction: 'Maculopapular rash', severity: 'Mild', type: 'Drug' });
+  savePatientAllergy({ patientId: s3.id, allergen: 'NSAIDs', reaction: 'GI bleeding, worsening IBD symptoms', severity: 'Moderate', type: 'Drug' });
+  savePatientMedication({ patientId: s3.id, name: 'Mesalamine', dose: '800', unit: 'mg', route: 'PO', frequency: 'TID', status: 'Current', startDate: '2018-03-01', indication: "Crohn's Disease maintenance", prescribedBy: 'Dr. Patel' });
+  savePatientMedication({ patientId: s3.id, name: 'Azathioprine', dose: '100', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2020-06-01', indication: "Crohn's Disease immunomodulation", prescribedBy: 'Dr. Patel' });
+  savePatientMedication({ patientId: s3.id, name: 'Ferrous sulfate', dose: '325', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2023-01-01', indication: 'Iron deficiency anemia', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s3.id, name: 'Sertraline', dose: '50', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2021-04-01', indication: 'Anxiety disorder', prescribedBy: 'Dr. Chen' });
+  saveActiveProblem({ patientId: s3.id, name: "Crohn's Disease", icd10: 'K50.90', onset: '2018-03-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-08-20', notes: 'Ileocolonic disease. Currently in remission on mesalamine + azathioprine. GI follow-up q6mo.' });
+  saveActiveProblem({ patientId: s3.id, name: 'Iron Deficiency Anemia', icd10: 'D50.9', onset: '2023-01-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-08-20', notes: 'Secondary to chronic GI blood loss. On ferrous sulfate BID. Hgb 10.8 (Aug 2025).' });
+  saveActiveProblem({ patientId: s3.id, name: 'Generalized Anxiety Disorder', icd10: 'F41.1', onset: '2021-04-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-08-20', notes: 'On sertraline 50mg. Engaged in CBT.' });
+  savePatientDiagnosis({ patientId: s3.id, name: "Crohn's Disease, ileocolonic", icd10: 'K50.90', onsetDate: '2018-03-01', evidenceNotes: 'Colonoscopy Mar 2018: discontinuous ileocolonic inflammation with skip lesions. Biopsy: granulomatous inflammation. Currently in remission (CDAI <150, CRP 4.2 mg/L).' });
+  savePatientDiagnosis({ patientId: s3.id, name: 'Iron Deficiency Anemia', icd10: 'D50.9', onsetDate: '2023-01-01', evidenceNotes: 'Ferritin 6 ng/mL, Fe sat 8%, Hgb 9.2 g/dL at diagnosis. Now Hgb 10.8 on ferrous sulfate.' });
+  saveSocialHistory({ patientId: s3.id, smokingStatus: 'Never smoker', tobaccoUse: 'None', alcoholUse: 'Rare — avoids due to IBD', substanceUse: 'None', occupation: 'Graphic designer (remote)', maritalStatus: 'Married', livingSituation: 'Lives with husband and 1 child', exercise: 'Light — walks, yoga during remission', diet: 'Low-residue, avoids raw vegetables and high-fiber foods', notes: '' });
+  saveFamilyHistory({ patientId: s3.id, mother: 'Ulcerative colitis — alive, age 61', father: 'HTN — alive, age 64', siblings: '1 sister: Crohn\'s disease (dx 2022)', maternalGrandparents: 'IBD (unspecified)', paternalGrandparents: 'Unknown', other: '', notes: 'IBD clusters in family.' });
+  savePatientSurgery({ patientId: s3.id, procedure: 'Ileoscopy with biopsy', date: '2018-03-15', hospital: 'General Hospital', surgeon: 'Dr. Patel', notes: 'Diagnostic. Confirmed Crohn\'s ileocolonic. No resection needed.' });
+  const e3a = saveEncounter({ id: generateId(), patientId: s3.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-08-20T09:30:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e3a.id, chiefComplaint: "Crohn's follow-up, anemia check.", hpi: "Sarah is a 38-year-old female with Crohn's disease (ileocolonic, in remission) and iron deficiency anemia presenting for follow-up. No abdominal pain, diarrhea, or bleeding since last visit. Taking ferrous sulfate BID. Reports mild fatigue but improved from 3 months ago. Sertraline tolerated well.", assessment: "1. Crohn's disease (K50.90) — in remission.\n2. Iron deficiency anemia (D50.9) — improving on supplementation.\n3. Anxiety (F41.1) — stable on sertraline.", plan: "1. Continue mesalamine 800mg TID and azathioprine 100mg QDay.\n2. Continue ferrous sulfate BID; recheck CBC in 8 weeks.\n3. Continue sertraline 50mg; reinforce CBT.\n4. GI referral for colonoscopy surveillance in 6 months.\n5. Follow-up 3 months.", signed: true, signedBy: p1.id, signedAt: new Date('2025-08-20T10:15:00').toISOString(), lastModified: new Date('2025-08-20T10:15:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e3a.id, patientId: s3.id, bpSystolic: '110', bpDiastolic: '70', heartRate: '88', respiratoryRate: '14', tempF: '98.4', spo2: '99', weightLbs: '128', heightIn: '64', recordedAt: new Date('2025-08-20T09:35:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s3.id, encounterId: e3a.id, panel: 'CBC', resultDate: new Date('2025-08-20T12:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'WBC', value: '5.8', unit: 'K/uL', referenceRange: '4.5–11.0', flag: 'Normal' }, { name: 'Hemoglobin', value: '10.8', unit: 'g/dL', referenceRange: '12.0–16.0', flag: 'Low' }, { name: 'Hematocrit', value: '33.2', unit: '%', referenceRange: '36–46', flag: 'Low' }, { name: 'MCV', value: '74', unit: 'fL', referenceRange: '80–100', flag: 'Low' }, { name: 'Ferritin', value: '14', unit: 'ng/mL', referenceRange: '12–150', flag: 'Normal' }, { name: 'Platelets', value: '290', unit: 'K/uL', referenceRange: '150–400', flag: 'Normal' }], notes: 'Microcytic anemia improving on iron supplementation. Ferritin normalizing.' });
+  saveImmunization({ patientId: s3.id, vaccine: 'Influenza (IIV4)', date: '2024-10-20', lot: 'FL24-E', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+  saveImmunization({ patientId: s3.id, vaccine: 'Hepatitis B series (complete)', date: '2022-09-01', lot: 'HB22-A', manufacturer: 'Merck', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'Indicated for immunomodulator use.' });
+
+  /* ── 4. James Patel ── */
+  const s4 = savePatient({ id: generateId(), mrn: 'MRN002004', firstName: 'James', lastName: 'Patel', dob: '1953-06-22', sex: 'Male', phone: '(555) 310-1004', insurance: 'Medicare', email: 'james.patel@email.com', addressStreet: '929 Oakwood Drive', addressCity: 'Springfield', addressState: 'IL', addressZip: '62704', emergencyContactName: 'Priya Patel', emergencyContactPhone: '(555) 310-2004', emergencyContactRelationship: 'Wife', pharmacyName: 'CVS Pharmacy #3344', pharmacyPhone: '(555) 400-4001', pharmacyFax: '(555) 400-4002', panelProviders: [p1.id], createdAt: new Date('2022-01-05').toISOString() });
+  savePatientAllergy({ patientId: s4.id, allergen: 'ACE Inhibitors', reaction: 'Cough', severity: 'Mild', type: 'Drug' });
+  savePatientAllergy({ patientId: s4.id, allergen: 'Aspirin', reaction: 'Bronchospasm', severity: 'Severe', type: 'Drug' });
+  savePatientMedication({ patientId: s4.id, name: 'Tiotropium', dose: '18', unit: 'mcg', route: 'Inhaled', frequency: 'QDay', status: 'Current', startDate: '2016-02-01', indication: 'COPD maintenance', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s4.id, name: 'Albuterol MDI', dose: '90', unit: 'mcg', route: 'Inhaled', frequency: 'PRN', status: 'Current', startDate: '2016-02-01', indication: 'COPD rescue', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s4.id, name: 'Apixaban', dose: '5', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2019-08-01', indication: 'Atrial fibrillation — stroke prevention', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s4.id, name: 'Metoprolol succinate', dose: '50', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2019-08-01', indication: 'A-fib rate control / CHF', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s4.id, name: 'Furosemide', dose: '40', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2020-03-01', indication: 'CHF volume management', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s4.id, name: 'Spironolactone', dose: '25', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2020-03-01', indication: 'CHF — neurohormonal blockade', prescribedBy: 'Dr. Chen' });
+  saveActiveProblem({ patientId: s4.id, name: 'COPD — Gold Stage 3', icd10: 'J44.1', onset: '2016-02-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-11-01', notes: 'FEV1 42% predicted. On tiotropium QDay + albuterol PRN. 1 exacerbation past year.' });
+  saveActiveProblem({ patientId: s4.id, name: 'Atrial Fibrillation', icd10: 'I48.91', onset: '2019-08-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-11-01', notes: 'Persistent A-fib. CHA2DS2-VASc 4 — on apixaban 5mg BID. Rate controlled with metoprolol.' });
+  saveActiveProblem({ patientId: s4.id, name: 'Heart Failure with Reduced EF (HFrEF)', icd10: 'I50.20', onset: '2020-03-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-11-01', notes: 'EF 38% on echo 2024. On metoprolol + furosemide + spironolactone. NYHA Class II.' });
+  savePatientDiagnosis({ patientId: s4.id, name: 'COPD', icd10: 'J44.1', onsetDate: '2016-02-01', evidenceNotes: 'PFTs Feb 2016: FEV1/FVC 0.58, FEV1 42% predicted. 45 pack-year smoking history. Now on LAMA monotherapy.' });
+  savePatientDiagnosis({ patientId: s4.id, name: 'Atrial Fibrillation', icd10: 'I48.91', onsetDate: '2019-08-01', evidenceNotes: 'Persistent A-fib on ECG Aug 2019. CHA2DS2-VASc score 4. Anticoagulated with apixaban. Rate-controlled (resting HR <80).' });
+  savePatientDiagnosis({ patientId: s4.id, name: 'HFrEF', icd10: 'I50.20', onsetDate: '2020-03-01', evidenceNotes: 'Echo Mar 2020: EF 38%, mild LV dilation. NYHA Class II. On GDMT: beta-blocker, loop diuretic, MRA.' });
+  saveSocialHistory({ patientId: s4.id, smokingStatus: 'Former smoker (quit 2010)', tobaccoUse: '45 pack-years', alcoholUse: 'None', substanceUse: 'None', occupation: 'Retired pharmacist', maritalStatus: 'Married', livingSituation: 'Lives with wife, single-story home', exercise: 'Very limited — dyspnea on minimal exertion', diet: 'Cardiac diet, 2g Na restriction', notes: 'DNR/DNI on file.' });
+  saveFamilyHistory({ patientId: s4.id, mother: 'COPD, HTN — deceased age 74', father: 'MI age 58, T2DM — deceased age 66', siblings: '2 siblings: 1 brother COPD, 1 sister HTN', maternalGrandparents: 'COPD (smokers)', paternalGrandparents: 'CAD', other: '', notes: 'Strong cardiopulmonary family history.' });
+  savePatientSurgery({ patientId: s4.id, procedure: 'DC Cardioversion', date: '2019-10-15', hospital: 'University Medical Center', surgeon: 'Dr. Shah', notes: 'Attempted cardioversion for A-fib; sinus rhythm restored briefly, reverted to A-fib within 6 weeks.' });
+  const e4a = saveEncounter({ id: generateId(), patientId: s4.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-11-01T11:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e4a.id, chiefComplaint: 'CHF/COPD/A-fib management.', hpi: 'James is a 72-year-old male with COPD Gold 3, persistent A-fib, and HFrEF (EF 38%) presenting for quarterly follow-up. Reports stable dyspnea (NYHA Class II). No new edema. Weight stable. No anticoagulation issues.', assessment: '1. COPD (J44.1) — Gold 3, stable. Continue LAMA + rescue inhaler.\n2. A-fib (I48.91) — rate controlled, on apixaban.\n3. HFrEF (I50.20) — compensated, EF 38%, continue GDMT.', plan: '1. Continue tiotropium, albuterol PRN.\n2. Continue apixaban 5mg BID — do not discontinue.\n3. Continue metoprolol 50mg, furosemide 40mg, spironolactone 25mg.\n4. Echo in 6 months to reassess EF.\n5. Cardiology follow-up in 3 months.\n6. Flu and pneumococcal vaccines administered today.', signed: true, signedBy: p1.id, signedAt: new Date('2025-11-01T12:00:00').toISOString(), lastModified: new Date('2025-11-01T12:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e4a.id, patientId: s4.id, bpSystolic: '122', bpDiastolic: '74', heartRate: '68', respiratoryRate: '18', tempF: '98.0', spo2: '94', weightLbs: '176', heightIn: '70', recordedAt: new Date('2025-11-01T11:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s4.id, encounterId: e4a.id, panel: 'BNP + BMP', resultDate: new Date('2025-11-01T14:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'BNP', value: '310', unit: 'pg/mL', referenceRange: '<100', flag: 'High' }, { name: 'Creatinine', value: '1.4', unit: 'mg/dL', referenceRange: '0.7–1.3', flag: 'High' }, { name: 'Potassium', value: '4.6', unit: 'mEq/L', referenceRange: '3.5–5.1', flag: 'Normal' }, { name: 'Sodium', value: '136', unit: 'mEq/L', referenceRange: '136–145', flag: 'Normal' }], notes: 'Mildly elevated BNP — stable from prior 340. Mild CKD likely cardiorenal.' });
+  saveImmunization({ patientId: s4.id, vaccine: 'Influenza (IIV4)', date: '2025-11-01', lot: 'FL25-A', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p1.id, nextDue: '2026-10-01', notes: '' });
+  saveImmunization({ patientId: s4.id, vaccine: 'Pneumococcal (PCV20)', date: '2025-11-01', lot: 'PN25-B', manufacturer: 'Pfizer', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'Indicated for COPD and age >65.' });
+
+  /* ── 5. Patricia Rodriguez ── */
+  const s5 = savePatient({ id: generateId(), mrn: 'MRN002005', firstName: 'Patricia', lastName: 'Rodriguez', dob: '1969-12-04', sex: 'Female', phone: '(555) 310-1005', insurance: 'Medicaid', email: 'patricia.rodriguez@email.com', addressStreet: '225 Pine Street', addressCity: 'Springfield', addressState: 'IL', addressZip: '62702', emergencyContactName: 'Carlos Rodriguez', emergencyContactPhone: '(555) 310-2005', emergencyContactRelationship: 'Son', pharmacyName: 'Walgreens #4422', pharmacyPhone: '(555) 400-5001', pharmacyFax: '(555) 400-5002', panelProviders: [p2.id], createdAt: new Date('2021-04-12').toISOString() });
+  savePatientAllergy({ patientId: s5.id, allergen: 'Penicillin', reaction: 'Rash', severity: 'Mild', type: 'Drug' });
+  savePatientAllergy({ patientId: s5.id, allergen: 'Sulfonamides', reaction: 'Stevens-Johnson syndrome', severity: 'Life-threatening', type: 'Drug' });
+  savePatientMedication({ patientId: s5.id, name: 'Hydroxychloroquine', dose: '200', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2015-06-01', indication: 'Systemic Lupus Erythematosus', prescribedBy: 'Dr. Park' });
+  savePatientMedication({ patientId: s5.id, name: 'Prednisone', dose: '5', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2023-03-01', indication: 'SLE — maintenance low-dose', prescribedBy: 'Dr. Park' });
+  savePatientMedication({ patientId: s5.id, name: 'Levothyroxine', dose: '75', unit: 'mcg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2018-09-01', indication: 'Hypothyroidism', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s5.id, name: 'Sertraline', dose: '100', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2020-01-01', indication: 'Major Depressive Disorder', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s5.id, name: 'Calcium + Vitamin D3', dose: '600/400', unit: 'mg/IU', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2023-03-01', indication: 'Osteoporosis prevention (chronic steroids)', prescribedBy: 'Dr. Chen' });
+  saveActiveProblem({ patientId: s5.id, name: 'Systemic Lupus Erythematosus', icd10: 'M32.9', onset: '2015-06-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-07-10', notes: 'Mucocutaneous and joint involvement. SLEDAI 4 at last rheum visit. On HCQ + low-dose prednisone.' });
+  saveActiveProblem({ patientId: s5.id, name: 'Hypothyroidism', icd10: 'E03.9', onset: '2018-09-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-07-10', notes: 'TSH 2.1 (Jul 2025). Well-controlled on levothyroxine 75mcg.' });
+  saveActiveProblem({ patientId: s5.id, name: 'Major Depressive Disorder', icd10: 'F33.1', onset: '2020-01-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-07-10', notes: 'Moderate severity. PHQ-9 score 8 (Jul 2025). On sertraline 100mg.' });
+  savePatientDiagnosis({ patientId: s5.id, name: 'Systemic Lupus Erythematosus', icd10: 'M32.9', onsetDate: '2015-06-01', evidenceNotes: 'ANA titer 1:320 (homogeneous), anti-dsDNA positive, low complement. Malar rash, oral ulcers, arthritis. ACR/EULAR criteria met.' });
+  savePatientDiagnosis({ patientId: s5.id, name: 'Hypothyroidism', icd10: 'E03.9', onsetDate: '2018-09-01', evidenceNotes: 'TSH 8.4 at diagnosis, free T4 0.7 (low). Now well-controlled on levothyroxine. Likely Hashimoto\'s (anti-TPO positive).' });
+  saveSocialHistory({ patientId: s5.id, smokingStatus: 'Never smoker', tobaccoUse: 'None', alcoholUse: 'None', substanceUse: 'None', occupation: 'Part-time school aide (limited hours due to illness)', maritalStatus: 'Divorced', livingSituation: 'Lives with adult son', exercise: 'Light — walks when joints permit', diet: 'Anti-inflammatory diet', notes: 'Sunscreen use strictly advised for SLE.' });
+  saveFamilyHistory({ patientId: s5.id, mother: 'SLE — alive, age 74', father: 'HTN — deceased age 70 (stroke)', siblings: '2 sisters: 1 SLE, 1 hypothyroidism', maternalGrandparents: 'Autoimmune (unspecified)', paternalGrandparents: 'Unknown', other: '', notes: 'Strong autoimmune clustering in family.' });
+  const e5a = saveEncounter({ id: generateId(), patientId: s5.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-07-10T13:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e5a.id, chiefComplaint: 'SLE, hypothyroid, depression follow-up.', hpi: 'Patricia is a 55-year-old female with SLE, hypothyroidism, and MDD presenting for follow-up. No SLE flare symptoms (SLEDAI 4, stable). Joint pain mildly improved on HCQ + prednisone. Depression — PHQ-9 score 8, improved from 12. TSH within target range.', assessment: '1. SLE (M32.9) — stable, SLEDAI 4.\n2. Hypothyroidism (E03.9) — well-controlled, TSH 2.1.\n3. MDD (F33.1) — moderate, improving on sertraline 100mg.', plan: '1. Continue hydroxychloroquine 200mg BID; annual eye exam scheduled.\n2. Continue prednisone 5mg QDay; calcium/Vit D for bone protection.\n3. Continue levothyroxine 75mcg; recheck TSH in 6 months.\n4. Continue sertraline 100mg; consider referral to psychiatry if no further improvement.', signed: true, signedBy: p2.id, signedAt: new Date('2025-07-10T14:00:00').toISOString(), lastModified: new Date('2025-07-10T14:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e5a.id, patientId: s5.id, bpSystolic: '118', bpDiastolic: '72', heartRate: '78', respiratoryRate: '14', tempF: '98.6', spo2: '99', weightLbs: '142', heightIn: '63', recordedAt: new Date('2025-07-10T13:05:00').toISOString(), recordedBy: p2.id });
+  saveLabResult({ patientId: s5.id, encounterId: e5a.id, panel: 'Thyroid Panel + CMP', resultDate: new Date('2025-07-10T16:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'TSH', value: '2.1', unit: 'mIU/L', referenceRange: '0.4–4.0', flag: 'Normal' }, { name: 'Free T4', value: '1.2', unit: 'ng/dL', referenceRange: '0.8–1.8', flag: 'Normal' }, { name: 'Creatinine', value: '0.8', unit: 'mg/dL', referenceRange: '0.6–1.1', flag: 'Normal' }, { name: 'ALT', value: '32', unit: 'U/L', referenceRange: '7–56', flag: 'Normal' }], notes: 'Thyroid well-controlled. CMP normal.' });
+  saveImmunization({ patientId: s5.id, vaccine: 'Influenza (IIV4)', date: '2024-10-08', lot: 'FL24-F', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p2.id, nextDue: '2025-10-01', notes: 'Live vaccines contraindicated due to immunosuppression.' });
+
+  /* ── 6. Michael Thompson ── */
+  const s6 = savePatient({ id: generateId(), mrn: 'MRN002006', firstName: 'Michael', lastName: 'Thompson', dob: '1979-04-17', sex: 'Male', phone: '(555) 310-1006', insurance: 'Aetna PPO', email: 'michael.thompson@email.com', addressStreet: '610 Maple Terrace', addressCity: 'Springfield', addressState: 'IL', addressZip: '62701', emergencyContactName: 'Jerome Thompson', emergencyContactPhone: '(555) 310-2006', emergencyContactRelationship: 'Brother', pharmacyName: 'CVS Pharmacy #5511', pharmacyPhone: '(555) 400-6001', pharmacyFax: '(555) 400-6002', panelProviders: [p1.id], createdAt: new Date('2020-06-01').toISOString() });
+  savePatientAllergy({ patientId: s6.id, allergen: 'Abacavir', reaction: 'Hypersensitivity reaction (fever, rash)', severity: 'Severe', type: 'Drug' });
+  savePatientMedication({ patientId: s6.id, name: 'Biktarvy (BIC/TAF/FTC)', dose: '1', unit: 'tablet', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2020-06-15', indication: 'HIV-1 infection', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s6.id, name: 'Lisinopril', dose: '10', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2022-09-01', indication: 'Hypertension', prescribedBy: 'Dr. Chen' });
+  savePatientMedication({ patientId: s6.id, name: 'Atorvastatin', dose: '20', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2022-09-01', indication: 'Dyslipidemia', prescribedBy: 'Dr. Chen' });
+  saveActiveProblem({ patientId: s6.id, name: 'HIV-1 Infection (on ART)', icd10: 'B20', onset: '2020-05-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-01', notes: 'CD4 680, viral load undetectable on Biktarvy.' });
+  saveActiveProblem({ patientId: s6.id, name: 'Essential Hypertension', icd10: 'I10', onset: '2022-09-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-10-01', notes: 'BP 132/80 on lisinopril 10mg.' });
+  saveActiveProblem({ patientId: s6.id, name: 'Dyslipidemia', icd10: 'E78.5', onset: '2022-09-01', status: 'Chronic', priority: 'Low', lastReviewDate: '2025-10-01', notes: 'LDL 98 on atorvastatin 20mg.' });
+  savePatientDiagnosis({ patientId: s6.id, name: 'HIV-1 Infection', icd10: 'B20', onsetDate: '2020-05-01', evidenceNotes: 'HIV-1 dx May 2020. HLA-B*5701 negative. ART: Biktarvy. CD4 nadir 310 (2020), now 680. Viral load undetectable x 4 years.' });
+  saveSocialHistory({ patientId: s6.id, smokingStatus: 'Current smoker — 5 cpd', tobaccoUse: '10 pack-years', alcoholUse: '1–2 drinks/week', substanceUse: 'None', occupation: 'IT security analyst', maritalStatus: 'Single', livingSituation: 'Lives alone', exercise: 'Moderate — gym 3×/week', diet: 'Balanced', notes: 'Counseled on smoking cessation.' });
+  saveFamilyHistory({ patientId: s6.id, mother: 'HTN, T2DM — alive, age 68', father: 'Unknown', siblings: '1 brother healthy', maternalGrandparents: 'HTN', paternalGrandparents: 'Unknown', other: '', notes: '' });
+  const e6a = saveEncounter({ id: generateId(), patientId: s6.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-10-01T09:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e6a.id, chiefComplaint: 'HIV management, annual wellness.', hpi: 'Michael is a 46-year-old male with HIV-1 on ART presenting for annual wellness. Adherent to Biktarvy. CD4 680, VL undetectable. BP mildly elevated at home. No opportunistic infections.', assessment: '1. HIV-1 (B20) — virologically suppressed.\n2. HTN (I10) — near goal.\n3. Dyslipidemia (E78.5) — LDL 98 on statin.\n4. Smoking — cessation counseled.', plan: '1. Continue Biktarvy QDay.\n2. Continue lisinopril 10mg, atorvastatin 20mg.\n3. Offer varenicline for smoking cessation.\n4. CD4/VL in 6 months with ID.', signed: true, signedBy: p1.id, signedAt: new Date('2025-10-01T10:00:00').toISOString(), lastModified: new Date('2025-10-01T10:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e6a.id, patientId: s6.id, bpSystolic: '136', bpDiastolic: '84', heartRate: '74', respiratoryRate: '14', tempF: '98.4', spo2: '98', weightLbs: '182', heightIn: '71', recordedAt: new Date('2025-10-01T09:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s6.id, encounterId: e6a.id, panel: 'HIV Panel', resultDate: new Date('2025-10-01T12:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'CD4 Count', value: '680', unit: 'cells/uL', referenceRange: '>500', flag: 'Normal' }, { name: 'HIV Viral Load', value: '<20', unit: 'copies/mL', referenceRange: 'Undetectable', flag: 'Normal' }, { name: 'Creatinine', value: '1.0', unit: 'mg/dL', referenceRange: '0.7–1.3', flag: 'Normal' }], notes: 'Excellent virologic control.' });
+  saveImmunization({ patientId: s6.id, vaccine: 'Influenza (IIV4)', date: '2024-10-01', lot: 'FL24-G', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+
+  /* ── 7. Dorothy Williams ── */
+  const s7 = savePatient({ id: generateId(), mrn: 'MRN002007', firstName: 'Dorothy', lastName: 'Williams', dob: '1946-02-28', sex: 'Female', phone: '(555) 310-1007', insurance: 'Medicare', email: '', addressStreet: '1441 Chestnut Ave', addressCity: 'Springfield', addressState: 'IL', addressZip: '62703', emergencyContactName: 'Barbara Williams', emergencyContactPhone: '(555) 310-2007', emergencyContactRelationship: 'Daughter', pharmacyName: 'CVS Pharmacy #6622', pharmacyPhone: '(555) 400-7001', pharmacyFax: '(555) 400-7002', panelProviders: [p2.id], createdAt: new Date('2019-03-15').toISOString() });
+  savePatientAllergy({ patientId: s7.id, allergen: 'Aspirin', reaction: 'GI bleeding', severity: 'Severe', type: 'Drug' });
+  savePatientMedication({ patientId: s7.id, name: 'Donepezil', dose: '10', unit: 'mg', route: 'PO', frequency: 'QNight', status: 'Current', startDate: '2021-06-01', indication: "Alzheimer's dementia" });
+  savePatientMedication({ patientId: s7.id, name: 'Memantine', dose: '10', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2023-01-01', indication: "Moderate Alzheimer's" });
+  savePatientMedication({ patientId: s7.id, name: 'Apixaban', dose: '2.5', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2020-04-01', indication: 'A-fib (reduced dose)' });
+  savePatientMedication({ patientId: s7.id, name: 'Alendronate', dose: '70', unit: 'mg', route: 'PO', frequency: 'Weekly', status: 'Current', startDate: '2020-01-01', indication: 'Osteoporosis' });
+  saveActiveProblem({ patientId: s7.id, name: "Alzheimer's Dementia — Moderate", icd10: 'G30.9', onset: '2021-06-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-09-05', notes: 'MMSE 16/30. Dependent for IADLs. Daughter is primary caregiver.' });
+  saveActiveProblem({ patientId: s7.id, name: 'Atrial Fibrillation', icd10: 'I48.91', onset: '2020-04-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-09-05', notes: 'Persistent A-fib. CHA2DS2-VASc 6. Low-dose apixaban.' });
+  saveActiveProblem({ patientId: s7.id, name: 'Osteoporosis', icd10: 'M81.0', onset: '2020-01-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-09-05', notes: 'T-score -2.8. On alendronate weekly.' });
+  savePatientDiagnosis({ patientId: s7.id, name: "Alzheimer's Dementia", icd10: 'G30.9', onsetDate: '2021-06-01', evidenceNotes: 'MRI 2021: cortical atrophy, hippocampal volume loss. MMSE 24 (2021), now 16. PET: amyloid positive.' });
+  savePatientDiagnosis({ patientId: s7.id, name: 'Osteoporosis', icd10: 'M81.0', onsetDate: '2020-01-01', evidenceNotes: 'DEXA 2020: lumbar T-score -2.8. Prior L1 compression fracture (2019).' });
+  saveSocialHistory({ patientId: s7.id, smokingStatus: 'Former smoker (quit 1985)', tobaccoUse: '10 pack-years', alcoholUse: 'None', substanceUse: 'None', occupation: 'Retired schoolteacher', maritalStatus: 'Widowed (2018)', livingSituation: 'Lives with daughter — full-time caregiver', exercise: 'Supervised walking only', diet: 'Soft diet', notes: 'Fall risk. Walker in use. No driving.' });
+  saveFamilyHistory({ patientId: s7.id, mother: 'Dementia — deceased age 84', father: 'Stroke, HTN — deceased age 76', siblings: '1 sister: dementia', maternalGrandparents: 'Dementia', paternalGrandparents: 'Stroke', other: '', notes: 'Strong dementia history.' });
+  savePatientSurgery({ patientId: s7.id, procedure: 'Right Total Hip Replacement', date: '2016-04-10', hospital: 'General Hospital', surgeon: 'Dr. Kowalski', notes: 'Right hip OA. Uncomplicated.' });
+  const e7a = saveEncounter({ id: generateId(), patientId: s7.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-09-05T10:30:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e7a.id, chiefComplaint: 'Dementia care review. Accompanied by daughter.', hpi: "Dorothy is a 79-year-old female with moderate Alzheimer's, A-fib, osteoporosis. Daughter reports mild worsening confusion. No falls in 3 months. MMSE 16.", assessment: "1. Alzheimer's (G30.9) — moderate, gradual progression.\n2. A-fib (I48.91) — rate-controlled, anticoagulated.\n3. Osteoporosis (M81.0) — stable.", plan: '1. Continue donepezil + memantine.\n2. Continue apixaban 2.5mg BID.\n3. Continue alendronate + calcium/Vit D.\n4. Neurology referral.\n5. OT for home safety.', signed: true, signedBy: p2.id, signedAt: new Date('2025-09-05T11:30:00').toISOString(), lastModified: new Date('2025-09-05T11:30:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e7a.id, patientId: s7.id, bpSystolic: '124', bpDiastolic: '70', heartRate: '72', respiratoryRate: '16', tempF: '97.8', spo2: '96', weightLbs: '118', heightIn: '60', recordedAt: new Date('2025-09-05T10:35:00').toISOString(), recordedBy: p2.id });
+  saveImmunization({ patientId: s7.id, vaccine: 'Influenza High-Dose', date: '2024-10-12', lot: 'FHD24-A', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p2.id, nextDue: '2025-10-01', notes: 'High-dose for age ≥65.' });
+
+  /* ── 8. Carlos Mendez ── */
+  const s8 = savePatient({ id: generateId(), mrn: 'MRN002008', firstName: 'Carlos', lastName: 'Mendez', dob: '1991-07-14', sex: 'Male', phone: '(555) 310-1008', insurance: 'BlueCross PPO', email: 'carlos.mendez@email.com', addressStreet: '88 Cedar Lane', addressCity: 'Springfield', addressState: 'IL', addressZip: '62705', emergencyContactName: 'Rosa Mendez', emergencyContactPhone: '(555) 310-2008', emergencyContactRelationship: 'Mother', pharmacyName: 'Walgreens #7733', pharmacyPhone: '(555) 400-8001', pharmacyFax: '(555) 400-8002', panelProviders: [p1.id], createdAt: new Date('2021-11-20').toISOString() });
+  savePatientAllergy({ patientId: s8.id, allergen: 'Latex', reaction: 'Urticaria, bronchospasm', severity: 'Severe', type: 'Environmental' });
+  savePatientMedication({ patientId: s8.id, name: 'Fluticasone/Salmeterol (Advair 250/50)', dose: '1', unit: 'puff', route: 'Inhaled', frequency: 'BID', status: 'Current', startDate: '2019-03-01', indication: 'Moderate persistent asthma' });
+  savePatientMedication({ patientId: s8.id, name: 'Albuterol MDI', dose: '90', unit: 'mcg', route: 'Inhaled', frequency: 'PRN', status: 'Current', startDate: '2015-06-01', indication: 'Asthma rescue' });
+  savePatientMedication({ patientId: s8.id, name: 'Escitalopram', dose: '10', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2022-02-01', indication: 'Generalized Anxiety Disorder' });
+  saveActiveProblem({ patientId: s8.id, name: 'Asthma — Moderate Persistent', icd10: 'J45.40', onset: '2012-01-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-06-15', notes: 'On ICS/LABA. FEV1 78%. 0 ED visits this year.' });
+  saveActiveProblem({ patientId: s8.id, name: 'Generalized Anxiety Disorder', icd10: 'F41.1', onset: '2022-02-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-06-15', notes: 'GAD-7 score 9. On escitalopram 10mg.' });
+  savePatientDiagnosis({ patientId: s8.id, name: 'Asthma', icd10: 'J45.40', onsetDate: '2012-01-01', evidenceNotes: 'Spirometry 2019: FEV1 78%, bronchodilator reversibility 15%. Moderate persistent.' });
+  saveSocialHistory({ patientId: s8.id, smokingStatus: 'Never smoker', tobaccoUse: 'None', alcoholUse: 'Social', substanceUse: 'Occasional marijuana (counseled — worsens asthma)', occupation: 'Personal trainer', maritalStatus: 'Single', livingSituation: 'Apartment with roommate', exercise: 'Very active — gym daily', diet: 'High protein', notes: '' });
+  saveFamilyHistory({ patientId: s8.id, mother: 'Asthma, allergic rhinitis', father: 'HTN', siblings: '1 sister: asthma', maternalGrandparents: 'Asthma', paternalGrandparents: 'Unknown', other: '', notes: 'Atopic family.' });
+  const e8a = saveEncounter({ id: generateId(), patientId: s8.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-06-15T15:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e8a.id, chiefComplaint: 'Asthma and anxiety review.', hpi: 'Carlos, 33-year-old male, presents for asthma/anxiety follow-up. Rescue inhaler ~1×/week. No nighttime symptoms. Anxiety improving on escitalopram, GAD-7 down from 14 to 9.', assessment: '1. Asthma (J45.40) — well-controlled.\n2. GAD (F41.1) — improving on escitalopram.', plan: '1. Continue Advair 250/50 BID + albuterol PRN.\n2. Continue escitalopram 10mg; consider uptitrating to 20mg.\n3. Spirometry in 1 year.', signed: true, signedBy: p1.id, signedAt: new Date('2025-06-15T16:00:00').toISOString(), lastModified: new Date('2025-06-15T16:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e8a.id, patientId: s8.id, bpSystolic: '118', bpDiastolic: '72', heartRate: '68', respiratoryRate: '14', tempF: '98.6', spo2: '98', weightLbs: '172', heightIn: '70', recordedAt: new Date('2025-06-15T15:05:00').toISOString(), recordedBy: p1.id });
+  saveImmunization({ patientId: s8.id, vaccine: 'Influenza (IIV4)', date: '2024-10-05', lot: 'FL24-H', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+
+  /* ── 9. Helen Fischer ── */
+  const s9 = savePatient({ id: generateId(), mrn: 'MRN002009', firstName: 'Helen', lastName: 'Fischer', dob: '1963-09-01', sex: 'Female', phone: '(555) 310-1009', insurance: 'UnitedHealthcare', email: 'helen.fischer@email.com', addressStreet: '430 Sycamore Road', addressCity: 'Springfield', addressState: 'IL', addressZip: '62704', emergencyContactName: 'Otto Fischer', emergencyContactPhone: '(555) 310-2009', emergencyContactRelationship: 'Husband', pharmacyName: 'CVS Pharmacy #8844', pharmacyPhone: '(555) 400-9001', pharmacyFax: '(555) 400-9002', panelProviders: [p2.id], createdAt: new Date('2020-11-01').toISOString() });
+  savePatientAllergy({ patientId: s9.id, allergen: 'Tamoxifen', reaction: 'DVT', severity: 'Severe', type: 'Drug' });
+  savePatientMedication({ patientId: s9.id, name: 'Anastrozole', dose: '1', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2021-03-01', indication: 'Breast cancer adjuvant' });
+  savePatientMedication({ patientId: s9.id, name: 'Levothyroxine', dose: '100', unit: 'mcg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2015-05-01', indication: 'Hypothyroidism' });
+  savePatientMedication({ patientId: s9.id, name: 'Alendronate', dose: '70', unit: 'mg', route: 'PO', frequency: 'Weekly', status: 'Current', startDate: '2021-06-01', indication: 'Anastrozole-induced osteoporosis' });
+  saveActiveProblem({ patientId: s9.id, name: 'Breast Cancer (Stage IIA, ER+) — Remission', icd10: 'C50.911', onset: '2020-11-01', status: 'Active', priority: 'High', lastReviewDate: '2025-11-10', notes: '5-year disease-free on anastrozole through 2026.' });
+  saveActiveProblem({ patientId: s9.id, name: 'Hypothyroidism', icd10: 'E03.9', onset: '2015-05-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-11-10', notes: 'TSH 1.8. Stable on levothyroxine 100mcg.' });
+  saveActiveProblem({ patientId: s9.id, name: 'Osteoporosis', icd10: 'M81.0', onset: '2021-06-01', status: 'Chronic', priority: 'Medium', lastReviewDate: '2025-11-10', notes: 'Anastrozole-induced. T-score -2.2. On alendronate.' });
+  savePatientDiagnosis({ patientId: s9.id, name: 'Breast Cancer ER+', icd10: 'C50.911', onsetDate: '2020-11-01', evidenceNotes: 'R breast IDC ER+/PR+/HER2−. Lumpectomy + radiation. AC-T chemo completed. 5-year anastrozole course.' });
+  saveSocialHistory({ patientId: s9.id, smokingStatus: 'Never smoker', tobaccoUse: 'None', alcoholUse: '1–2 drinks/week', substanceUse: 'None', occupation: 'High school librarian', maritalStatus: 'Married', livingSituation: 'Lives with husband', exercise: 'Moderate — walks, yoga', diet: 'Plant-based', notes: 'Cancer survivors group.' });
+  saveFamilyHistory({ patientId: s9.id, mother: 'Breast cancer (ER+, dx 58) — alive, age 82', father: 'Prostate cancer', siblings: '1 sister: breast cancer (2022)', maternalGrandparents: 'Breast cancer (grandmother)', paternalGrandparents: 'Unknown', other: '', notes: 'BRCA1/2 testing negative (2020).' });
+  savePatientSurgery({ patientId: s9.id, procedure: 'Right Breast Lumpectomy + Sentinel Node Biopsy', date: '2020-12-08', hospital: 'University Medical Center', surgeon: 'Dr. Martinez', notes: '1 of 3 nodes positive. Clean margins. Radiation completed 2021.' });
+  const e9a = saveEncounter({ id: generateId(), patientId: s9.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-11-10T11:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e9a.id, chiefComplaint: 'Breast cancer surveillance, hypothyroid, osteoporosis.', hpi: 'Helen, 62-year-old, presents for follow-up. No new breast symptoms. Anastrozole tolerated. TSH stable. No fractures.', assessment: '1. Breast CA remission (C50.911) — year 5, no recurrence.\n2. Hypothyroidism (E03.9) — TSH 1.8, well-controlled.\n3. Osteoporosis (M81.0) — T-score -2.2, stable.', plan: '1. Continue anastrozole through 2026.\n2. Continue levothyroxine 100mcg.\n3. Continue alendronate weekly.\n4. Annual mammography.\n5. DEXA in 1 year.', signed: true, signedBy: p2.id, signedAt: new Date('2025-11-10T12:00:00').toISOString(), lastModified: new Date('2025-11-10T12:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e9a.id, patientId: s9.id, bpSystolic: '122', bpDiastolic: '76', heartRate: '70', respiratoryRate: '14', tempF: '98.2', spo2: '99', weightLbs: '148', heightIn: '65', recordedAt: new Date('2025-11-10T11:05:00').toISOString(), recordedBy: p2.id });
+  saveLabResult({ patientId: s9.id, encounterId: e9a.id, panel: 'Thyroid + Calcium', resultDate: new Date('2025-11-10T14:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'TSH', value: '1.8', unit: 'mIU/L', referenceRange: '0.4–4.0', flag: 'Normal' }, { name: 'Calcium', value: '9.4', unit: 'mg/dL', referenceRange: '8.5–10.5', flag: 'Normal' }, { name: 'Vitamin D (25-OH)', value: '38', unit: 'ng/mL', referenceRange: '30–100', flag: 'Normal' }], notes: 'Thyroid stable. Vit D adequate.' });
+  saveImmunization({ patientId: s9.id, vaccine: 'Influenza (IIV4)', date: '2024-10-18', lot: 'FL24-I', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p2.id, nextDue: '2025-10-01', notes: '' });
+
+  /* ── 10. Raymond Brooks ── */
+  const s10 = savePatient({ id: generateId(), mrn: 'MRN002010', firstName: 'Raymond', lastName: 'Brooks', dob: '1957-01-19', sex: 'Male', phone: '(555) 310-1010', insurance: 'Medicare', email: 'raymond.brooks@email.com', addressStreet: '715 Magnolia Drive', addressCity: 'Springfield', addressState: 'IL', addressZip: '62702', emergencyContactName: 'Denise Brooks', emergencyContactPhone: '(555) 310-2010', emergencyContactRelationship: 'Wife', pharmacyName: 'Walgreens #8855', pharmacyPhone: '(555) 400-0001', pharmacyFax: '(555) 400-0002', panelProviders: [p1.id], createdAt: new Date('2018-04-22').toISOString() });
+  savePatientAllergy({ patientId: s10.id, allergen: 'Penicillin', reaction: 'Rash', severity: 'Mild', type: 'Drug' });
+  savePatientMedication({ patientId: s10.id, name: 'Insulin glargine', dose: '28', unit: 'units', route: 'Subcutaneous', frequency: 'QNight', status: 'Current', startDate: '2021-03-01', indication: 'Type 2 Diabetes' });
+  savePatientMedication({ patientId: s10.id, name: 'Metformin', dose: '500', unit: 'mg', route: 'PO', frequency: 'BID', status: 'Current', startDate: '2015-01-01', indication: 'Type 2 Diabetes' });
+  savePatientMedication({ patientId: s10.id, name: 'Lisinopril', dose: '10', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2015-06-01', indication: 'HTN/CKD protection' });
+  savePatientMedication({ patientId: s10.id, name: 'Atorvastatin', dose: '80', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2018-01-01', indication: 'PAD/dyslipidemia' });
+  savePatientMedication({ patientId: s10.id, name: 'Clopidogrel', dose: '75', unit: 'mg', route: 'PO', frequency: 'QDay', status: 'Current', startDate: '2018-06-01', indication: 'PAD antiplatelet' });
+  saveActiveProblem({ patientId: s10.id, name: 'Type 2 Diabetes Mellitus', icd10: 'E11.9', onset: '2015-01-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-20', notes: 'HbA1c 8.1%. On metformin + basal insulin.' });
+  saveActiveProblem({ patientId: s10.id, name: 'Peripheral Artery Disease', icd10: 'I73.9', onset: '2018-06-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-20', notes: 'ABI 0.62 bilateral. Claudication at 1 block.' });
+  saveActiveProblem({ patientId: s10.id, name: 'CKD Stage 4', icd10: 'N18.4', onset: '2022-01-01', status: 'Chronic', priority: 'High', lastReviewDate: '2025-10-20', notes: 'eGFR 22. Preparing for renal replacement therapy.' });
+  savePatientDiagnosis({ patientId: s10.id, name: 'Peripheral Artery Disease', icd10: 'I73.9', onsetDate: '2018-06-01', evidenceNotes: 'ABI 0.62 bilateral. MRA: bilateral SFA disease. On antiplatelet + statin.' });
+  savePatientDiagnosis({ patientId: s10.id, name: 'CKD Stage 4', icd10: 'N18.4', onsetDate: '2022-01-01', evidenceNotes: 'eGFR 22 (down from 38 in 2020). T2DM + HTN etiology. Proteinuria 800 mg/g. AV fistula placed 2024.' });
+  saveSocialHistory({ patientId: s10.id, smokingStatus: 'Former smoker (quit 2012)', tobaccoUse: '35 pack-years', alcoholUse: 'None', substanceUse: 'None', occupation: 'Retired truck driver', maritalStatus: 'Married', livingSituation: 'Lives with wife', exercise: 'Very limited — claudication', diet: 'Diabetic + renal diet', notes: 'On transplant evaluation list.' });
+  saveFamilyHistory({ patientId: s10.id, mother: 'T2DM — deceased age 72 (ESRD)', father: 'HTN, MI — deceased age 65', siblings: '1 brother: T2DM, amputee (PAD)', maternalGrandparents: 'T2DM', paternalGrandparents: 'CAD', other: '', notes: 'High-risk vascular/metabolic family history.' });
+  savePatientSurgery({ patientId: s10.id, procedure: 'AV Fistula Creation (left forearm)', date: '2024-08-15', hospital: 'University Medical Center', surgeon: 'Dr. Okafor', notes: 'Anticipatory dialysis access. Fistula maturing.' });
+  const e10a = saveEncounter({ id: generateId(), patientId: s10.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-10-20T08:30:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e10a.id, chiefComplaint: 'T2DM, CKD 4, PAD quarterly follow-up.', hpi: 'Raymond, 68-year-old with T2DM, CKD 4, PAD. eGFR 22 stable. Claudication unchanged. AV fistula placed 2024.', assessment: '1. T2DM (E11.9) — HbA1c 8.1%, uptitrate insulin.\n2. CKD Stage 4 (N18.4) — eGFR 22, pre-dialysis planning.\n3. PAD (I73.9) — stable.', plan: '1. Increase insulin glargine to 32 units QNight.\n2. Continue metformin (hold if eGFR <30), clopidogrel, atorvastatin.\n3. Nephrology in 4 weeks.\n4. Foot exam — no ulcers.', signed: true, signedBy: p1.id, signedAt: new Date('2025-10-20T09:30:00').toISOString(), lastModified: new Date('2025-10-20T09:30:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e10a.id, patientId: s10.id, bpSystolic: '148', bpDiastolic: '88', heartRate: '78', respiratoryRate: '16', tempF: '98.0', spo2: '96', weightLbs: '198', heightIn: '70', recordedAt: new Date('2025-10-20T08:35:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s10.id, encounterId: e10a.id, panel: 'CMP + HbA1c', resultDate: new Date('2025-10-20T11:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'eGFR', value: '22', unit: 'mL/min/1.73m²', referenceRange: '>60', flag: 'Low' }, { name: 'Creatinine', value: '2.9', unit: 'mg/dL', referenceRange: '0.7–1.3', flag: 'High' }, { name: 'Potassium', value: '5.1', unit: 'mEq/L', referenceRange: '3.5–5.1', flag: 'Normal' }, { name: 'Phosphorus', value: '5.4', unit: 'mg/dL', referenceRange: '2.5–4.5', flag: 'High' }, { name: 'HbA1c', value: '8.1', unit: '%', referenceRange: '<7.0', flag: 'High' }, { name: 'Hemoglobin', value: '10.2', unit: 'g/dL', referenceRange: '13.5–17.5', flag: 'Low' }], notes: 'CKD 4, anemia of CKD, hyperphosphatemia, HbA1c above target.' });
+  saveImmunization({ patientId: s10.id, vaccine: 'Hepatitis B series (complete)', date: '2022-10-01', lot: 'HB22-C', manufacturer: 'Merck', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'Pre-dialysis indication.' });
+  saveImmunization({ patientId: s10.id, vaccine: 'Influenza (IIV4)', date: '2024-10-22', lot: 'FL24-J', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+
+  // ── Patient 11: Jennifer Park ──────────────────────────────────────
+  const s11 = savePatient({ id: generateId(), mrn: 'MRN002011', firstName: 'Jennifer', lastName: 'Park', dob: '1984-06-15', sex: 'Female', phone: '(555) 310-1011', insurance: 'Cigna HMO', email: 'jennifer.park@email.com', addressStreet: '202 Clover Street', addressCity: 'Springfield', addressState: 'IL', addressZip: '62701', emergencyContactName: 'Daniel Park', emergencyContactPhone: '(555) 310-2011', emergencyContactRelationship: 'Husband', pharmacyName: 'CVS Pharmacy #9900', pharmacyPhone: '(555) 400-1101', pharmacyFax: '(555) 400-1102', panelProviders: [p1.id], createdAt: new Date('2022-03-08').toISOString() });
+  saveAllergy({ patientId: s11.id, allergen: 'Sulfonamides', reaction: 'Rash', severity: 'Moderate', recordedBy: p1.id, recordedAt: new Date('2022-03-08').toISOString() });
+  saveMedication({ patientId: s11.id, drug: 'Levothyroxine', dose: '75', unit: 'mcg', route: 'Oral', frequency: 'QAM', status: 'Active', prescribedBy: p1.id, startDate: '2020-01-10', instructions: 'Take on empty stomach 30 min before breakfast.' });
+  saveMedication({ patientId: s11.id, drug: 'Escitalopram', dose: '10', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2023-07-01', instructions: 'Take in the morning.' });
+  saveMedication({ patientId: s11.id, drug: 'Prenatal vitamin', dose: '1', unit: 'tablet', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2024-02-01', instructions: '' });
+  saveDiagnosis({ patientId: s11.id, code: 'E03.9', description: 'Hypothyroidism, unspecified', diagnosedDate: '2020-01-10', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s11.id, code: 'F32.1', description: 'Major depressive disorder, single episode, moderate', diagnosedDate: '2023-07-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s11.id, code: 'Z34.39', description: 'Encounter for supervision of other normal pregnancy', diagnosedDate: '2024-02-14', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s11.id, code: 'N92.0', description: 'Excessive and frequent menstruation with regular cycle', diagnosedDate: '2018-05-01', status: 'Resolved', providerId: p1.id });
+  saveSocialHistory({ patientId: s11.id, smokingStatus: 'Never', alcoholUse: 'Occasional (1-2 drinks/week)', recreationalDrugUse: 'None', exerciseFrequency: '3x/week', occupation: 'Graphic designer', maritalStatus: 'Married', livingSituation: 'Lives with husband and one child' });
+  saveFamilyHistory({ patientId: s11.id, relation: 'Mother', condition: 'Hypothyroidism, breast cancer (age 55)' });
+  saveFamilyHistory({ patientId: s11.id, relation: 'Father', condition: 'Type 2 diabetes, hypertension' });
+  const e11a = saveEncounter({ id: generateId(), patientId: s11.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-08-12T10:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e11a.id, chiefComplaint: 'Prenatal visit 28 weeks, thyroid check.', hpi: 'Jennifer is 28 weeks pregnant. TSH 4.2 — above target for pregnancy. Mood stable on escitalopram. No adverse prenatal symptoms.', assessment: '1. Hypothyroidism (E03.9) — TSH above target (goal <2.5 in pregnancy); uptitrate levothyroxine.\n2. Normal pregnancy 28 weeks (Z34.39) — fetal movements present.\n3. MDD (F32.1) — stable on escitalopram; safe to continue in pregnancy.', plan: '1. Increase levothyroxine to 88 mcg QAM.\n2. Recheck TSH in 4 weeks.\n3. Continue escitalopram 10 mg.\n4. OB referral confirmed — 30-week anatomy review.\n5. Continue prenatal vitamins.', signed: true, signedBy: p1.id, signedAt: new Date('2025-08-12T11:00:00').toISOString(), lastModified: new Date('2025-08-12T11:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e11a.id, patientId: s11.id, bpSystolic: '112', bpDiastolic: '70', heartRate: '88', respiratoryRate: '18', tempF: '98.4', spo2: '99', weightLbs: '156', heightIn: '64', recordedAt: new Date('2025-08-12T10:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s11.id, encounterId: e11a.id, panel: 'TSH + Free T4', resultDate: new Date('2025-08-12T13:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'TSH', value: '4.2', unit: 'mIU/L', referenceRange: '0.4–4.0 (0.1–2.5 in pregnancy)', flag: 'High' }, { name: 'Free T4', value: '0.9', unit: 'ng/dL', referenceRange: '0.8–1.8', flag: 'Normal' }], notes: 'TSH above pregnancy target; uptitrate levothyroxine.' });
+  saveImmunization({ patientId: s11.id, vaccine: 'Tdap', date: '2024-06-15', lot: 'TD24-P', manufacturer: 'GSK', site: 'L deltoid', givenBy: p1.id, nextDue: '', notes: 'Prenatal Tdap.' });
+
+  // ── Patient 12: Frank Novak ────────────────────────────────────────
+  const s12 = savePatient({ id: generateId(), mrn: 'MRN002012', firstName: 'Frank', lastName: 'Novak', dob: '1949-11-03', sex: 'Male', phone: '(555) 310-1012', insurance: 'Medicare', email: '', addressStreet: '88 Ironwood Road', addressCity: 'Springfield', addressState: 'IL', addressZip: '62703', emergencyContactName: 'Anna Novak', emergencyContactPhone: '(555) 310-2012', emergencyContactRelationship: 'Wife', pharmacyName: 'Walgreens #1234', pharmacyPhone: '(555) 400-1201', pharmacyFax: '(555) 400-1202', panelProviders: [p2.id], createdAt: new Date('2017-09-01').toISOString() });
+  saveAllergy({ patientId: s12.id, allergen: 'Aspirin', reaction: 'GI bleed', severity: 'Severe', recordedBy: p2.id, recordedAt: new Date('2017-09-01').toISOString() });
+  saveMedication({ patientId: s12.id, drug: 'Warfarin', dose: '5', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2018-03-01', instructions: 'INR target 2.0–3.0. Avoid NSAIDs.' });
+  saveMedication({ patientId: s12.id, drug: 'Metoprolol succinate', dose: '50', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2018-03-01', instructions: '' });
+  saveMedication({ patientId: s12.id, drug: 'Furosemide', dose: '40', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2020-06-10', instructions: 'Take in the morning.' });
+  saveMedication({ patientId: s12.id, drug: 'Spironolactone', dose: '25', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2020-06-10', instructions: 'Monitor potassium.' });
+  saveMedication({ patientId: s12.id, drug: 'Sacubitril-valsartan', dose: '24-26', unit: 'mg', route: 'Oral', frequency: 'BID', status: 'Active', prescribedBy: p2.id, startDate: '2021-02-15', instructions: 'Do not use with ACE inhibitor within 36 hours.' });
+  saveDiagnosis({ patientId: s12.id, code: 'I50.22', description: 'Chronic systolic (congestive) heart failure', diagnosedDate: '2018-02-20', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s12.id, code: 'I48.91', description: 'Unspecified atrial fibrillation', diagnosedDate: '2018-02-20', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s12.id, code: 'J44.1', description: 'COPD with acute exacerbation', diagnosedDate: '2019-11-15', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s12.id, code: 'E11.9', description: 'Type 2 diabetes mellitus without complications', diagnosedDate: '2010-04-01', status: 'Active', providerId: p2.id });
+  saveSocialHistory({ patientId: s12.id, smokingStatus: 'Former smoker (quit 2018, 40 pack-years)', alcoholUse: 'None', recreationalDrugUse: 'None', exerciseFrequency: 'Sedentary', occupation: 'Retired machinist', maritalStatus: 'Married', livingSituation: 'Lives with wife' });
+  saveFamilyHistory({ patientId: s12.id, relation: 'Father', condition: 'CAD (MI age 62, fatal)' });
+  saveFamilyHistory({ patientId: s12.id, relation: 'Brother', condition: 'Heart failure, COPD' });
+  const e12a = saveEncounter({ id: generateId(), patientId: s12.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-09-04T09:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e12a.id, chiefComplaint: 'CHF, Afib, COPD follow-up; increased leg edema.', hpi: 'Frank, 75-year-old with CHF (EF 35%), Afib on warfarin, COPD. Reports 3 days of worsening lower extremity edema and dyspnea with minimal exertion. INR 2.4. No fever.', assessment: '1. CHF exacerbation (I50.22) — edema, dyspnea; uptitrate furosemide.\n2. Afib (I48.91) — INR therapeutic at 2.4; continue warfarin.\n3. COPD (J44.1) — stable today, no acute exacerbation.\n4. T2DM (E11.9) — HbA1c 7.6%, reasonable control.', plan: '1. Increase furosemide to 80 mg daily x 7 days, then return to 40 mg.\n2. Daily weights, call if gain >2 lbs/day.\n3. Recheck BMP in 1 week.\n4. Continue sacubitril-valsartan, metoprolol, spironolactone, warfarin.\n5. Cardiology follow-up in 4 weeks.', signed: true, signedBy: p2.id, signedAt: new Date('2025-09-04T10:00:00').toISOString(), lastModified: new Date('2025-09-04T10:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e12a.id, patientId: s12.id, bpSystolic: '136', bpDiastolic: '82', heartRate: '74', respiratoryRate: '20', tempF: '97.8', spo2: '94', weightLbs: '212', heightIn: '68', recordedAt: new Date('2025-09-04T09:05:00').toISOString(), recordedBy: p2.id });
+  saveLabResult({ patientId: s12.id, encounterId: e12a.id, panel: 'BMP + INR', resultDate: new Date('2025-09-04T11:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'INR', value: '2.4', unit: '', referenceRange: '2.0–3.0', flag: 'Normal' }, { name: 'BUN', value: '28', unit: 'mg/dL', referenceRange: '7–25', flag: 'High' }, { name: 'Creatinine', value: '1.4', unit: 'mg/dL', referenceRange: '0.7–1.3', flag: 'High' }, { name: 'Potassium', value: '4.8', unit: 'mEq/L', referenceRange: '3.5–5.1', flag: 'Normal' }, { name: 'BNP', value: '840', unit: 'pg/mL', referenceRange: '<100', flag: 'High' }], notes: 'Elevated BNP consistent with CHF exacerbation.' });
+  saveImmunization({ patientId: s12.id, vaccine: 'Pneumococcal (PPSV23)', date: '2022-04-01', lot: 'PN22-F', manufacturer: 'Merck', site: 'R deltoid', givenBy: p2.id, nextDue: '', notes: 'Age-based indication.' });
+
+  // ── Patient 13: Nancy Hartman ──────────────────────────────────────
+  const s13 = savePatient({ id: generateId(), mrn: 'MRN002013', firstName: 'Nancy', lastName: 'Hartman', dob: '1967-04-22', sex: 'Female', phone: '(555) 310-1013', insurance: 'BlueCross PPO', email: 'nancy.hartman@email.com', addressStreet: '54 Sunrise Blvd', addressCity: 'Springfield', addressState: 'IL', addressZip: '62704', emergencyContactName: 'Steven Hartman', emergencyContactPhone: '(555) 310-2013', emergencyContactRelationship: 'Husband', pharmacyName: 'CVS Pharmacy #1314', pharmacyPhone: '(555) 400-1301', pharmacyFax: '(555) 400-1302', panelProviders: [p1.id], createdAt: new Date('2019-07-20').toISOString() });
+  saveAllergy({ patientId: s13.id, allergen: 'Latex', reaction: 'Contact dermatitis', severity: 'Moderate', recordedBy: p1.id, recordedAt: new Date('2019-07-20').toISOString() });
+  saveMedication({ patientId: s13.id, drug: 'Alendronate', dose: '70', unit: 'mg', route: 'Oral', frequency: 'Weekly', status: 'Active', prescribedBy: p1.id, startDate: '2021-03-01', instructions: 'Take on empty stomach with full glass of water; remain upright 30 min.' });
+  saveMedication({ patientId: s13.id, drug: 'Vitamin D3', dose: '2000', unit: 'IU', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2021-03-01', instructions: '' });
+  saveMedication({ patientId: s13.id, drug: 'Calcium carbonate', dose: '500', unit: 'mg', route: 'Oral', frequency: 'BID with meals', status: 'Active', prescribedBy: p1.id, startDate: '2021-03-01', instructions: 'Take with meals for best absorption.' });
+  saveMedication({ patientId: s13.id, drug: 'Duloxetine', dose: '60', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2022-09-15', instructions: 'For fibromyalgia pain and mood.' });
+  saveDiagnosis({ patientId: s13.id, code: 'M81.0', description: 'Osteoporosis without current pathological fracture', diagnosedDate: '2021-02-15', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s13.id, code: 'M79.7', description: 'Fibromyalgia', diagnosedDate: '2022-08-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s13.id, code: 'N95.1', description: 'Menopausal and female climacteric states', diagnosedDate: '2019-07-20', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s13.id, code: 'K21.0', description: 'GERD with esophagitis', diagnosedDate: '2015-03-01', status: 'Active', providerId: p1.id });
+  saveSocialHistory({ patientId: s13.id, smokingStatus: 'Never', alcoholUse: 'Social (1-2 glasses of wine/week)', recreationalDrugUse: 'None', exerciseFrequency: 'Yoga 2x/week, walking', occupation: 'High school teacher', maritalStatus: 'Married', livingSituation: 'Lives with husband; two adult children' });
+  saveFamilyHistory({ patientId: s13.id, relation: 'Mother', condition: 'Osteoporosis, hip fracture (age 70)' });
+  saveFamilyHistory({ patientId: s13.id, relation: 'Father', condition: 'Colon cancer (age 68)' });
+  const e13a = saveEncounter({ id: generateId(), patientId: s13.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-07-22T14:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e13a.id, chiefComplaint: 'Fibromyalgia pain management, osteoporosis follow-up.', hpi: 'Nancy, 58-year-old with fibromyalgia and osteoporosis. Reports 6/10 diffuse musculoskeletal pain. Sleep poor. DEXA scan T-score -2.8 lumbar (unchanged from 2023). On alendronate 70 mg weekly.', assessment: '1. Fibromyalgia (M79.7) — moderate pain, suboptimal sleep; add low-dose amitriptyline for sleep.\n2. Osteoporosis (M81.0) — T-score -2.8, stable; continue alendronate.\n3. Menopause (N95.1) — on no HRT per preference.\n4. GERD (K21.0) — controlled on dietary measures.', plan: '1. Add amitriptyline 10 mg QHS for sleep and pain.\n2. Continue duloxetine 60 mg, alendronate 70 mg weekly, calcium, vitamin D.\n3. Physical therapy referral for fibromyalgia.\n4. DEXA repeat in 2 years.\n5. Colonoscopy screening due — order.', signed: true, signedBy: p1.id, signedAt: new Date('2025-07-22T15:00:00').toISOString(), lastModified: new Date('2025-07-22T15:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e13a.id, patientId: s13.id, bpSystolic: '124', bpDiastolic: '78', heartRate: '72', respiratoryRate: '16', tempF: '98.2', spo2: '99', weightLbs: '142', heightIn: '65', recordedAt: new Date('2025-07-22T14:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s13.id, encounterId: e13a.id, panel: 'CMP + Vit D', resultDate: new Date('2025-07-22T16:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: '25-OH Vitamin D', value: '28', unit: 'ng/mL', referenceRange: '30–100', flag: 'Low' }, { name: 'Calcium', value: '9.4', unit: 'mg/dL', referenceRange: '8.5–10.5', flag: 'Normal' }, { name: 'Creatinine', value: '0.8', unit: 'mg/dL', referenceRange: '0.5–1.1', flag: 'Normal' }], notes: 'Vitamin D borderline low; uptitrate supplementation.' });
+  saveImmunization({ patientId: s13.id, vaccine: 'Shingrix (RZV) — dose 1', date: '2023-11-01', lot: 'SZ23-N', manufacturer: 'GSK', site: 'R deltoid', givenBy: p1.id, nextDue: '2024-03-01', notes: 'Dose 2 needed.' });
+  saveImmunization({ patientId: s13.id, vaccine: 'Shingrix (RZV) — dose 2', date: '2024-03-14', lot: 'SZ24-M', manufacturer: 'GSK', site: 'L deltoid', givenBy: p1.id, nextDue: '', notes: 'Series complete.' });
+
+  // ── Patient 14: Kevin Okafor ───────────────────────────────────────
+  const s14 = savePatient({ id: generateId(), mrn: 'MRN002014', firstName: 'Kevin', lastName: 'Okafor', dob: '1988-02-09', sex: 'Male', phone: '(555) 310-1014', insurance: 'Aetna PPO', email: 'kevin.okafor@email.com', addressStreet: '321 Spruce Way', addressCity: 'Springfield', addressState: 'IL', addressZip: '62706', emergencyContactName: 'Chioma Okafor', emergencyContactPhone: '(555) 310-2014', emergencyContactRelationship: 'Wife', pharmacyName: 'Walgreens #5566', pharmacyPhone: '(555) 400-1401', pharmacyFax: '(555) 400-1402', panelProviders: [p1.id], createdAt: new Date('2023-01-15').toISOString() });
+  saveAllergy({ patientId: s14.id, allergen: 'NKDA', reaction: '', severity: '', recordedBy: p1.id, recordedAt: new Date('2023-01-15').toISOString() });
+  saveMedication({ patientId: s14.id, drug: 'Albuterol inhaler', dose: '90', unit: 'mcg/actuation', route: 'Inhalation', frequency: 'PRN (2 puffs q4-6h)', status: 'Active', prescribedBy: p1.id, startDate: '2023-01-15', instructions: 'Use for acute bronchospasm. Rinse mouth after use.' });
+  saveMedication({ patientId: s14.id, drug: 'Fluticasone-salmeterol (Advair)', dose: '250-50', unit: 'mcg', route: 'Inhalation', frequency: 'BID', status: 'Active', prescribedBy: p1.id, startDate: '2024-04-01', instructions: 'Rinse mouth after each dose.' });
+  saveMedication({ patientId: s14.id, drug: 'Montelukast', dose: '10', unit: 'mg', route: 'Oral', frequency: 'QNight', status: 'Active', prescribedBy: p1.id, startDate: '2024-04-01', instructions: '' });
+  saveDiagnosis({ patientId: s14.id, code: 'J45.41', description: 'Moderate persistent asthma with acute exacerbation', diagnosedDate: '2015-08-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s14.id, code: 'J30.9', description: 'Allergic rhinitis, unspecified', diagnosedDate: '2023-01-15', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s14.id, code: 'L20.9', description: 'Atopic dermatitis, unspecified', diagnosedDate: '2010-01-01', status: 'Resolved', providerId: p1.id });
+  saveSocialHistory({ patientId: s14.id, smokingStatus: 'Never', alcoholUse: 'Occasional (weekends)', recreationalDrugUse: 'Marijuana (occasional)', exerciseFrequency: '5x/week (runs)', occupation: 'Software engineer', maritalStatus: 'Married', livingSituation: 'Lives with wife and infant' });
+  saveFamilyHistory({ patientId: s14.id, relation: 'Mother', condition: 'Asthma, eczema' });
+  saveFamilyHistory({ patientId: s14.id, relation: 'Father', condition: 'Hypertension' });
+  const e14a = saveEncounter({ id: generateId(), patientId: s14.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-10-06T11:30:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e14a.id, chiefComplaint: 'Asthma follow-up — worsening symptoms in fall.', hpi: 'Kevin, 37-year-old with moderate persistent asthma. Reports increased albuterol use (daily x 1 week) with fall allergen season. No ED visits. Using Advair BID. ACT score 14 (not well controlled).', assessment: '1. Moderate persistent asthma (J45.41) — not well controlled (ACT 14); step up therapy.\n2. Allergic rhinitis (J30.9) — likely contributing; add nasal steroid.\n3. Allergen testing referral.', plan: '1. Add fluticasone nasal spray 50 mcg/spray BID.\n2. Continue Advair 250/50 BID, montelukast, albuterol PRN.\n3. Allergy referral for allergen immunotherapy evaluation.\n4. ACT at next visit; target ≥20.\n5. Asthma action plan reviewed.', signed: true, signedBy: p1.id, signedAt: new Date('2025-10-06T12:30:00').toISOString(), lastModified: new Date('2025-10-06T12:30:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e14a.id, patientId: s14.id, bpSystolic: '118', bpDiastolic: '72', heartRate: '76', respiratoryRate: '16', tempF: '98.6', spo2: '97', weightLbs: '176', heightIn: '72', recordedAt: new Date('2025-10-06T11:35:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s14.id, encounterId: e14a.id, panel: 'Spirometry', resultDate: new Date('2025-10-06T12:00:00').toISOString(), resultedBy: 'Pulmonary Lab', tests: [{ name: 'FEV1', value: '72', unit: '% predicted', referenceRange: '>80%', flag: 'Low' }, { name: 'FVC', value: '88', unit: '% predicted', referenceRange: '>80%', flag: 'Normal' }, { name: 'FEV1/FVC', value: '0.68', unit: '', referenceRange: '>0.70', flag: 'Low' }], notes: 'Obstructive pattern, moderate severity.' });
+  saveImmunization({ patientId: s14.id, vaccine: 'Influenza (IIV4)', date: '2024-09-20', lot: 'FL24-K', manufacturer: 'GSK', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-09-01', notes: '' });
+
+  // ── Patient 15: Linda Chu ──────────────────────────────────────────
+  const s15 = savePatient({ id: generateId(), mrn: 'MRN002015', firstName: 'Linda', lastName: 'Chu', dob: '1971-08-30', sex: 'Female', phone: '(555) 310-1015', insurance: 'UnitedHealthcare', email: 'linda.chu@email.com', addressStreet: '900 Lakeview Drive', addressCity: 'Springfield', addressState: 'IL', addressZip: '62701', emergencyContactName: 'Kevin Chu', emergencyContactPhone: '(555) 310-2015', emergencyContactRelationship: 'Son', pharmacyName: 'CVS Pharmacy #1516', pharmacyPhone: '(555) 400-1501', pharmacyFax: '(555) 400-1502', panelProviders: [p2.id], createdAt: new Date('2018-06-11').toISOString() });
+  saveAllergy({ patientId: s15.id, allergen: 'Codeine', reaction: 'Nausea/vomiting', severity: 'Moderate', recordedBy: p2.id, recordedAt: new Date('2018-06-11').toISOString() });
+  saveAllergy({ patientId: s15.id, allergen: 'Penicillin', reaction: 'Hives', severity: 'Moderate', recordedBy: p2.id, recordedAt: new Date('2018-06-11').toISOString() });
+  saveMedication({ patientId: s15.id, drug: 'Metformin', dose: '1000', unit: 'mg', route: 'Oral', frequency: 'BID with meals', status: 'Active', prescribedBy: p2.id, startDate: '2019-02-01', instructions: '' });
+  saveMedication({ patientId: s15.id, drug: 'Semaglutide (Ozempic)', dose: '1', unit: 'mg', route: 'Subcutaneous', frequency: 'Weekly', status: 'Active', prescribedBy: p2.id, startDate: '2023-08-01', instructions: 'Inject subcutaneously abdomen, thigh, or upper arm. Rotate sites.' });
+  saveMedication({ patientId: s15.id, drug: 'Atorvastatin', dose: '40', unit: 'mg', route: 'Oral', frequency: 'QNight', status: 'Active', prescribedBy: p2.id, startDate: '2019-02-01', instructions: '' });
+  saveMedication({ patientId: s15.id, drug: 'Lisinopril', dose: '10', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2019-02-01', instructions: 'Monitor kidney function and potassium.' });
+  saveDiagnosis({ patientId: s15.id, code: 'E11.65', description: 'Type 2 diabetes mellitus with hyperglycemia', diagnosedDate: '2019-01-10', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s15.id, code: 'E66.01', description: 'Morbid (severe) obesity due to excess calories', diagnosedDate: '2019-01-10', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s15.id, code: 'I10', description: 'Essential hypertension', diagnosedDate: '2019-01-10', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s15.id, code: 'E78.5', description: 'Hyperlipidemia, unspecified', diagnosedDate: '2019-01-10', status: 'Active', providerId: p2.id });
+  saveSocialHistory({ patientId: s15.id, smokingStatus: 'Never', alcoholUse: 'None', recreationalDrugUse: 'None', exerciseFrequency: 'Walking 20 min, 3x/week', occupation: 'Accountant', maritalStatus: 'Divorced', livingSituation: 'Lives alone; one adult son nearby' });
+  saveFamilyHistory({ patientId: s15.id, relation: 'Father', condition: 'T2DM, HTN, MI (age 60)' });
+  saveFamilyHistory({ patientId: s15.id, relation: 'Mother', condition: 'T2DM, obesity' });
+  const e15a = saveEncounter({ id: generateId(), patientId: s15.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-11-03T13:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e15a.id, chiefComplaint: 'T2DM, obesity, HTN follow-up. GLP-1 response check.', hpi: 'Linda, 54-year-old on semaglutide since Aug 2023. Has lost 18 lbs (BMI 34 → 30.8). HbA1c improved from 9.2% to 6.9%. BP well controlled on lisinopril. No GI side effects from semaglutide.', assessment: '1. T2DM (E11.65) — excellent response to semaglutide; HbA1c 6.9%. Continue.\n2. Obesity (E66.01) — BMI 30.8, down from 34; continue GLP-1 and lifestyle.\n3. HTN (I10) — controlled on lisinopril 10 mg.\n4. Hyperlipidemia (E78.5) — LDL 68, at goal on atorvastatin 40 mg.', plan: '1. Continue semaglutide 1 mg weekly, metformin 1000 mg BID.\n2. Continue lisinopril, atorvastatin.\n3. HbA1c in 3 months.\n4. Lifestyle: Mediterranean diet, increase exercise.\n5. Annual microalbumin/creatinine ratio.', signed: true, signedBy: p2.id, signedAt: new Date('2025-11-03T14:00:00').toISOString(), lastModified: new Date('2025-11-03T14:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e15a.id, patientId: s15.id, bpSystolic: '128', bpDiastolic: '80', heartRate: '80', respiratoryRate: '16', tempF: '98.2', spo2: '98', weightLbs: '195', heightIn: '63', recordedAt: new Date('2025-11-03T13:05:00').toISOString(), recordedBy: p2.id });
+  saveLabResult({ patientId: s15.id, encounterId: e15a.id, panel: 'HbA1c + Lipid Panel + CMP', resultDate: new Date('2025-11-03T15:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'HbA1c', value: '6.9', unit: '%', referenceRange: '<7.0', flag: 'Normal' }, { name: 'LDL', value: '68', unit: 'mg/dL', referenceRange: '<100', flag: 'Normal' }, { name: 'eGFR', value: '72', unit: 'mL/min/1.73m²', referenceRange: '>60', flag: 'Normal' }, { name: 'ALT', value: '32', unit: 'U/L', referenceRange: '7–56', flag: 'Normal' }, { name: 'Microalbumin/Cr', value: '18', unit: 'mg/g', referenceRange: '<30', flag: 'Normal' }], notes: 'Excellent metabolic control. Continue current regimen.' });
+  saveImmunization({ patientId: s15.id, vaccine: 'Influenza (IIV4)', date: '2024-10-01', lot: 'FL24-L', manufacturer: 'Sanofi', site: 'L deltoid', givenBy: p2.id, nextDue: '2025-10-01', notes: '' });
+
+  // ── Patient 16: George Sullivan ────────────────────────────────────
+  const s16 = savePatient({ id: generateId(), mrn: 'MRN002016', firstName: 'George', lastName: 'Sullivan', dob: '1944-05-18', sex: 'Male', phone: '(555) 310-1016', insurance: 'Medicare', email: '', addressStreet: '11 Veteran Lane', addressCity: 'Springfield', addressState: 'IL', addressZip: '62702', emergencyContactName: 'Maureen Sullivan', emergencyContactPhone: '(555) 310-2016', emergencyContactRelationship: 'Daughter', pharmacyName: 'CVS Pharmacy #1617', pharmacyPhone: '(555) 400-1601', pharmacyFax: '(555) 400-1602', panelProviders: [p2.id], createdAt: new Date('2015-01-07').toISOString() });
+  saveAllergy({ patientId: s16.id, allergen: 'Morphine', reaction: 'Confusion, urinary retention', severity: 'Severe', recordedBy: p2.id, recordedAt: new Date('2015-01-07').toISOString() });
+  saveMedication({ patientId: s16.id, drug: 'Donepezil', dose: '10', unit: 'mg', route: 'Oral', frequency: 'QNight', status: 'Active', prescribedBy: p2.id, startDate: '2022-05-01', instructions: 'Take at bedtime.' });
+  saveMedication({ patientId: s16.id, drug: 'Memantine', dose: '10', unit: 'mg', route: 'Oral', frequency: 'BID', status: 'Active', prescribedBy: p2.id, startDate: '2023-01-01', instructions: '' });
+  saveMedication({ patientId: s16.id, drug: 'Aspirin', dose: '81', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2010-03-01', instructions: 'Take with food.' });
+  saveMedication({ patientId: s16.id, drug: 'Atorvastatin', dose: '20', unit: 'mg', route: 'Oral', frequency: 'QNight', status: 'Active', prescribedBy: p2.id, startDate: '2010-03-01', instructions: '' });
+  saveMedication({ patientId: s16.id, drug: 'Tamsulosin', dose: '0.4', unit: 'mg', route: 'Oral', frequency: 'Daily after meals', status: 'Active', prescribedBy: p2.id, startDate: '2018-07-01', instructions: 'Take 30 min after same meal each day.' });
+  saveDiagnosis({ patientId: s16.id, code: 'G30.1', description: "Alzheimer's disease with late onset", diagnosedDate: '2022-04-15', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s16.id, code: 'N40.1', description: 'Benign prostatic hyperplasia with lower urinary tract symptoms', diagnosedDate: '2018-06-01', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s16.id, code: 'I25.10', description: 'Atherosclerotic heart disease of native coronary artery without angina pectoris', diagnosedDate: '2010-02-01', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s16.id, code: 'F32.9', description: 'Major depressive disorder, unspecified', diagnosedDate: '2023-03-01', status: 'Active', providerId: p2.id });
+  saveSocialHistory({ patientId: s16.id, smokingStatus: 'Former smoker (quit 1990, 25 pack-years)', alcoholUse: 'None', recreationalDrugUse: 'None', exerciseFrequency: 'Short walks with caregiver', occupation: 'Retired (Vietnam veteran, USMC)', maritalStatus: 'Widowed', livingSituation: 'Lives with daughter (primary caregiver)' });
+  saveFamilyHistory({ patientId: s16.id, relation: 'Mother', condition: "Alzheimer's disease" });
+  saveFamilyHistory({ patientId: s16.id, relation: 'Father', condition: 'CAD, stroke' });
+  const e16a = saveEncounter({ id: generateId(), patientId: s16.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-09-18T09:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e16a.id, chiefComplaint: "Alzheimer's disease follow-up. Daughter concerned about increased agitation at night.", hpi: "George, 81-year-old with late-onset Alzheimer's and CAD. Daughter reports increased nighttime confusion, restlessness, and occasional verbal agitation. MMSE 14 (was 18 in 2023). ADLs partially dependent. No falls.", assessment: "1. Alzheimer's disease (G30.1) — progressive, MMSE 14; nighttime agitation (sundowning). Add low-dose mirtazapine.\n2. BPH (N40.1) — stable on tamsulosin; no acute retention.\n3. CAD (I25.10) — stable on aspirin, atorvastatin.\n4. MDD (F32.9) — mirtazapine will address both mood and sleep.", plan: '1. Add mirtazapine 7.5 mg QHS for agitation/sleep.\n2. Continue donepezil 10 mg, memantine 10 mg BID.\n3. Caregiver support resources provided.\n4. Social work referral for respite care.\n5. Next visit 3 months.', signed: true, signedBy: p2.id, signedAt: new Date('2025-09-18T10:00:00').toISOString(), lastModified: new Date('2025-09-18T10:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e16a.id, patientId: s16.id, bpSystolic: '130', bpDiastolic: '76', heartRate: '70', respiratoryRate: '16', tempF: '97.6', spo2: '97', weightLbs: '158', heightIn: '68', recordedAt: new Date('2025-09-18T09:05:00').toISOString(), recordedBy: p2.id });
+  saveImmunization({ patientId: s16.id, vaccine: 'Pneumococcal (PCV20)', date: '2023-04-01', lot: 'PC23-G', manufacturer: 'Pfizer', site: 'R deltoid', givenBy: p2.id, nextDue: '', notes: 'Age/comorbidity indication.' });
+
+  // ── Patient 17: Ruth Nakamura ──────────────────────────────────────
+  const s17 = savePatient({ id: generateId(), mrn: 'MRN002017', firstName: 'Ruth', lastName: 'Nakamura', dob: '1955-12-12', sex: 'Female', phone: '(555) 310-1017', insurance: 'Medicare Advantage', email: 'ruth.nakamura@email.com', addressStreet: '77 Cherry Blossom Way', addressCity: 'Springfield', addressState: 'IL', addressZip: '62704', emergencyContactName: 'Alan Nakamura', emergencyContactPhone: '(555) 310-2017', emergencyContactRelationship: 'Son', pharmacyName: 'Walgreens #1718', pharmacyPhone: '(555) 400-1701', pharmacyFax: '(555) 400-1702', panelProviders: [p1.id], createdAt: new Date('2016-08-22').toISOString() });
+  saveAllergy({ patientId: s17.id, allergen: 'NKDA', reaction: '', severity: '', recordedBy: p1.id, recordedAt: new Date('2016-08-22').toISOString() });
+  saveMedication({ patientId: s17.id, drug: 'Methotrexate', dose: '15', unit: 'mg', route: 'Oral', frequency: 'Weekly (Monday)', status: 'Active', prescribedBy: p1.id, startDate: '2020-03-01', instructions: 'Take with folic acid. Avoid alcohol and NSAIDs.' });
+  saveMedication({ patientId: s17.id, drug: 'Folic acid', dose: '1', unit: 'mg', route: 'Oral', frequency: 'Daily (except MTX day)', status: 'Active', prescribedBy: p1.id, startDate: '2020-03-01', instructions: 'Reduces methotrexate side effects.' });
+  saveMedication({ patientId: s17.id, drug: 'Hydroxychloroquine', dose: '200', unit: 'mg', route: 'Oral', frequency: 'BID', status: 'Active', prescribedBy: p1.id, startDate: '2017-05-01', instructions: 'Take with food or milk.' });
+  saveMedication({ patientId: s17.id, drug: 'Prednisone', dose: '5', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2021-01-01', instructions: 'Taper as directed by rheumatology.' });
+  saveDiagnosis({ patientId: s17.id, code: 'M05.79', description: 'Rheumatoid arthritis with rheumatoid factor, multiple sites', diagnosedDate: '2016-09-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s17.id, code: 'M81.0', description: 'Osteoporosis without current pathological fracture', diagnosedDate: '2020-11-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s17.id, code: 'K21.0', description: 'GERD with esophagitis', diagnosedDate: '2019-04-01', status: 'Active', providerId: p1.id });
+  saveSocialHistory({ patientId: s17.id, smokingStatus: 'Never', alcoholUse: 'None (avoided due to methotrexate)', recreationalDrugUse: 'None', exerciseFrequency: 'Aquatherapy 2x/week', occupation: 'Retired librarian', maritalStatus: 'Widowed', livingSituation: 'Lives alone; son checks in weekly' });
+  saveFamilyHistory({ patientId: s17.id, relation: 'Mother', condition: 'RA, osteoporosis' });
+  saveFamilyHistory({ patientId: s17.id, relation: 'Father', condition: 'Hypertension, stroke' });
+  const e17a = saveEncounter({ id: generateId(), patientId: s17.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-10-14T10:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e17a.id, chiefComplaint: 'RA follow-up. MTX monitoring labs.', hpi: 'Ruth, 70-year-old with seropositive RA. Reports moderate improvement in joint pain on current regimen. Morning stiffness ~30 min. Recent MTX labs: LFTs normal, CBC normal. No oral ulcers. Mild GERD symptoms.', assessment: '1. RA (M05.79) — partial response on MTX + HCQ + prednisone 5 mg. Rheumatology recommends adding biologic (adalimumab); patient deferred pending insurance.\n2. Osteoporosis (M81.0) — on prednisone; add alendronate, vitamin D, calcium.\n3. GERD (K21.0) — add omeprazole 20 mg daily.', plan: '1. Continue MTX 15 mg weekly, HCQ 200 mg BID, prednisone 5 mg daily.\n2. Start alendronate 70 mg weekly, calcium 500 mg BID, vitamin D 2000 IU daily.\n3. Start omeprazole 20 mg daily for GERD.\n4. Rheumatology follow-up re adalimumab prior auth.\n5. MTX labs in 3 months.', signed: true, signedBy: p1.id, signedAt: new Date('2025-10-14T11:00:00').toISOString(), lastModified: new Date('2025-10-14T11:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e17a.id, patientId: s17.id, bpSystolic: '126', bpDiastolic: '74', heartRate: '74', respiratoryRate: '16', tempF: '98.4', spo2: '99', weightLbs: '138', heightIn: '62', recordedAt: new Date('2025-10-14T10:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s17.id, encounterId: e17a.id, panel: 'MTX Monitoring (CBC + CMP)', resultDate: new Date('2025-10-14T12:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'WBC', value: '5.8', unit: 'K/uL', referenceRange: '4.5–11.0', flag: 'Normal' }, { name: 'Hemoglobin', value: '11.8', unit: 'g/dL', referenceRange: '12.0–16.0', flag: 'Low' }, { name: 'ALT', value: '24', unit: 'U/L', referenceRange: '7–56', flag: 'Normal' }, { name: 'AST', value: '22', unit: 'U/L', referenceRange: '10–40', flag: 'Normal' }, { name: 'Creatinine', value: '0.9', unit: 'mg/dL', referenceRange: '0.5–1.1', flag: 'Normal' }], notes: 'Mild anemia, otherwise MTX monitoring labs acceptable.' });
+  saveImmunization({ patientId: s17.id, vaccine: 'Influenza (IIV4)', date: '2024-09-30', lot: 'FL24-R', manufacturer: 'Sanofi', site: 'R deltoid', givenBy: p1.id, nextDue: '2025-09-01', notes: 'Inactivated only — on immunosuppressants.' });
+
+  // ── Patient 18: Thomas Jensen ──────────────────────────────────────
+  const s18 = savePatient({ id: generateId(), mrn: 'MRN002018', firstName: 'Thomas', lastName: 'Jensen', dob: '1975-09-25', sex: 'Male', phone: '(555) 310-1018', insurance: 'Cigna PPO', email: 'thomas.jensen@email.com', addressStreet: '456 Pinehurst Court', addressCity: 'Springfield', addressState: 'IL', addressZip: '62705', emergencyContactName: 'Lisa Jensen', emergencyContactPhone: '(555) 310-2018', emergencyContactRelationship: 'Wife', pharmacyName: 'Walgreens #1819', pharmacyPhone: '(555) 400-1801', pharmacyFax: '(555) 400-1802', panelProviders: [p1.id], createdAt: new Date('2021-06-14').toISOString() });
+  saveAllergy({ patientId: s18.id, allergen: 'Tetracycline', reaction: 'Photosensitivity rash', severity: 'Mild', recordedBy: p1.id, recordedAt: new Date('2021-06-14').toISOString() });
+  saveMedication({ patientId: s18.id, drug: 'Buprenorphine-naloxone (Suboxone)', dose: '8-2', unit: 'mg', route: 'Sublingual', frequency: 'BID', status: 'Active', prescribedBy: p1.id, startDate: '2021-07-01', instructions: 'Place under tongue until dissolved. Do not swallow. Take at consistent times.' });
+  saveMedication({ patientId: s18.id, drug: 'Sertraline', dose: '100', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2021-07-15', instructions: 'Take in the morning with food.' });
+  saveMedication({ patientId: s18.id, drug: 'Clonazepam', dose: '0.5', unit: 'mg', route: 'Oral', frequency: 'QNight PRN', status: 'Active', prescribedBy: p1.id, startDate: '2022-01-01', instructions: 'Use only as directed for sleep. Do not combine with alcohol.' });
+  saveDiagnosis({ patientId: s18.id, code: 'F11.20', description: 'Opioid dependence, uncomplicated', diagnosedDate: '2021-06-14', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s18.id, code: 'F32.1', description: 'Major depressive disorder, single episode, moderate', diagnosedDate: '2021-07-15', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s18.id, code: 'F43.10', description: 'Post-traumatic stress disorder, unspecified', diagnosedDate: '2022-02-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s18.id, code: 'L30.9', description: 'Dermatitis, unspecified', diagnosedDate: '2019-08-01', status: 'Resolved', providerId: p1.id });
+  saveSocialHistory({ patientId: s18.id, smokingStatus: 'Current smoker (½ ppd)', alcoholUse: 'None (in recovery)', recreationalDrugUse: 'Opioid use disorder — in remission on MOUD', exerciseFrequency: '3x/week (gym)', occupation: 'Plumber (self-employed)', maritalStatus: 'Married', livingSituation: 'Lives with wife and two children' });
+  saveFamilyHistory({ patientId: s18.id, relation: 'Father', condition: 'Alcohol use disorder, depression' });
+  saveFamilyHistory({ patientId: s18.id, relation: 'Brother', condition: 'Opioid use disorder (overdose death 2019)' });
+  const e18a = saveEncounter({ id: generateId(), patientId: s18.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-11-10T08:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e18a.id, chiefComplaint: 'MOUD monthly check-in. No drug use. Doing well.', hpi: 'Thomas, 50-year-old on buprenorphine-naloxone for OUD (4+ years sobriety). Reports no opioid use. Mood stable on sertraline. PTSD symptoms managed with therapy. Urine drug screen negative for illicit opioids, positive for buprenorphine.', assessment: '1. OUD (F11.20) — sustained remission on MOUD; continue buprenorphine-naloxone.\n2. MDD (F32.1) — stable on sertraline 100 mg.\n3. PTSD (F43.10) — in EMDR therapy; improving.\n4. Smoking cessation — patient open to NRT; order nicotine patch.', plan: '1. Continue buprenorphine-naloxone 8/2 mg SL BID; 30-day supply. Prescription Monitoring Program checked — no concerns.\n2. Continue sertraline 100 mg daily, clonazepam 0.5 mg QHS PRN.\n3. Prescribe nicotine patch 14 mg/24 hr x 6 weeks with step-down plan.\n4. Continue therapy referral for PTSD (EMDR).\n5. Next MOUD visit in 4 weeks.', signed: true, signedBy: p1.id, signedAt: new Date('2025-11-10T09:00:00').toISOString(), lastModified: new Date('2025-11-10T09:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e18a.id, patientId: s18.id, bpSystolic: '122', bpDiastolic: '76', heartRate: '72', respiratoryRate: '16', tempF: '98.6', spo2: '98', weightLbs: '188', heightIn: '71', recordedAt: new Date('2025-11-10T08:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s18.id, encounterId: e18a.id, panel: 'UDS + Hepatitis Panel', resultDate: new Date('2025-11-10T10:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'UDS — Opiates', value: 'Negative', unit: '', referenceRange: 'Negative', flag: 'Normal' }, { name: 'UDS — Buprenorphine', value: 'Positive', unit: '', referenceRange: 'Expected positive', flag: 'Normal' }, { name: 'Hep C Ab', value: 'Negative', unit: '', referenceRange: 'Negative', flag: 'Normal' }, { name: 'Hep B sAg', value: 'Negative', unit: '', referenceRange: 'Negative', flag: 'Normal' }], notes: 'UDS consistent with MOUD adherence. No illicit opioids.' });
+  saveImmunization({ patientId: s18.id, vaccine: 'Hepatitis A series (complete)', date: '2021-08-01', lot: 'HA21-T', manufacturer: 'Merck', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'OUD indication.' });
+  saveImmunization({ patientId: s18.id, vaccine: 'Hepatitis B series (complete)', date: '2021-10-01', lot: 'HB21-T', manufacturer: 'Merck', site: 'L deltoid', givenBy: p1.id, nextDue: '', notes: 'OUD indication.' });
+
+  // ── Patient 19: Barbara Quinn ──────────────────────────────────────
+  const s19 = savePatient({ id: generateId(), mrn: 'MRN002019', firstName: 'Barbara', lastName: 'Quinn', dob: '1962-03-07', sex: 'Female', phone: '(555) 310-1019', insurance: 'BlueCross PPO', email: 'barbara.quinn@email.com', addressStreet: '38 Foxglove Lane', addressCity: 'Springfield', addressState: 'IL', addressZip: '62703', emergencyContactName: 'Michael Quinn', emergencyContactPhone: '(555) 310-2019', emergencyContactRelationship: 'Husband', pharmacyName: 'CVS Pharmacy #1920', pharmacyPhone: '(555) 400-1901', pharmacyFax: '(555) 400-1902', panelProviders: [p2.id], createdAt: new Date('2017-02-14').toISOString() });
+  saveAllergy({ patientId: s19.id, allergen: 'ACE inhibitors', reaction: 'Angioedema', severity: 'Severe', recordedBy: p2.id, recordedAt: new Date('2017-02-14').toISOString() });
+  saveMedication({ patientId: s19.id, drug: 'Losartan', dose: '50', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2017-03-01', instructions: 'ARB — alternative to ACE inhibitor. Monitor kidney function and potassium.' });
+  saveMedication({ patientId: s19.id, drug: 'Amlodipine', dose: '5', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2019-06-01', instructions: '' });
+  saveMedication({ patientId: s19.id, drug: 'Insulin glargine (Lantus)', dose: '20', unit: 'units', route: 'Subcutaneous', frequency: 'QNight', status: 'Active', prescribedBy: p2.id, startDate: '2022-01-10', instructions: 'Inject into abdomen, thigh, or upper arm. Rotate sites.' });
+  saveMedication({ patientId: s19.id, drug: 'Sitagliptin', dose: '100', unit: 'mg', route: 'Oral', frequency: 'Daily', status: 'Active', prescribedBy: p2.id, startDate: '2020-05-01', instructions: '' });
+  saveMedication({ patientId: s19.id, drug: 'Rosuvastatin', dose: '20', unit: 'mg', route: 'Oral', frequency: 'QNight', status: 'Active', prescribedBy: p2.id, startDate: '2019-06-01', instructions: '' });
+  saveDiagnosis({ patientId: s19.id, code: 'I10', description: 'Essential hypertension', diagnosedDate: '2017-02-14', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s19.id, code: 'E11.9', description: 'Type 2 diabetes mellitus without complications', diagnosedDate: '2018-10-01', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s19.id, code: 'E78.5', description: 'Hyperlipidemia, unspecified', diagnosedDate: '2019-05-01', status: 'Active', providerId: p2.id });
+  saveDiagnosis({ patientId: s19.id, code: 'C18.9', description: 'Malignant neoplasm of colon, unspecified — Stage 2, resected 2021', diagnosedDate: '2021-04-01', status: 'Resolved', providerId: p2.id });
+  saveSocialHistory({ patientId: s19.id, smokingStatus: 'Former smoker (quit 2000, 10 pack-years)', alcoholUse: 'None', recreationalDrugUse: 'None', exerciseFrequency: 'Walking 30 min daily', occupation: 'Nurse practitioner (retired)', maritalStatus: 'Married', livingSituation: 'Lives with husband' });
+  saveFamilyHistory({ patientId: s19.id, relation: 'Father', condition: 'Colon cancer (age 60), T2DM' });
+  saveFamilyHistory({ patientId: s19.id, relation: 'Mother', condition: 'HTN, stroke' });
+  const e19a = saveEncounter({ id: generateId(), patientId: s19.id, providerId: p2.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-10-28T11:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e19a.id, chiefComplaint: 'T2DM, HTN annual follow-up. Colon cancer surveillance CEA.', hpi: 'Barbara, 63-year-old, 4 years post colon cancer resection (Stage 2, no adjuvant chemo). CEA 1.8 ng/mL (normal). BP 138/84 on losartan + amlodipine — consider uptitrating. HbA1c 7.4%.', assessment: '1. T2DM (E11.9) — HbA1c 7.4%, near goal; continue current regimen.\n2. HTN (I10) — BP above goal on two agents; uptitrate amlodipine.\n3. Hyperlipidemia (E78.5) — LDL 72, at goal.\n4. Colon cancer surveillance — CEA 1.8, normal; colonoscopy due 2026.', plan: '1. Uptitrate amlodipine to 10 mg daily.\n2. Continue losartan 50 mg, insulin glargine 20 units QNight, sitagliptin, rosuvastatin.\n3. HbA1c in 3 months.\n4. Schedule colonoscopy 2026 (5-year post-resection).\n5. Annual CEA ordered for next visit.', signed: true, signedBy: p2.id, signedAt: new Date('2025-10-28T12:00:00').toISOString(), lastModified: new Date('2025-10-28T12:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e19a.id, patientId: s19.id, bpSystolic: '138', bpDiastolic: '84', heartRate: '76', respiratoryRate: '16', tempF: '98.0', spo2: '98', weightLbs: '167', heightIn: '65', recordedAt: new Date('2025-10-28T11:05:00').toISOString(), recordedBy: p2.id });
+  saveLabResult({ patientId: s19.id, encounterId: e19a.id, panel: 'HbA1c + Lipid + CEA + CMP', resultDate: new Date('2025-10-28T13:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'HbA1c', value: '7.4', unit: '%', referenceRange: '<7.0', flag: 'High' }, { name: 'LDL', value: '72', unit: 'mg/dL', referenceRange: '<100', flag: 'Normal' }, { name: 'CEA', value: '1.8', unit: 'ng/mL', referenceRange: '<3.0', flag: 'Normal' }, { name: 'Creatinine', value: '1.0', unit: 'mg/dL', referenceRange: '0.5–1.1', flag: 'Normal' }, { name: 'Potassium', value: '4.4', unit: 'mEq/L', referenceRange: '3.5–5.1', flag: 'Normal' }], notes: 'CEA within normal limits. HbA1c slightly above target.' });
+  saveImmunization({ patientId: s19.id, vaccine: 'Shingrix (RZV) series (complete)', date: '2023-05-01', lot: 'SZ23-B', manufacturer: 'GSK', site: 'R deltoid', givenBy: p2.id, nextDue: '', notes: 'Series completed May–Sept 2023.' });
+
+  // ── Patient 20: Marcus Rivera ──────────────────────────────────────
+  const s20 = savePatient({ id: generateId(), mrn: 'MRN002020', firstName: 'Marcus', lastName: 'Rivera', dob: '1993-10-11', sex: 'Male', phone: '(555) 310-1020', insurance: 'Marketplace (Bronze)', email: 'marcus.rivera@email.com', addressStreet: '199 Aspen Court', addressCity: 'Springfield', addressState: 'IL', addressZip: '62706', emergencyContactName: 'Elena Rivera', emergencyContactPhone: '(555) 310-2020', emergencyContactRelationship: 'Mother', pharmacyName: 'CVS Pharmacy #2021', pharmacyPhone: '(555) 400-2001', pharmacyFax: '(555) 400-2002', panelProviders: [p1.id], createdAt: new Date('2024-01-08').toISOString() });
+  saveAllergy({ patientId: s20.id, allergen: 'NKDA', reaction: '', severity: '', recordedBy: p1.id, recordedAt: new Date('2024-01-08').toISOString() });
+  saveMedication({ patientId: s20.id, drug: 'Isotretinoin', dose: '40', unit: 'mg', route: 'Oral', frequency: 'BID with fatty meal', status: 'Active', prescribedBy: p1.id, startDate: '2024-03-01', instructions: 'iPLEDGE enrolled. No Vitamin A supplements. Avoid pregnancy (Category X).' });
+  saveMedication({ patientId: s20.id, drug: 'Doxycycline', dose: '100', unit: 'mg', route: 'Oral', frequency: 'BID', status: 'Discontinued', prescribedBy: p1.id, startDate: '2023-08-01', instructions: 'Discontinued after starting isotretinoin.' });
+  saveMedication({ patientId: s20.id, drug: 'Benzoyl peroxide 5% wash', dose: '1', unit: 'application', route: 'Topical', frequency: 'Daily', status: 'Active', prescribedBy: p1.id, startDate: '2024-03-01', instructions: 'Apply to face daily during isotretinoin course.' });
+  saveDiagnosis({ patientId: s20.id, code: 'L70.0', description: 'Acne vulgaris', diagnosedDate: '2023-07-01', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s20.id, code: 'F41.1', description: 'Generalized anxiety disorder', diagnosedDate: '2024-01-08', status: 'Active', providerId: p1.id });
+  saveDiagnosis({ patientId: s20.id, code: 'J30.9', description: 'Allergic rhinitis, unspecified', diagnosedDate: '2020-04-01', status: 'Active', providerId: p1.id });
+  saveSocialHistory({ patientId: s20.id, smokingStatus: 'Never', alcoholUse: 'Social (beer, 3-4 drinks/week)', recreationalDrugUse: 'Marijuana (2-3x/week)', exerciseFrequency: '4x/week (weightlifting)', occupation: 'College student / barista', maritalStatus: 'Single', livingSituation: 'College apartment with 2 roommates' });
+  saveFamilyHistory({ patientId: s20.id, relation: 'Father', condition: 'Severe acne (required isotretinoin), anxiety' });
+  saveFamilyHistory({ patientId: s20.id, relation: 'Mother', condition: 'Asthma, allergic rhinitis' });
+  const e20a = saveEncounter({ id: generateId(), patientId: s20.id, providerId: p1.id, visitType: 'Outpatient', visitSubtype: 'Primary Care', dateTime: new Date('2025-09-25T15:00:00').toISOString(), status: 'Signed' });
+  saveNote({ id: generateId(), encounterId: e20a.id, chiefComplaint: 'Isotretinoin month 6 check. Labs and iPLEDGE review.', hpi: 'Marcus, 32-year-old on isotretinoin 40 mg BID (month 6 of planned 6-month course). Acne dramatically improved — no new nodular lesions. Lips chapped, skin dry (expected side effects). Mood stable. No depression symptoms on PHQ-9 (score 2). iPLEDGE requirements met this month.', assessment: '1. Acne vulgaris (L70.0) — excellent response to isotretinoin; consider completing course at month 6 or extending 1 month per dermatology.\n2. GAD (F41.1) — mild, managed with CBT therapy; PHQ-9 2 (minimal).\n3. iPLEDGE — compliant, monthly labs normal.', plan: '1. Complete isotretinoin course (final month). Derm will reassess for extension vs completion.\n2. Moisturizer, SPF 30+ daily, lip balm for dryness.\n3. Continue benzoyl peroxide wash.\n4. Continue CBT for GAD; sertraline deferred per patient preference.\n5. Counsel on marijuana use and anxiety.\n6. Next visit 6 weeks post-course.', signed: true, signedBy: p1.id, signedAt: new Date('2025-09-25T16:00:00').toISOString(), lastModified: new Date('2025-09-25T16:00:00').toISOString(), addenda: [] });
+  saveEncounterVitals({ encounterId: e20a.id, patientId: s20.id, bpSystolic: '116', bpDiastolic: '70', heartRate: '66', respiratoryRate: '14', tempF: '98.4', spo2: '100', weightLbs: '172', heightIn: '70', recordedAt: new Date('2025-09-25T15:05:00').toISOString(), recordedBy: p1.id });
+  saveLabResult({ patientId: s20.id, encounterId: e20a.id, panel: 'iPLEDGE Labs (CBC + CMP + Lipids)', resultDate: new Date('2025-09-25T17:00:00').toISOString(), resultedBy: 'Lab — General Hospital', tests: [{ name: 'WBC', value: '6.2', unit: 'K/uL', referenceRange: '4.5–11.0', flag: 'Normal' }, { name: 'Triglycerides', value: '142', unit: 'mg/dL', referenceRange: '<150', flag: 'Normal' }, { name: 'ALT', value: '28', unit: 'U/L', referenceRange: '7–56', flag: 'Normal' }, { name: 'Creatinine', value: '0.9', unit: 'mg/dL', referenceRange: '0.7–1.3', flag: 'Normal' }], notes: 'iPLEDGE labs within acceptable range. Mild triglyceride rise — acceptable.' });
+  saveImmunization({ patientId: s20.id, vaccine: 'Influenza (IIV4)', date: '2024-10-05', lot: 'FL24-M', manufacturer: 'GSK', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
+  saveImmunization({ patientId: s20.id, vaccine: 'Meningococcal (MenACWY)', date: '2024-01-08', lot: 'MC24-MR', manufacturer: 'Sanofi', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'College student booster indication.' });
 }

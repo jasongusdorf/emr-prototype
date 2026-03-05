@@ -28,6 +28,68 @@ function renderDashboard() {
     : getPatients().sort((a, b) =>
         (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName));
 
+  // ===== Physician Header =====
+  const currentUser = getSessionUser();
+  const currentProvider = currentUser ? getProvider(currentUser.id) : null;
+  if (currentProvider) {
+    const physicianHeader = document.createElement('div');
+    physicianHeader.className = 'dashboard-physician-header';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'dashboard-physician-name';
+    nameEl.textContent = currentProvider.firstName + ' ' + currentProvider.lastName + ', ' + currentProvider.degree;
+
+    physicianHeader.appendChild(nameEl);
+
+    const clinicType = !isInpatient ? (localStorage.getItem('emr_op_clinic_type') || '') : '';
+    const clinicName = !isInpatient ? (localStorage.getItem('emr_op_clinic_name') || '') : '';
+    const clinicText = [clinicType, clinicName].filter(Boolean).join(' · ');
+
+    const locationRow = document.createElement('div');
+    locationRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:4px;';
+
+    if (clinicText) {
+      const locationEl = document.createElement('div');
+      locationEl.className = 'dashboard-physician-location';
+      locationEl.style.marginTop = '0';
+      locationEl.textContent = clinicText;
+      locationRow.appendChild(locationEl);
+    }
+
+    const cogBtn = document.createElement('button');
+    cogBtn.className = 'btn-clinic-cog';
+    cogBtn.title = 'Edit clinic location';
+    cogBtn.textContent = '⚙';
+    cogBtn.addEventListener('click', () => {
+      const curType = localStorage.getItem(typeKey) || '';
+      const curName = localStorage.getItem(nameKey) || '';
+      const opts = types.map(t => '<option value="' + esc(t) + '"' + (curType === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
+      openModal({
+        title: isInpatient ? 'Edit Inpatient Service' : 'Edit Clinic Location',
+        bodyHTML:
+          '<div class="form-group">' +
+            '<label class="form-label">' + (isInpatient ? 'Service Type' : 'Clinic Type') + '</label>' +
+            '<select class="form-control" id="cog-type"><option value="">— Select —</option>' + opts + '</select>' +
+          '</div>' +
+          '<div class="form-group" style="margin-top:12px;">' +
+            '<label class="form-label">' + (isInpatient ? 'Service / Team Name' : 'Clinic Name') + '</label>' +
+            '<input class="form-control" id="cog-name" value="' + esc(curName) + '" placeholder="' + (isInpatient ? 'e.g. Cardiology Team A' : 'e.g. Downtown Internal Medicine') + '">' +
+          '</div>',
+        footerHTML: '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="cog-save">Save</button>',
+      });
+      document.getElementById('cog-save').addEventListener('click', () => {
+        localStorage.setItem(typeKey, document.getElementById('cog-type').value);
+        localStorage.setItem(nameKey, document.getElementById('cog-name').value.trim());
+        closeModal();
+        renderDashboard();
+      });
+    });
+    locationRow.appendChild(cogBtn);
+    physicianHeader.appendChild(locationRow);
+
+    app.appendChild(physicianHeader);
+  }
+
   // ===== Summary Bar =====
   const summaryBar = document.createElement('div');
   summaryBar.className = 'dashboard-summary-bar';
@@ -46,12 +108,9 @@ function renderDashboard() {
       { value: pendingOrdersCount, label: 'Pending Orders', cls: pendingOrdersCount > 0 ? 'stat-warning' : '' },
     ];
   } else {
-    const overdueCount = allPatients.reduce((sum, p) => sum + getOverdueScreeningsCount(p), 0);
     const unsignedCount = getNotes().filter(n => !n.signed).length;
     const pendingOrdersCount = getOrders().filter(o => o.status === 'Pending').length;
     stats = [
-      { value: allPatients.length, label: 'Total Patients', cls: '' },
-      { value: overdueCount,       label: 'Overdue Screenings', cls: overdueCount > 0 ? 'stat-danger' : '' },
       { value: unsignedCount,      label: 'Unsigned Notes', cls: unsignedCount > 0 ? 'stat-warning' : '' },
       { value: pendingOrdersCount, label: 'Pending Orders', cls: pendingOrdersCount > 0 ? 'stat-warning' : '' },
     ];
@@ -70,7 +129,7 @@ function renderDashboard() {
   stats.forEach(s => {
     const stat = document.createElement('div');
     stat.className = 'summary-stat';
-    if (statActions[s.label] && s.value > 0) {
+    if (statActions[s.label]) {
       stat.classList.add('summary-stat-clickable');
       stat.title = 'Click to view ' + s.label.toLowerCase();
       stat.addEventListener('click', statActions[s.label]);
@@ -144,318 +203,897 @@ function renderDashboard() {
     app.appendChild(apptCard);
   }
 
-  // ===== Search bar + My Patients/Census toggle =====
-  const searchWrap = document.createElement('div');
-  searchWrap.style.cssText = 'margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+  // ===== Clinic / Service Info Card =====
+  const infoCard = document.createElement('div');
+  infoCard.className = 'card';
+  infoCard.style.marginBottom = '16px';
 
-  const searchBar = document.createElement('div');
-  searchBar.className = 'search-bar';
-  searchBar.style.maxWidth = '400px';
-  searchBar.innerHTML = `
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-    <input type="text" id="patient-search" placeholder="Search by name or MRN…" autocomplete="off" />
-  `;
-  searchWrap.appendChild(searchBar);
+  const infoHdr = document.createElement('div');
+  infoHdr.className = 'card-header';
+  const infoTitle = document.createElement('span');
+  infoTitle.className = 'card-title';
+  infoTitle.textContent = isInpatient ? 'Inpatient Service' : 'Clinic Information';
+  infoHdr.appendChild(infoTitle);
+  infoCard.appendChild(infoHdr);
 
-  // My Patients toggle
-  const currentProv = getCurrentProvider();
-  const myPatientsToggle = document.createElement('label');
-  myPatientsToggle.className = 'my-patients-toggle';
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.id = 'my-patients-checkbox';
-  checkbox.checked = _dashMyPatientsOnly;
-  checkbox.disabled = !currentProv;
-  myPatientsToggle.appendChild(checkbox);
-  const toggleLabel = document.createTextNode(isInpatient ? ' My Census' : ' My Patients');
-  myPatientsToggle.appendChild(toggleLabel);
-  if (!currentProv) {
-    const hint = document.createElement('span');
-    hint.style.cssText = 'font-size:11px;color:var(--text-muted);margin-left:4px';
-    hint.textContent = '(select provider first)';
-    myPatientsToggle.appendChild(hint);
-  }
-  searchWrap.appendChild(myPatientsToggle);
-  app.appendChild(searchWrap);
+  const OP_TYPES = [
+    'General Internal Medicine', 'Family Medicine', 'Cardiology', 'Pulmonology',
+    'Gastroenterology', 'Nephrology', 'Neurology', 'Oncology', 'Endocrinology',
+    'Rheumatology', 'Psychiatry', 'Pediatrics', 'Dermatology', 'Urgent Care',
+    'Obstetrics/Gynecology', 'Urology', 'ENT', 'Ophthalmology', 'Orthopedics',
+    'Pain Management', 'Infectious Disease', 'Allergy/Immunology', 'Other',
+  ];
+  const IP_TYPES = [
+    'General Medicine / Hospitalist', 'Cardiology', 'Pulmonology / Critical Care',
+    'Gastroenterology', 'Nephrology', 'Neurology', 'Oncology / Hematology',
+    'Surgery — General', 'Surgery — Orthopedic', 'Obstetrics/Gynecology',
+    'Psychiatry', 'Pediatrics', 'ICU / MICU', 'CCU', 'Infectious Disease',
+    'Transplant', 'Trauma', 'Other',
+  ];
+  const types = isInpatient ? IP_TYPES : OP_TYPES;
+  const typeKey = isInpatient ? 'emr_ip_service_type' : 'emr_op_clinic_type';
+  const nameKey = isInpatient ? 'emr_ip_service_name' : 'emr_op_clinic_name';
 
-  // ===== Patient Table =====
-  const card = document.createElement('div');
-  card.className = 'card';
+  const savedType = localStorage.getItem(typeKey) || '';
+  const savedName = localStorage.getItem(nameKey) || '';
 
-  const header = document.createElement('div');
-  header.className = 'card-header';
-  const cardTitle = document.createElement('span');
-  cardTitle.className = 'card-title';
-  cardTitle.textContent = isInpatient ? 'All Census' : 'All Patients';
-  const countEl = document.createElement('span');
-  countEl.className = 'text-muted text-sm';
-  countEl.id = 'patient-count';
-  const countUnit = isInpatient ? 'patient' : 'patient';
-  countEl.textContent = allPatients.length + ' ' + countUnit + (allPatients.length !== 1 ? 's' : '');
-  header.appendChild(cardTitle);
-  header.appendChild(countEl);
-  card.appendChild(header);
+  const infoBody = document.createElement('div');
+  infoBody.style.cssText = 'padding:16px 24px;';
 
-  const wrap = document.createElement('div');
-  wrap.className = 'table-wrap';
+  function renderInfoBody() {
+    infoBody.innerHTML = '';
+    const curType = localStorage.getItem(typeKey) || '';
+    const curName = localStorage.getItem(nameKey) || '';
 
-  const table = document.createElement('table');
-  table.className = 'table';
-  const colCount = isInpatient ? 7 : 9;
+    if (curType && curName) {
+      // Read-only display
+      const readView = document.createElement('div');
+      readView.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:16px;';
 
-  if (isInpatient) {
-    table.innerHTML = `<thead><tr>
-      <th>Name</th><th>MRN</th><th>Admission Date</th><th>Attending</th><th>Status</th><th>Alerts</th><th></th>
-    </tr></thead>`;
-  } else {
-    table.innerHTML = `<thead><tr>
-      <th>Name</th><th>MRN</th><th>DOB</th><th>Age</th><th>Sex</th><th>Phone</th><th>Insurance</th><th>Alerts</th><th></th>
-    </tr></thead>`;
-  }
+      const text = document.createElement('div');
+      text.style.cssText = 'font-size:14px;color:var(--text-primary);';
+      text.innerHTML = '<strong>' + curType + '</strong> · ' + curName;
 
-  const tbody = document.createElement('tbody');
-  tbody.id = 'patient-tbody';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn-clinic-cog';
+      editBtn.style.fontSize = '14px';
+      editBtn.title = isInpatient ? 'Edit inpatient service' : 'Edit clinic information';
+      editBtn.textContent = '⚙';
+      editBtn.addEventListener('click', () => {
+        renderInfoForm();
+      });
 
-  function getFilteredPatients() {
-    let list = allPatients;
-    if (_dashMyPatientsOnly && currentProv) {
-      list = list.filter(p => (p.panelProviders || []).includes(currentProv));
+      readView.appendChild(text);
+      readView.appendChild(editBtn);
+      infoBody.appendChild(readView);
+    } else {
+      renderInfoForm();
     }
-    const q = (document.getElementById('patient-search')?.value || '').trim().toLowerCase();
-    if (q) {
-      list = list.filter(p =>
-        (p.firstName + ' ' + p.lastName).toLowerCase().includes(q) ||
-        p.lastName.toLowerCase().includes(q) ||
-        p.mrn.toLowerCase().includes(q)
-      );
-    }
-    return list;
   }
 
-  function _calcAge(dob) {
-    if (!dob) return '—';
-    const d = new Date(dob + 'T00:00:00');
-    if (isNaN(d)) return '—';
-    const today = new Date();
-    let age = today.getFullYear() - d.getFullYear();
-    const m = today.getMonth() - d.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
-    return age;
-  }
+  function renderInfoForm() {
+    infoBody.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px;';
 
-  function renderRows(list) {
-    tbody.innerHTML = '';
-    const searchQ = (document.getElementById('patient-search')?.value || '').trim();
-    if (list.length === 0) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = colCount;
-      td.style.textAlign = 'center';
-      td.style.padding = '32px';
-      td.style.color = 'var(--text-muted)';
-      if (searchQ) {
-        td.textContent = 'No results for "' + searchQ + '" — try a different search.';
-      } else if (isInpatient) {
-        td.textContent = 'No inpatient admissions.';
-      } else {
-        td.textContent = 'No patients registered yet. Click "+ New Patient" to get started.';
-      }
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      return;
-    }
-
-    list.forEach(pat => {
-      const tr = document.createElement('tr');
-
-      const tdName = document.createElement('td');
-      const nameBtn = document.createElement('button');
-      nameBtn.className = 'table-link';
-      nameBtn.textContent = pat.lastName + ', ' + pat.firstName;
-      nameBtn.onclick = () => navigate('#chart/' + pat.id);
-      tdName.appendChild(nameBtn);
-
-      const tdMrn = createTd(pat.mrn);
-
-      if (isInpatient) {
-        // Find the active inpatient encounter for this patient
-        const ipEnc = getEncountersByPatient(pat.id).find(e =>
-          (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled');
-        const admitDate = ipEnc ? formatDateTime(ipEnc.dateTime) : '—';
-        const attending = ipEnc && ipEnc.providerId ? getProvider(ipEnc.providerId) : null;
-        const attendingName = attending ? attending.lastName + ', ' + attending.firstName : '—';
-        const encStatus = ipEnc ? ipEnc.status : '—';
-
-        const tdAdmit = createTd(admitDate);
-        const tdAttending = createTd(attendingName);
-        const tdStatus = createTd(encStatus);
-
-        // Alerts
-        const tdAlerts = document.createElement('td');
-        const badges = document.createElement('div');
-        badges.className = 'alert-badges';
-        const unsigned = getUnsignedNotesCount(pat.id);
-        if (unsigned > 0) {
-          const b = document.createElement('span');
-          b.className = 'alert-badge alert-badge-amber';
-          b.textContent = unsigned + ' unsigned';
-          b.onclick = () => navigate('#chart/' + pat.id);
-          badges.appendChild(b);
-        }
-        const pendingOrd = getOrdersByPatient(pat.id).filter(o => o.status === 'Pending').length;
-        if (pendingOrd > 0) {
-          const b = document.createElement('span');
-          b.className = 'alert-badge alert-badge-blue';
-          b.textContent = pendingOrd + ' pending';
-          b.onclick = () => navigate('#chart/' + pat.id);
-          badges.appendChild(b);
-        }
-        tdAlerts.appendChild(badges);
-
-        // Actions
-        const tdActions = document.createElement('td');
-        tdActions.style.textAlign = 'right';
-        const viewBtn = document.createElement('button');
-        viewBtn.className = 'btn btn-secondary btn-sm';
-        viewBtn.textContent = 'View';
-        viewBtn.onclick = () => navigate('#chart/' + pat.id);
-        tdActions.appendChild(viewBtn);
-
-        tr.appendChild(tdName);
-        tr.appendChild(tdMrn);
-        tr.appendChild(tdAdmit);
-        tr.appendChild(tdAttending);
-        tr.appendChild(tdStatus);
-        tr.appendChild(tdAlerts);
-        tr.appendChild(tdActions);
-      } else {
-        const tdDob  = createTd(formatDate(pat.dob));
-        const tdAge  = createTd(String(_calcAge(pat.dob)));
-        const tdSex  = createTd(pat.sex);
-        const tdPhone = createTd(pat.phone);
-        const tdIns  = createTd(pat.insurance);
-
-        // Alerts column
-        const tdAlerts = document.createElement('td');
-        const badges = document.createElement('div');
-        badges.className = 'alert-badges';
-
-        const overdues = getOverdueScreeningsCount(pat);
-        if (overdues > 0) {
-          const b = document.createElement('span');
-          b.className = 'alert-badge alert-badge-red';
-          b.textContent = overdues + ' overdue';
-          b.onclick = () => navigate('#chart/' + pat.id);
-          badges.appendChild(b);
-        }
-
-        const unsigned = getUnsignedNotesCount(pat.id);
-        if (unsigned > 0) {
-          const b = document.createElement('span');
-          b.className = 'alert-badge alert-badge-amber';
-          b.textContent = unsigned + ' unsigned';
-          b.onclick = () => navigate('#chart/' + pat.id);
-          badges.appendChild(b);
-        }
-
-        const pendingOrd = getOrdersByPatient(pat.id).filter(o => o.status === 'Pending').length;
-        if (pendingOrd > 0) {
-          const b = document.createElement('span');
-          b.className = 'alert-badge alert-badge-blue';
-          b.textContent = pendingOrd + ' pending';
-          b.onclick = () => navigate('#chart/' + pat.id);
-          badges.appendChild(b);
-        }
-
-        tdAlerts.appendChild(badges);
-
-        // Actions
-        const tdActions = document.createElement('td');
-        tdActions.style.textAlign = 'right';
-        tdActions.style.whiteSpace = 'nowrap';
-
-        const viewBtn = document.createElement('button');
-        viewBtn.className = 'btn btn-primary btn-sm';
-        viewBtn.textContent = 'View';
-        viewBtn.onclick = () => navigate('#chart/' + pat.id);
-        tdActions.appendChild(viewBtn);
-
-        const editBtn = document.createElement('button');
-        editBtn.className = 'btn btn-secondary btn-sm';
-        editBtn.style.marginLeft = '6px';
-        editBtn.setAttribute('data-action', 'edit');
-        editBtn.setAttribute('data-id', pat.id);
-        editBtn.textContent = 'Edit';
-        tdActions.appendChild(editBtn);
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'btn btn-danger btn-sm';
-        delBtn.style.marginLeft = '6px';
-        delBtn.setAttribute('data-action', 'delete');
-        delBtn.setAttribute('data-id', pat.id);
-        delBtn.textContent = 'Delete';
-        tdActions.appendChild(delBtn);
-
-        tr.appendChild(tdName);
-        tr.appendChild(tdMrn);
-        tr.appendChild(tdDob);
-        tr.appendChild(tdAge);
-        tr.appendChild(tdSex);
-        tr.appendChild(tdPhone);
-        tr.appendChild(tdIns);
-        tr.appendChild(tdAlerts);
-        tr.appendChild(tdActions);
-      }
-      tbody.appendChild(tr);
+    const typeGroup = document.createElement('div');
+    typeGroup.className = 'form-group';
+    typeGroup.style.margin = '0';
+    const typeLabel = document.createElement('label');
+    typeLabel.className = 'form-label';
+    typeLabel.textContent = isInpatient ? 'Service Type' : 'Clinic Type';
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'form-control';
+    typeSelect.innerHTML = '<option value="">— Select —</option>' +
+      types.map(t => '<option value="' + t + '"' + ((localStorage.getItem(typeKey) || '') === t ? ' selected' : '') + '>' + t + '</option>').join('');
+    typeSelect.addEventListener('change', () => {
+      localStorage.setItem(typeKey, typeSelect.value);
+      if (typeSelect.value && nameInput.value.trim()) { renderInfoBody(); renderDashboard(); }
     });
+    typeGroup.appendChild(typeLabel);
+    typeGroup.appendChild(typeSelect);
+
+    const nameGroup = document.createElement('div');
+    nameGroup.className = 'form-group';
+    nameGroup.style.margin = '0';
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'form-label';
+    nameLabel.textContent = isInpatient ? 'Service / Team Name' : 'Clinic Name';
+    const nameInput = document.createElement('input');
+    nameInput.className = 'form-control';
+    nameInput.placeholder = isInpatient ? 'e.g. Cardiology Team A' : 'e.g. Downtown Internal Medicine';
+    nameInput.value = localStorage.getItem(nameKey) || '';
+    nameInput.addEventListener('input', () => {
+      localStorage.setItem(nameKey, nameInput.value.trim());
+      if (typeSelect.value && nameInput.value.trim()) { renderInfoBody(); renderDashboard(); }
+    });
+    nameGroup.appendChild(nameLabel);
+    nameGroup.appendChild(nameInput);
+
+    grid.appendChild(typeGroup);
+    grid.appendChild(nameGroup);
+    infoBody.appendChild(grid);
   }
 
-  function refreshTable() {
-    const list = getFilteredPatients();
-    renderRows(list);
-    document.getElementById('patient-count').textContent =
-      list.length + ' patient' + (list.length !== 1 ? 's' : '');
-    cardTitle.textContent = _dashMyPatientsOnly
-      ? (isInpatient ? 'My Census' : 'My Patients')
-      : (isInpatient ? 'All Census' : 'All Patients');
-  }
-
-  renderRows(getFilteredPatients());
-  table.appendChild(tbody);
-  wrap.appendChild(table);
-  card.appendChild(wrap);
-  app.appendChild(card);
-
-  // Event delegation for edit/delete
-  tbody.addEventListener('click', e => {
-    const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const id = btn.dataset.id;
-    if (btn.dataset.action === 'delete') {
-      confirmDeletePatient(id, () => renderDashboard());
-    }
-    if (btn.dataset.action === 'edit') {
-      const pat = getPatient(id);
-      if (pat) openEditPatientModal(pat, () => renderDashboard());
-    }
-  });
-
-  // Search
-  document.getElementById('patient-search').addEventListener('input', refreshTable);
-
-  // My Patients toggle
-  checkbox.addEventListener('change', () => {
-    _dashMyPatientsOnly = checkbox.checked;
-    refreshTable();
-  });
+  renderInfoBody();
+  infoCard.appendChild(infoBody);
+  app.appendChild(infoCard);
 
   // Topbar new patient (RBAC-gated)
   const newPatBtn = document.getElementById('btn-new-patient');
   if (newPatBtn && !newPatBtn.disabled) {
     newPatBtn.addEventListener('click', () => openNewPatientModal());
   }
+
+}
+
+/* ============================================================
+   PATIENTS PAGE — Dynamic columns, filters, sort, pagination,
+   quick actions, visual flags
+   ============================================================ */
+let _patientsMyOnly = false;
+let _activeFilters = {};
+let _sortStack = [{ col: 'name', dir: 'asc' }];
+let _currentPage = 1;
+let _filterPanelOpen = false;
+
+function renderPatients() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const canEdit = canEditPatient();
+  setTopbar({
+    title: 'Patients',
+    meta: '',
+    actions: '<button class="btn btn-primary btn-sm" id="btn-new-patient"' + (canEdit ? '' : ' disabled title="No permission"') + '>+ New Patient</button>',
+  });
+  setActiveNav('patients');
+
+  const allPatients = getPatients().sort((a, b) =>
+    (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName));
+
+  const currentProv = getCurrentProvider();
+  const user = getSessionUser();
+  const providerId = currentProv || (user ? user.id : '');
+  const prefs = getPatientListPrefs(providerId);
+  const pageSize = prefs.pageSize || 25;
+
+  // Pre-cache clinical data for performance
+  const _allergyCache = {};
+  const _problemCache = {};
+  const _vitalCache = {};
+  const _medCache = {};
+  const _orderCache = {};
+  function getAllergyData(pid) {
+    if (!_allergyCache[pid]) _allergyCache[pid] = getPatientAllergies(pid);
+    return _allergyCache[pid];
+  }
+  function getProblemData(pid) {
+    if (!_problemCache[pid]) _problemCache[pid] = getActiveProblems(pid);
+    return _problemCache[pid];
+  }
+  function getVitalData(pid) {
+    if (!_vitalCache[pid]) _vitalCache[pid] = getLatestVitalsByPatient(pid);
+    return _vitalCache[pid];
+  }
+  function getMedData(pid) {
+    if (!_medCache[pid]) _medCache[pid] = getPatientMedications(pid).filter(m => m.status === 'Current');
+    return _medCache[pid];
+  }
+  function getOrderData(pid) {
+    if (!_orderCache[pid]) _orderCache[pid] = getOrdersByPatient(pid).filter(o => o.status === 'Pending');
+    return _orderCache[pid];
+  }
+
+  // ===== Toolbar =====
+  const toolbar = document.createElement('div');
+  toolbar.className = 'patients-toolbar';
+
+  const searchBar = document.createElement('div');
+  searchBar.className = 'search-bar';
+  searchBar.style.maxWidth = '400px';
+  searchBar.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="patient-search" placeholder="Search name, MRN, phone, DOB, insurance…" autocomplete="off" />';
+  toolbar.appendChild(searchBar);
+
+  const myToggle = document.createElement('label');
+  myToggle.className = 'my-patients-toggle';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = _patientsMyOnly;
+  checkbox.disabled = !currentProv;
+  myToggle.appendChild(checkbox);
+  myToggle.appendChild(document.createTextNode(' My Patients'));
+  toolbar.appendChild(myToggle);
+
+  // Filters button
+  const filtersBtn = document.createElement('button');
+  filtersBtn.className = 'btn btn-secondary btn-sm';
+  filtersBtn.textContent = 'Filters';
+  filtersBtn.addEventListener('click', () => {
+    _filterPanelOpen = !_filterPanelOpen;
+    filterPanel.classList.toggle('hidden', !_filterPanelOpen);
+    filtersBtn.classList.toggle('active', _filterPanelOpen);
+  });
+  toolbar.appendChild(filtersBtn);
+
+  // Columns button
+  const colsBtn = document.createElement('button');
+  colsBtn.className = 'btn btn-secondary btn-sm';
+  colsBtn.textContent = 'Columns';
+  colsBtn.addEventListener('click', () => openColumnCustomizerModal(providerId));
+  toolbar.appendChild(colsBtn);
+
+  app.appendChild(toolbar);
+
+  // ===== Filter Panel =====
+  const filterPanel = document.createElement('div');
+  filterPanel.className = 'filter-panel' + (_filterPanelOpen ? '' : ' hidden');
+  filterPanel.innerHTML = renderFilterPanelHTML();
+  app.appendChild(filterPanel);
+
+  function renderFilterPanelHTML() {
+    const providerOpts = getProviders().map(p =>
+      '<option value="' + esc(p.id) + '"' + (_activeFilters.provider === p.id ? ' selected' : '') + '>' + esc(p.lastName + ', ' + p.firstName) + '</option>'
+    ).join('');
+    return '<div class="filter-panel-grid">' +
+      '<div class="form-group filter-group"><label class="form-label">Provider</label>' +
+        '<select class="form-control form-control-sm" data-filter="provider"><option value="">All</option>' + providerOpts + '</select></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Sex</label>' +
+        '<select class="form-control form-control-sm" data-filter="sex"><option value="">All</option>' +
+        '<option' + (_activeFilters.sex === 'Male' ? ' selected' : '') + '>Male</option>' +
+        '<option' + (_activeFilters.sex === 'Female' ? ' selected' : '') + '>Female</option>' +
+        '<option' + (_activeFilters.sex === 'Other' ? ' selected' : '') + '>Other</option></select></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Age Min</label>' +
+        '<input type="number" class="form-control form-control-sm" data-filter="ageMin" min="0" max="150" value="' + (_activeFilters.ageMin || '') + '" placeholder="0"></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Age Max</label>' +
+        '<input type="number" class="form-control form-control-sm" data-filter="ageMax" min="0" max="150" value="' + (_activeFilters.ageMax || '') + '" placeholder="150"></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Insurance</label>' +
+        '<input type="text" class="form-control form-control-sm" data-filter="insurance" value="' + esc(_activeFilters.insurance || '') + '" placeholder="Carrier…"></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Code Status</label>' +
+        '<select class="form-control form-control-sm" data-filter="codeStatus"><option value="">All</option>' +
+        ['Full Code','DNR','DNR/DNI','Comfort Care'].map(s => '<option' + (_activeFilters.codeStatus === s ? ' selected' : '') + '>' + s + '</option>').join('') +
+        '</select></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Diagnosis / Problem</label>' +
+        '<input type="text" class="form-control form-control-sm" data-filter="diagnosis" value="' + esc(_activeFilters.diagnosis || '') + '" placeholder="Search problems…"></div>' +
+      '<div class="form-group filter-group filter-checkboxes">' +
+        '<label><input type="checkbox" data-filter="hasOverdueScreenings"' + (_activeFilters.hasOverdueScreenings ? ' checked' : '') + '> Overdue Screenings</label>' +
+        '<label><input type="checkbox" data-filter="hasUnsignedNotes"' + (_activeFilters.hasUnsignedNotes ? ' checked' : '') + '> Unsigned Notes</label>' +
+        '<label><input type="checkbox" data-filter="hasPendingOrders"' + (_activeFilters.hasPendingOrders ? ' checked' : '') + '> Pending Orders</label>' +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:8px;text-align:right"><button class="btn btn-secondary btn-sm" id="filter-clear-all">Clear All Filters</button></div>';
+  }
+
+  // Wire filter panel inputs
+  filterPanel.addEventListener('change', e => {
+    const el = e.target;
+    const key = el.dataset.filter;
+    if (!key) return;
+    if (el.type === 'checkbox') _activeFilters[key] = el.checked;
+    else _activeFilters[key] = el.value;
+    _currentPage = 1;
+    renderChips();
+    renderRows();
+  });
+  filterPanel.addEventListener('input', e => {
+    const el = e.target;
+    const key = el.dataset.filter;
+    if (!key || el.type === 'checkbox' || el.tagName === 'SELECT') return;
+    _activeFilters[key] = el.value;
+    _currentPage = 1;
+    renderChips();
+    renderRows();
+  });
+  const clearAllBtn = filterPanel.querySelector('#filter-clear-all');
+  if (clearAllBtn) clearAllBtn.addEventListener('click', () => {
+    _activeFilters = {};
+    filterPanel.innerHTML = renderFilterPanelHTML();
+    // re-wire events
+    filterPanel.addEventListener('change', e => {
+      const el = e.target; const key = el.dataset.filter; if (!key) return;
+      if (el.type === 'checkbox') _activeFilters[key] = el.checked; else _activeFilters[key] = el.value;
+      _currentPage = 1; renderChips(); renderRows();
+    });
+    _currentPage = 1;
+    renderChips();
+    renderRows();
+  });
+
+  // ===== Filter Chips =====
+  const chipsContainer = document.createElement('div');
+  chipsContainer.className = 'filter-chips';
+  app.appendChild(chipsContainer);
+
+  function renderChips() {
+    chipsContainer.innerHTML = '';
+    const labels = {
+      provider: 'Provider', sex: 'Sex', ageMin: 'Age Min', ageMax: 'Age Max',
+      insurance: 'Insurance', codeStatus: 'Code Status', diagnosis: 'Diagnosis',
+      hasOverdueScreenings: 'Overdue Screenings', hasUnsignedNotes: 'Unsigned Notes', hasPendingOrders: 'Pending Orders',
+    };
+    Object.keys(_activeFilters).forEach(key => {
+      const val = _activeFilters[key];
+      if (!val && val !== true) return;
+      const chip = document.createElement('span');
+      chip.className = 'filter-chip';
+      let displayVal = val;
+      if (key === 'provider') {
+        const prov = getProvider(val);
+        displayVal = prov ? prov.lastName + ', ' + prov.firstName : val;
+      }
+      if (typeof val === 'boolean') displayVal = 'Yes';
+      chip.innerHTML = esc(labels[key] || key) + ': <strong>' + esc(String(displayVal)) + '</strong> <button class="filter-chip-remove" data-chip-key="' + esc(key) + '">&times;</button>';
+      chipsContainer.appendChild(chip);
+    });
+    chipsContainer.querySelectorAll('.filter-chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        delete _activeFilters[btn.dataset.chipKey];
+        // Sync filter panel
+        const el = filterPanel.querySelector('[data-filter="' + btn.dataset.chipKey + '"]');
+        if (el) { if (el.type === 'checkbox') el.checked = false; else el.value = ''; }
+        _currentPage = 1;
+        renderChips();
+        renderRows();
+      });
+    });
+  }
+  renderChips();
+
+  // ===== Table Card =====
+  const card = document.createElement('div');
+  card.className = 'card';
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  const cardTitle = document.createElement('span');
+  cardTitle.className = 'card-title';
+  cardTitle.textContent = 'All Patients';
+  const countEl = document.createElement('span');
+  countEl.className = 'text-muted text-sm';
+  countEl.id = 'patient-count';
+  hdr.appendChild(cardTitle);
+  hdr.appendChild(countEl);
+  card.appendChild(hdr);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  table.className = 'table';
+
+  // Build dynamic columns from prefs + always actions
+  function getActiveCols() {
+    const colKeys = prefs.columns && prefs.columns.length > 0 ? prefs.columns : getDefaultColumnKeys();
+    const cols = colKeys.map(key => PATIENT_COLUMNS.find(c => c.key === key)).filter(Boolean);
+    cols.push({ key: 'actions', label: '', sortable: false });
+    return cols;
+  }
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  function buildHeader() {
+    headerRow.innerHTML = '';
+    const cols = getActiveCols();
+    cols.forEach(col => {
+      const th = document.createElement('th');
+      if (col.sortable) {
+        th.style.cursor = 'pointer';
+        th.style.userSelect = 'none';
+        th.addEventListener('click', e => {
+          if (e.shiftKey) {
+            // Add to sort stack
+            const existing = _sortStack.findIndex(s => s.col === col.key);
+            if (existing >= 0) {
+              _sortStack[existing].dir = _sortStack[existing].dir === 'asc' ? 'desc' : 'asc';
+            } else {
+              _sortStack.push({ col: col.key, dir: 'asc' });
+            }
+          } else {
+            const existing = _sortStack.find(s => s.col === col.key);
+            if (existing && _sortStack.length === 1) {
+              existing.dir = existing.dir === 'asc' ? 'desc' : 'asc';
+            } else {
+              _sortStack = [{ col: col.key, dir: (existing ? (existing.dir === 'asc' ? 'desc' : 'asc') : 'asc') }];
+            }
+          }
+          updateSortIndicators();
+          renderRows();
+        });
+      }
+      th.dataset.colKey = col.key;
+      th.textContent = col.label;
+      headerRow.appendChild(th);
+    });
+    updateSortIndicators();
+  }
+
+  function updateSortIndicators() {
+    const cols = getActiveCols();
+    headerRow.querySelectorAll('th[data-col-key]').forEach(th => {
+      const key = th.dataset.colKey;
+      const sortIdx = _sortStack.findIndex(s => s.col === key);
+      const base = cols.find(c => c.key === key)?.label || '';
+      if (sortIdx >= 0) {
+        const arrow = _sortStack[sortIdx].dir === 'asc' ? ' ▲' : ' ▼';
+        const num = _sortStack.length > 1 ? (sortIdx + 1) : '';
+        th.textContent = base + arrow + num;
+      } else {
+        th.textContent = base;
+      }
+    });
+  }
+
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+  buildHeader();
+
+  const tbody = document.createElement('tbody');
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  card.appendChild(wrap);
+
+  // ===== Pagination controls =====
+  const paginationBar = document.createElement('div');
+  paginationBar.className = 'pagination-bar';
+  card.appendChild(paginationBar);
+
+  app.appendChild(card);
+
+  // ===== Cell content helper =====
+  function getCellContent(pat, colKey) {
+    switch (colKey) {
+      case 'name': {
+        const td = document.createElement('td');
+        td.style.cursor = 'pointer';
+        const nameBtn = document.createElement('button');
+        nameBtn.className = 'table-link';
+        nameBtn.textContent = pat.lastName + ', ' + pat.firstName;
+        nameBtn.onclick = e => { e.stopPropagation(); navigate('#chart/' + pat.id); };
+        td.appendChild(nameBtn);
+        // Visual flag badges
+        const flags = document.createElement('span');
+        flags.className = 'flag-badges-inline';
+        const cs = pat.codeStatus || '';
+        if (cs && cs !== 'Full Code') {
+          const badge = document.createElement('span');
+          badge.className = 'flag-badge flag-code-status';
+          badge.textContent = cs;
+          flags.appendChild(badge);
+        }
+        if (flags.children.length > 0) td.appendChild(flags);
+        return td;
+      }
+      case 'age': return createTd(String(calcAge(pat.dob)));
+      case 'sex': return createTd(pat.sex || '—');
+      case 'dob': return createTd(formatDate(pat.dob));
+      case 'lastEncounter': {
+        const d = getLastEncDate(pat.id);
+        return createTd(d ? formatDate(d) : '—');
+      }
+      case 'mrn': return createTd(pat.mrn);
+      case 'phone': return createTd(pat.phone || '—');
+      case 'insurance': return createTd(pat.insurance || '—');
+      case 'codeStatus': return createTd(pat.codeStatus || 'Full Code');
+      case 'allergies': {
+        const a = getAllergyData(pat.id);
+        return createTd(a.length > 0 ? a.map(x => x.allergen).join(', ') : 'NKA');
+      }
+      case 'activeMeds': {
+        const meds = getMedData(pat.id);
+        return createTd(meds.length > 0 ? meds.length + ' active' : '—');
+      }
+      case 'problems': {
+        const probs = getProblemData(pat.id);
+        return createTd(probs.length > 0 ? probs.map(p => p.name).join(', ') : '—');
+      }
+      case 'provider': {
+        const providers = (pat.panelProviders || []).map(id => getProvider(id)).filter(Boolean);
+        return createTd(providers.length > 0 ? providers.map(p => p.lastName).join(', ') : '—');
+      }
+      case 'lastVitals': {
+        const v = getVitalData(pat.id);
+        if (v && v.vitals) {
+          const bp = (v.vitals.bpSystolic && v.vitals.bpDiastolic) ? v.vitals.bpSystolic + '/' + v.vitals.bpDiastolic : '';
+          const hr = v.vitals.heartRate || '';
+          return createTd([bp, hr ? 'HR ' + hr : ''].filter(Boolean).join(', ') || '—');
+        }
+        return createTd('—');
+      }
+      case 'pendingOrders': {
+        const orders = getOrderData(pat.id);
+        return createTd(orders.length > 0 ? orders.length + ' pending' : '—');
+      }
+      case 'alerts': {
+        const td = document.createElement('td');
+        const badges = document.createElement('div');
+        badges.className = 'alert-badges';
+        const overdues = getOverdueScreeningsCount(pat);
+        if (overdues > 0) { const b = document.createElement('span'); b.className = 'alert-badge alert-badge-red'; b.textContent = overdues + ' overdue'; badges.appendChild(b); }
+        const unsigned = getUnsignedNotesCount(pat.id);
+        if (unsigned > 0) { const b = document.createElement('span'); b.className = 'alert-badge alert-badge-amber'; b.textContent = unsigned + ' unsigned'; badges.appendChild(b); }
+        const pending = getOrderData(pat.id).length;
+        if (pending > 0) { const b = document.createElement('span'); b.className = 'alert-badge alert-badge-blue'; b.textContent = pending + ' pending'; badges.appendChild(b); }
+        td.appendChild(badges);
+        return td;
+      }
+      case 'actions': {
+        const td = document.createElement('td');
+        td.style.cssText = 'text-align:right;white-space:nowrap';
+        // Quick actions "..." dropdown
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'btn btn-secondary btn-sm quick-action-trigger';
+        moreBtn.style.marginLeft = '4px';
+        moreBtn.textContent = '···';
+        moreBtn.onclick = e => {
+          e.stopPropagation();
+          // Close any existing dropdown
+          document.querySelectorAll('.quick-action-menu').forEach(m => m.remove());
+          const menu = document.createElement('div');
+          menu.className = 'quick-action-menu';
+          const items = [
+            { label: 'Edit Patient', action: () => { const p = getPatient(pat.id); if (p) openEditPatientModal(p, () => renderPatients()); } },
+            { label: 'Add to List', action: () => { if (typeof openAddToListModal === 'function') openAddToListModal(pat.id); } },
+            { label: 'New Encounter', action: () => { if (typeof openNewEncounterModal === 'function') openNewEncounterModal(pat.id); else navigate('#chart/' + pat.id); } },
+          ];
+          if (canEdit) {
+            items.push({ label: 'Delete Patient', action: () => confirmDeletePatient(pat.id, () => renderPatients()), danger: true });
+          }
+          items.forEach(item => {
+            const mi = document.createElement('div');
+            mi.className = 'quick-action-item' + (item.danger ? ' quick-action-danger' : '');
+            mi.textContent = item.label;
+            mi.addEventListener('click', e2 => { e2.stopPropagation(); menu.remove(); item.action(); });
+            menu.appendChild(mi);
+          });
+          td.style.position = 'relative';
+          td.appendChild(menu);
+          // Close on outside click
+          setTimeout(() => {
+            const closer = e2 => { if (!menu.contains(e2.target)) { menu.remove(); document.removeEventListener('click', closer); } };
+            document.addEventListener('click', closer);
+          }, 0);
+        };
+        td.appendChild(moreBtn);
+        return td;
+      }
+      default: return createTd('—');
+    }
+  }
+
+  function calcAge(dob) {
+    if (!dob) return '—';
+    const d = new Date(dob + 'T00:00:00');
+    if (isNaN(d)) return '—';
+    const t = new Date();
+    let age = t.getFullYear() - d.getFullYear();
+    const m = t.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && t.getDate() < d.getDate())) age--;
+    return age;
+  }
+
+  function getLastEncDate(patientId) {
+    const encs = getEncountersByPatient(patientId);
+    if (!encs.length) return null;
+    return encs.reduce((a, b) => new Date(a.dateTime) > new Date(b.dateTime) ? a : b).dateTime;
+  }
+
+  // ===== Enhanced Filtering =====
+  function getFiltered() {
+    let list = allPatients;
+    // My Patients toggle
+    if (_patientsMyOnly && currentProv) list = list.filter(p => (p.panelProviders || []).includes(currentProv));
+    // Text search (expanded scope)
+    const q = (document.getElementById('patient-search')?.value || '').trim().toLowerCase();
+    if (q) list = list.filter(p =>
+      (p.firstName + ' ' + p.lastName).toLowerCase().includes(q) ||
+      p.firstName.toLowerCase().includes(q) ||
+      p.lastName.toLowerCase().includes(q) ||
+      (p.mrn || '').toLowerCase().includes(q) ||
+      (p.phone || '').toLowerCase().includes(q) ||
+      (p.dob || '').includes(q) ||
+      (p.insurance || '').toLowerCase().includes(q));
+    // Advanced filters
+    if (_activeFilters.provider) list = list.filter(p => (p.panelProviders || []).includes(_activeFilters.provider));
+    if (_activeFilters.sex) list = list.filter(p => (p.sex || '').toLowerCase() === _activeFilters.sex.toLowerCase());
+    if (_activeFilters.ageMin) {
+      const min = Number(_activeFilters.ageMin);
+      list = list.filter(p => { const a = calcAge(p.dob); return typeof a === 'number' && a >= min; });
+    }
+    if (_activeFilters.ageMax) {
+      const max = Number(_activeFilters.ageMax);
+      list = list.filter(p => { const a = calcAge(p.dob); return typeof a === 'number' && a <= max; });
+    }
+    if (_activeFilters.insurance) {
+      const ins = _activeFilters.insurance.toLowerCase();
+      list = list.filter(p => (p.insurance || '').toLowerCase().includes(ins));
+    }
+    if (_activeFilters.codeStatus) {
+      list = list.filter(p => (p.codeStatus || '').toLowerCase() === _activeFilters.codeStatus.toLowerCase());
+    }
+    if (_activeFilters.diagnosis) {
+      const dx = _activeFilters.diagnosis.toLowerCase();
+      list = list.filter(p => getProblemData(p.id).some(pr => (pr.name || '').toLowerCase().includes(dx)));
+    }
+    if (_activeFilters.hasOverdueScreenings) list = list.filter(p => getOverdueScreeningsCount(p) > 0);
+    if (_activeFilters.hasUnsignedNotes) list = list.filter(p => getUnsignedNotesCount(p.id) > 0);
+    if (_activeFilters.hasPendingOrders) list = list.filter(p => getOrderData(p.id).length > 0);
+    return list;
+  }
+
+  // ===== Multi-column sort =====
+  function getSortValue(pat, col) {
+    switch (col) {
+      case 'name': return (pat.lastName + pat.firstName).toLowerCase();
+      case 'age': { const a = calcAge(pat.dob); return typeof a === 'number' ? a : -1; }
+      case 'dob': return pat.dob || '';
+      case 'lastEncounter': return getLastEncDate(pat.id) || '';
+      case 'mrn': return pat.mrn || '';
+      case 'activeMeds': return getMedData(pat.id).length;
+      case 'provider': return (pat.panelProviders || []).map(id => { const p = getProvider(id); return p ? p.lastName : ''; }).join(',');
+      case 'pendingOrders': return getOrderData(pat.id).length;
+      default: return '';
+    }
+  }
+
+  function getSorted(list) {
+    return [...list].sort((a, b) => {
+      for (const s of _sortStack) {
+        const av = getSortValue(a, s.col);
+        const bv = getSortValue(b, s.col);
+        if (av < bv) return s.dir === 'asc' ? -1 : 1;
+        if (av > bv) return s.dir === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }
+
+  // ===== Render Rows =====
+  function renderRows() {
+    tbody.innerHTML = '';
+    const filtered = getFiltered();
+    const sorted = getSorted(filtered);
+    const totalCount = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    if (_currentPage > totalPages) _currentPage = totalPages;
+    const start = (_currentPage - 1) * pageSize;
+    const page = sorted.slice(start, start + pageSize);
+
+    countEl.textContent = totalCount + ' patient' + (totalCount !== 1 ? 's' : '');
+    cardTitle.textContent = _patientsMyOnly ? 'My Patients' : 'All Patients';
+
+    if (page.length === 0) {
+      const cols = getActiveCols();
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = cols.length;
+      td.style.cssText = 'text-align:center;padding:32px;color:var(--text-muted)';
+      td.textContent = 'No patients found.';
+      tr.appendChild(td); tbody.appendChild(tr);
+    } else {
+      const cols = getActiveCols();
+      page.forEach(pat => {
+        const tr = document.createElement('tr');
+        tr.className = 'patient-row-clickable';
+        tr.addEventListener('click', () => navigate('#chart/' + pat.id));
+        cols.forEach(col => tr.appendChild(getCellContent(pat, col.key)));
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Pagination
+    paginationBar.innerHTML = '';
+    if (totalPages > 1) {
+      const prevBtn = document.createElement('button');
+      prevBtn.className = 'btn btn-secondary btn-sm';
+      prevBtn.textContent = '‹ Prev';
+      prevBtn.disabled = _currentPage <= 1;
+      prevBtn.onclick = () => { _currentPage--; renderRows(); };
+      paginationBar.appendChild(prevBtn);
+
+      const pageInfo = document.createElement('span');
+      pageInfo.className = 'pagination-info';
+      pageInfo.textContent = 'Page ' + _currentPage + ' of ' + totalPages + ' · Showing ' + (start + 1) + '–' + Math.min(start + pageSize, totalCount) + ' of ' + totalCount;
+      paginationBar.appendChild(pageInfo);
+
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'btn btn-secondary btn-sm';
+      nextBtn.textContent = 'Next ›';
+      nextBtn.disabled = _currentPage >= totalPages;
+      nextBtn.onclick = () => { _currentPage++; renderRows(); };
+      paginationBar.appendChild(nextBtn);
+    } else {
+      const info = document.createElement('span');
+      info.className = 'pagination-info';
+      info.textContent = 'Showing ' + totalCount + ' patient' + (totalCount !== 1 ? 's' : '');
+      paginationBar.appendChild(info);
+    }
+  }
+
+  renderRows();
+
+  document.getElementById('patient-search').addEventListener('input', () => { _currentPage = 1; renderRows(); });
+  checkbox.addEventListener('change', () => { _patientsMyOnly = checkbox.checked; _currentPage = 1; renderRows(); });
+
+  const newPatBtn = document.getElementById('btn-new-patient');
+  if (newPatBtn && !newPatBtn.disabled) newPatBtn.addEventListener('click', () => openNewPatientModal());
+}
+
+/* ============================================================
+   Column Customizer Modal
+   ============================================================ */
+function openColumnCustomizerModal(providerId) {
+  const prefs = getPatientListPrefs(providerId);
+  let columns = prefs.columns && prefs.columns.length > 0 ? [...prefs.columns] : getDefaultColumnKeys();
+
+  function renderList() {
+    const items = columns.map((key, idx) => {
+      const col = PATIENT_COLUMNS.find(c => c.key === key);
+      if (!col) return '';
+      return '<div class="col-customizer-item" data-key="' + esc(key) + '" data-idx="' + idx + '">' +
+        '<span class="col-drag-handle" title="Drag to reorder">☰</span>' +
+        '<span class="col-customizer-label">' + esc(col.label) + '</span>' +
+        '<button class="col-customizer-remove" data-key="' + esc(key) + '" title="Remove">&times;</button>' +
+      '</div>';
+    }).join('');
+    // Available columns not in current list
+    const available = PATIENT_COLUMNS.filter(c => !columns.includes(c.key));
+    let addHTML = '';
+    if (available.length > 0) {
+      addHTML = '<div style="margin-top:12px"><label class="form-label">Add Column</label>' +
+        '<select class="form-control form-control-sm" id="col-customizer-add"><option value="">— Select —</option>' +
+        available.map(c => '<option value="' + esc(c.key) + '">' + esc(c.label) + '</option>').join('') +
+        '</select></div>';
+    }
+    return '<div class="col-customizer-list">' + items + '</div>' + addHTML;
+  }
+
+  function showModal() {
+    openModal({
+      title: 'Customize Columns',
+      bodyHTML: renderList(),
+      footerHTML: '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+        '<button class="btn btn-ghost" id="col-reset-defaults">Reset Defaults</button>' +
+        '<button class="btn btn-primary" id="col-save">Save</button>',
+    });
+
+    // Remove buttons
+    document.querySelectorAll('.col-customizer-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        columns = columns.filter(k => k !== btn.dataset.key);
+        document.getElementById('modal-body').innerHTML = renderList();
+        wireModalEvents();
+      });
+    });
+
+    // Add select
+    const addSel = document.getElementById('col-customizer-add');
+    if (addSel) addSel.addEventListener('change', () => {
+      if (addSel.value) {
+        columns.push(addSel.value);
+        document.getElementById('modal-body').innerHTML = renderList();
+        wireModalEvents();
+      }
+    });
+
+    // Drag reorder (simple mousedown/mousemove/mouseup)
+    initDragReorder();
+
+    document.getElementById('col-save').addEventListener('click', () => {
+      savePatientListPrefs(providerId, { columns: columns });
+      closeModal();
+      renderPatients();
+    });
+
+    document.getElementById('col-reset-defaults').addEventListener('click', () => {
+      columns = getDefaultColumnKeys();
+      document.getElementById('modal-body').innerHTML = renderList();
+      wireModalEvents();
+    });
+  }
+
+  function wireModalEvents() {
+    document.querySelectorAll('.col-customizer-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        columns = columns.filter(k => k !== btn.dataset.key);
+        document.getElementById('modal-body').innerHTML = renderList();
+        wireModalEvents();
+      });
+    });
+    const addSel = document.getElementById('col-customizer-add');
+    if (addSel) addSel.addEventListener('change', () => {
+      if (addSel.value) { columns.push(addSel.value); document.getElementById('modal-body').innerHTML = renderList(); wireModalEvents(); }
+    });
+    initDragReorder();
+  }
+
+  function initDragReorder() {
+    const container = document.querySelector('.col-customizer-list');
+    if (!container) return;
+    let dragItem = null;
+    let dragIdx = -1;
+
+    container.querySelectorAll('.col-drag-handle').forEach(handle => {
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const item = handle.closest('.col-customizer-item');
+        dragItem = item;
+        dragIdx = Number(item.dataset.idx);
+        item.classList.add('dragging');
+
+        const onMove = e2 => {
+          const items = [...container.querySelectorAll('.col-customizer-item')];
+          const y = e2.clientY;
+          let insertBefore = null;
+          for (const it of items) {
+            if (it === dragItem) continue;
+            const rect = it.getBoundingClientRect();
+            if (y < rect.top + rect.height / 2) { insertBefore = it; break; }
+          }
+          if (insertBefore) container.insertBefore(dragItem, insertBefore);
+          else container.appendChild(dragItem);
+        };
+
+        const onUp = () => {
+          dragItem.classList.remove('dragging');
+          // Rebuild columns order from DOM
+          columns = [...container.querySelectorAll('.col-customizer-item')].map(el => el.dataset.key);
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+  }
+
+  showModal();
+}
+
+/* ============================================================
+   Shared Filter Criteria Form (used by filter panel and smart lists)
+   ============================================================ */
+function renderFilterCriteriaForm(container, criteria) {
+  criteria = criteria || {};
+  const providerOpts = getProviders().map(p =>
+    '<option value="' + esc(p.id) + '"' + (criteria.provider === p.id ? ' selected' : '') + '>' + esc(p.lastName + ', ' + p.firstName) + '</option>'
+  ).join('');
+  container.innerHTML =
+    '<div class="filter-panel-grid">' +
+      '<div class="form-group filter-group"><label class="form-label">Provider</label>' +
+        '<select class="form-control form-control-sm" data-criteria="provider"><option value="">All</option>' + providerOpts + '</select></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Sex</label>' +
+        '<select class="form-control form-control-sm" data-criteria="sex"><option value="">All</option>' +
+        '<option' + (criteria.sex === 'Male' ? ' selected' : '') + '>Male</option>' +
+        '<option' + (criteria.sex === 'Female' ? ' selected' : '') + '>Female</option>' +
+        '<option' + (criteria.sex === 'Other' ? ' selected' : '') + '>Other</option></select></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Age Min</label>' +
+        '<input type="number" class="form-control form-control-sm" data-criteria="ageMin" min="0" max="150" value="' + (criteria.ageMin || '') + '"></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Age Max</label>' +
+        '<input type="number" class="form-control form-control-sm" data-criteria="ageMax" min="0" max="150" value="' + (criteria.ageMax || '') + '"></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Insurance</label>' +
+        '<input type="text" class="form-control form-control-sm" data-criteria="insurance" value="' + esc(criteria.insurance || '') + '"></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Code Status</label>' +
+        '<select class="form-control form-control-sm" data-criteria="codeStatus"><option value="">All</option>' +
+        ['Full Code','DNR','DNR/DNI','Comfort Care'].map(s => '<option' + (criteria.codeStatus === s ? ' selected' : '') + '>' + s + '</option>').join('') +
+        '</select></div>' +
+      '<div class="form-group filter-group"><label class="form-label">Diagnosis / Problem</label>' +
+        '<input type="text" class="form-control form-control-sm" data-criteria="diagnosis" value="' + esc(criteria.diagnosis || '') + '"></div>' +
+      '<div class="form-group filter-group filter-checkboxes">' +
+        '<label><input type="checkbox" data-criteria="hasOverdueScreenings"' + (criteria.hasOverdueScreenings ? ' checked' : '') + '> Overdue Screenings</label>' +
+        '<label><input type="checkbox" data-criteria="hasUnsignedNotes"' + (criteria.hasUnsignedNotes ? ' checked' : '') + '> Unsigned Notes</label>' +
+        '<label><input type="checkbox" data-criteria="hasPendingOrders"' + (criteria.hasPendingOrders ? ' checked' : '') + '> Pending Orders</label>' +
+      '</div>' +
+    '</div>';
+}
+
+function readFilterCriteria(container) {
+  const criteria = {};
+  container.querySelectorAll('[data-criteria]').forEach(el => {
+    const key = el.dataset.criteria;
+    if (el.type === 'checkbox') criteria[key] = el.checked;
+    else criteria[key] = el.value || '';
+  });
+  return criteria;
 }
 
 /* ============================================================
@@ -700,4 +1338,200 @@ function formatDateTime(iso) {
   if (isNaN(d)) return iso;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
     ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+/* ============================================================
+   Inpatient Hierarchical View — Hospital > Floor/Unit > Patients
+   ============================================================ */
+function renderInpatientHierarchy(app, allPatients, currentProv, checkbox) {
+  const hospitals = typeof getHospitals === 'function' ? getHospitals() : [];
+  const wards = typeof getWards === 'function' ? getWards() : [];
+  const bedAssignments = typeof getBedAssignments === 'function' ? getBedAssignments() : [];
+
+  // If no hospital data, fall back to flat list
+  if (hospitals.length === 0 || wards.length === 0) {
+    renderInpatientFlatList(app, allPatients);
+    return;
+  }
+
+  // Search filter
+  const searchQ = (document.getElementById('patient-search')?.value || '').trim().toLowerCase();
+
+  hospitals.forEach(hospital => {
+    const hospitalCard = document.createElement('div');
+    hospitalCard.className = 'card inpatient-hospital-card';
+    hospitalCard.style.marginBottom = '20px';
+
+    const hospitalHeader = document.createElement('div');
+    hospitalHeader.className = 'card-header';
+    hospitalHeader.style.cssText = 'background:var(--portal-accent,#0d9488);color:#fff;border-radius:8px 8px 0 0';
+    const hospitalTitle = document.createElement('span');
+    hospitalTitle.className = 'card-title';
+    hospitalTitle.style.color = '#fff';
+    hospitalTitle.textContent = hospital.name;
+    hospitalHeader.appendChild(hospitalTitle);
+    hospitalCard.appendChild(hospitalHeader);
+
+    // Group wards by floor
+    const hospitalWards = wards.filter(w => w.hospitalId === hospital.id);
+    const floors = {};
+    hospitalWards.forEach(w => {
+      if (!floors[w.floor]) floors[w.floor] = [];
+      floors[w.floor].push(w);
+    });
+
+    const floorNames = Object.keys(floors).sort();
+
+    floorNames.forEach(floorName => {
+      const floorWards = floors[floorName];
+
+      floorWards.forEach(ward => {
+        const wardBeds = bedAssignments.filter(b => b.wardId === ward.id && b.active);
+        const wardPatients = wardBeds.map(b => {
+          const pat = getPatient(b.patientId);
+          return pat ? { ...pat, bed: b.bed } : null;
+        }).filter(Boolean);
+
+        // Apply search filter
+        let filteredPatients = wardPatients;
+        if (searchQ) {
+          filteredPatients = wardPatients.filter(p =>
+            (p.firstName + ' ' + p.lastName).toLowerCase().includes(searchQ) ||
+            p.lastName.toLowerCase().includes(searchQ) ||
+            p.mrn.toLowerCase().includes(searchQ)
+          );
+        }
+
+        // Apply My Census filter
+        if (_dashMyPatientsOnly && currentProv) {
+          filteredPatients = filteredPatients.filter(p => {
+            const ipEnc = getEncountersByPatient(p.id).find(e =>
+              (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled');
+            return ipEnc && ipEnc.providerId === currentProv;
+          });
+        }
+
+        // Floor/unit section
+        const section = document.createElement('div');
+        section.className = 'inpatient-floor-section';
+
+        const floorHeader = document.createElement('div');
+        floorHeader.className = 'inpatient-floor-header';
+        floorHeader.innerHTML = '<span class="floor-name">' + esc(floorName) + '</span>' +
+          '<span class="unit-name">' + esc(ward.unit) + '</span>' +
+          '<span class="floor-count">' + filteredPatients.length + '/' + ward.beds + ' beds</span>';
+        floorHeader.style.cursor = 'pointer';
+        section.appendChild(floorHeader);
+
+        const patientList = document.createElement('div');
+        patientList.className = 'inpatient-patient-list';
+
+        if (filteredPatients.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'text-muted text-sm';
+          empty.style.padding = '10px 16px';
+          empty.textContent = searchQ ? 'No matches' : 'No patients';
+          patientList.appendChild(empty);
+        } else {
+          filteredPatients.sort((a, b) => (a.bed || '').localeCompare(b.bed || '')).forEach(pat => {
+            const ipEnc = getEncountersByPatient(pat.id).find(e =>
+              (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled');
+            const attending = ipEnc && ipEnc.providerId ? getProvider(ipEnc.providerId) : null;
+
+            const row = document.createElement('div');
+            row.className = 'inpatient-patient-row';
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', () => navigate('#chart/' + pat.id));
+
+            const bedEl = document.createElement('span');
+            bedEl.className = 'ip-bed';
+            bedEl.textContent = pat.bed || '—';
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'ip-name';
+            nameEl.textContent = pat.lastName + ', ' + pat.firstName;
+
+            const mrnEl = document.createElement('span');
+            mrnEl.className = 'ip-mrn';
+            mrnEl.textContent = pat.mrn;
+
+            const attendingEl = document.createElement('span');
+            attendingEl.className = 'ip-attending';
+            attendingEl.textContent = attending ? attending.lastName + ', ' + attending.firstName[0] + '.' : '—';
+
+            const alertsEl = document.createElement('span');
+            alertsEl.className = 'ip-alerts';
+            const unsigned = getUnsignedNotesCount(pat.id);
+            if (unsigned > 0) {
+              const b = document.createElement('span');
+              b.className = 'alert-badge alert-badge-amber';
+              b.textContent = unsigned + ' unsigned';
+              alertsEl.appendChild(b);
+            }
+
+            row.appendChild(bedEl);
+            row.appendChild(nameEl);
+            row.appendChild(mrnEl);
+            row.appendChild(attendingEl);
+            row.appendChild(alertsEl);
+            patientList.appendChild(row);
+          });
+        }
+
+        // Collapsible toggle
+        floorHeader.addEventListener('click', () => {
+          patientList.classList.toggle('collapsed');
+          floorHeader.classList.toggle('collapsed');
+        });
+
+        section.appendChild(patientList);
+        hospitalCard.appendChild(section);
+      });
+    });
+
+    app.appendChild(hospitalCard);
+  });
+
+  // Search handler
+  const searchInput = document.getElementById('patient-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => renderDashboard());
+  }
+
+  // My Census toggle
+  checkbox.addEventListener('change', () => {
+    _dashMyPatientsOnly = checkbox.checked;
+    renderDashboard();
+  });
+}
+
+function renderInpatientFlatList(app, patients) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  if (patients.length === 0) {
+    card.appendChild(buildEmptyState('🏥', 'No inpatient admissions', 'Admit a patient to get started.'));
+  } else {
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const table = document.createElement('table');
+    table.className = 'table';
+    table.innerHTML = '<thead><tr><th>Name</th><th>MRN</th><th>Admission</th><th>Attending</th><th></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    patients.forEach(pat => {
+      const tr = document.createElement('tr');
+      const ipEnc = getEncountersByPatient(pat.id).find(e =>
+        (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled');
+      const attending = ipEnc && ipEnc.providerId ? getProvider(ipEnc.providerId) : null;
+      tr.innerHTML = '<td><button class="table-link" onclick="navigate(\'#chart/' + pat.id + '\')">' + esc(pat.lastName + ', ' + pat.firstName) + '</button></td>' +
+        '<td>' + esc(pat.mrn) + '</td>' +
+        '<td>' + (ipEnc ? formatDateTime(ipEnc.dateTime) : '—') + '</td>' +
+        '<td>' + (attending ? esc(attending.lastName + ', ' + attending.firstName) : '—') + '</td>' +
+        '<td style="text-align:right"><button class="btn btn-secondary btn-sm" onclick="navigate(\'#chart/' + pat.id + '\')">View</button></td>';
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    card.appendChild(wrap);
+  }
+  app.appendChild(card);
 }

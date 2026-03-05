@@ -15,6 +15,9 @@ function setActiveNav(name) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === name);
   });
+  document.querySelectorAll('.sidebar-fav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.favNav === name);
+  });
 }
 
 /* ---------- Modal ---------- */
@@ -37,6 +40,15 @@ function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
 
   // Focus trap
   _modalFocusTrap = function(e) {
+    if (e.key === 'Enter') {
+      const active = document.activeElement;
+      // Don't intercept Enter inside textareas or on buttons (let them handle it)
+      if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'BUTTON')) return;
+      const footer = document.getElementById('modal-footer');
+      const primary = footer && (footer.querySelector('.btn-success, .btn-primary, .btn-danger'));
+      if (primary) { e.preventDefault(); primary.click(); }
+      return;
+    }
     if (e.key !== 'Tab') return;
     const focusable = modal.querySelectorAll('input, select, textarea, button, [tabindex]:not([tabindex="-1"]), a[href]');
     if (focusable.length === 0) return;
@@ -75,6 +87,42 @@ function showToast(message, type = 'default', duration = 3000) {
 }
 
 /* ---------- Confirm ---------- */
+/* ---------- Context menu ---------- */
+function showContextMenu(e, items) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll('.ctx-menu').forEach(m => m.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+
+  items.forEach(item => {
+    if (item === 'separator') {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-menu-sep';
+      menu.appendChild(sep);
+      return;
+    }
+    const btn = document.createElement('button');
+    btn.className = 'ctx-menu-item' + (item.danger ? ' ctx-menu-danger' : '');
+    btn.textContent = item.label;
+    btn.addEventListener('click', () => { menu.remove(); item.action(); });
+    menu.appendChild(btn);
+  });
+
+  // Position near cursor, keep within viewport
+  document.body.appendChild(menu);
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let x = e.clientX, y = e.clientY;
+  if (x + mw > window.innerWidth)  x = window.innerWidth  - mw - 4;
+  if (y + mh > window.innerHeight) y = window.innerHeight - mh - 4;
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+
+  const dismiss = () => { menu.remove(); document.removeEventListener('mousedown', dismiss); };
+  setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+}
+
 function confirmAction({ title, message, confirmLabel = 'Confirm', danger = false, onConfirm }) {
   const overlay = document.createElement('div');
   overlay.className = 'confirm-overlay';
@@ -125,7 +173,10 @@ function applyEncounterMode() {
   if (scheduleNav) {
     scheduleNav.classList.toggle('mode-hidden', mode === 'inpatient');
   }
-  if (typeof updateInboxBadge === 'function') updateInboxBadge();
+  // Background color by mode
+  document.body.classList.toggle('mode-outpatient', mode === 'outpatient');
+  document.body.classList.toggle('mode-inpatient', mode === 'inpatient');
+  if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
 }
 
 function initEncounterModeToggle() {
@@ -155,13 +206,21 @@ function route() {
   const param = parts[1];
 
   document.getElementById('app').classList.remove('chart-view');
+  const _oldChartHeader = document.getElementById('chart-header-bars');
+  if (_oldChartHeader) _oldChartHeader.remove();
 
   switch (view) {
     case 'dashboard':
       renderDashboard();
       break;
+    case 'patients':
+      renderPatients();
+      break;
+    case 'recents':
+      renderRecents();
+      break;
     case 'chart':
-      if (param) renderChart(param, parts[2] || 'overview');
+      if (param) { trackRecentPatient(param); renderChart(param); }
       else navigate('#dashboard');
       break;
     case 'encounter':
@@ -177,10 +236,30 @@ function route() {
       renderSchedule();
       break;
     case 'inbox':
-      renderInbox();
+      renderInbox(param);
+      break;
+    case 'messages':
+      if (typeof renderMessages === 'function') renderMessages();
+      else navigate('#dashboard');
+      break;
+    case 'settings':
+      if (typeof renderSettings === 'function') renderSettings();
+      else navigate('#dashboard');
+      break;
+    case 'reference':
+      if (typeof renderReference === 'function') renderReference();
+      else navigate('#dashboard');
       break;
     case 'providers':
       renderProviders();
+      break;
+    case 'list':
+      if (param && typeof renderPatientList === 'function') renderPatientList(param);
+      else navigate('#dashboard');
+      break;
+    case 'smart-list':
+      if (param && typeof renderSmartList === 'function') renderSmartList(param);
+      else navigate('#dashboard');
       break;
     case 'admin':
       if (isAdmin()) renderAdmin();
@@ -193,6 +272,15 @@ function route() {
 
 function navigate(hash) {
   location.hash = hash;
+}
+
+/* ---------- Global patient name link helper ---------- */
+function makePatientLink(patientId, displayName) {
+  const btn = document.createElement('button');
+  btn.className = 'patient-name-link';
+  btn.textContent = displayName;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); navigate('#chart/' + patientId); });
+  return btn;
 }
 
 /* ---------- Modal close button / backdrop click ---------- */
@@ -210,16 +298,6 @@ function initDarkMode() {
   } else if (saved === 'light') {
     document.body.classList.add('light-mode');
   }
-  const btn = document.getElementById('dark-toggle');
-  if (btn) {
-    btn.addEventListener('click', () => {
-      const isDark = document.body.classList.toggle('dark-mode');
-      document.body.classList.toggle('light-mode', !isDark);
-      localStorage.setItem('emr_dark_mode', isDark ? 'dark' : 'light');
-      btn.textContent = isDark ? '🌙' : '☀️';
-    });
-    btn.textContent = document.body.classList.contains('dark-mode') ? '🌙' : '☀️';
-  }
 }
 
 /* ---------- Keyboard Shortcuts ---------- */
@@ -228,25 +306,106 @@ function isTyping(e) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-function openShortcutsHelp() {
-  const shortcuts = [
-    ['?',         'Show keyboard shortcuts'],
-    ['⌘K / Ctrl+K', 'Open clinical calculators'],
-    ['⌘P / Ctrl+P', 'Print patient summary (on chart)'],
-    ['/',           'Toggle chart search (on chart)'],
-    ['⌘↵ / Ctrl+↵', 'Save note (on encounter)'],
-    ['Esc',         'Close modal'],
-  ];
+const DEFAULT_KEYBINDS = [
+  { id: 'patients',     label: 'Go to Patients',        description: 'Open the patient list',                   key: 'p', shift: false },
+  { id: 'orders',       label: 'Go to Orders',           description: 'Open the orders section (chart view only)', key: 'o', shift: false },
+  { id: 'dashboard',   label: 'Go to Home',             description: 'Open the home dashboard',                 key: 'g', shift: false },
+  { id: 'schedule',    label: 'Go to Schedule',         description: 'Open the schedule',                       key: 'd', shift: false },
+  { id: 'messages',    label: 'Go to Messages',         description: 'Open patient messages',                   key: 'm', shift: false },
+  { id: 'inbox',       label: 'Go to Inbox',            description: 'Open the inbox',                          key: 'i', shift: false },
+  { id: 'reference',   label: 'Go to Reference',        description: 'Open reference materials',                key: 'e', shift: false },
+  { id: 'calculators', label: 'Open Tools',             description: 'Open calculators and tools',              key: 'k', shift: false },
+  { id: 'new-patient', label: 'New Patient',            description: 'Open the new patient form',               key: 'n', shift: false },
+  { id: 'settings',    label: 'Go to Settings',         description: 'Open settings',                           key: ',', shift: false },
+  { id: 'print',       label: 'Print Patient Summary',  description: 'Print current patient (chart view only)', key: 'p', shift: true  },
+  { id: 'search-patients', label: 'Search Patients', description: 'Focus the patient search bar', key: 'f', shift: false },
+];
 
+function getKeybindActions() {
+  return {
+    patients:      () => navigate('#patients'),
+    orders:        () => {
+      if (!_currentChartPatientId || !location.hash.startsWith('#chart/')) return;
+      if (typeof _scrollToSection === 'function') _scrollToSection('section-orders', _currentChartPatientId);
+    },
+    dashboard:     () => navigate('#dashboard'),
+    schedule:      () => navigate('#schedule'),
+    messages:      () => navigate('#messages'),
+    inbox:         () => navigate('#inbox'),
+    reference:     () => navigate('#reference'),
+    calculators:   () => { if (typeof openCalculatorsModal === 'function') openCalculatorsModal(); },
+    'new-patient': () => { if (typeof openNewPatientModal === 'function') openNewPatientModal(); },
+    settings:      () => navigate('#settings'),
+    print:         () => { if (_currentChartPatientId && typeof printPatientSummary === 'function') printPatientSummary(_currentChartPatientId); },
+    'search-patients': () => {
+      const patSearch = document.getElementById('patient-search');
+      const sideSearch = document.getElementById('sidebar-search');
+      if (patSearch) { patSearch.focus(); }
+      else if (sideSearch) { sideSearch.focus(); }
+    },
+  };
+}
+
+function getKeybinds() {
+  const saved = JSON.parse(localStorage.getItem('emr_keybinds') || 'null');
+  if (!saved) return DEFAULT_KEYBINDS.map(b => ({ ...b }));
+  return DEFAULT_KEYBINDS.map(b => {
+    const s = saved.find(x => x.id === b.id);
+    return s ? { ...b, key: s.key, shift: s.shift } : { ...b };
+  });
+}
+
+function saveKeybinds(binds) {
+  localStorage.setItem('emr_keybinds', JSON.stringify(binds.map(b => ({ id: b.id, key: b.key, shift: b.shift }))));
+  initKeyboardShortcuts();
+}
+
+function formatKeybind(key, shift) {
+  const isMac = navigator.platform.toUpperCase().includes('MAC');
+  const mod = isMac ? '⌘' : 'Ctrl+';
+  const shiftStr = shift ? (isMac ? '⇧' : 'Shift+') : '';
+  const keyStr = key === ',' ? ',' : key.toUpperCase();
+  return mod + shiftStr + keyStr;
+}
+
+function openShortcutsHelp() {
   const body = document.createElement('div');
   body.className = 'shortcuts-grid';
-  shortcuts.forEach(([key, desc]) => {
+
+  // Dynamic rebindable shortcuts
+  getKeybinds().forEach(b => {
+    const keys = document.createElement('div');
+    keys.className = 'shortcut-keys';
+    const kbd = document.createElement('span');
+    kbd.className = 'kbd';
+    kbd.textContent = formatKeybind(b.key, b.shift);
+    keys.appendChild(kbd);
+    const d = document.createElement('div');
+    d.className = 'shortcut-desc';
+    d.textContent = b.label;
+    body.appendChild(keys);
+    body.appendChild(d);
+  });
+
+  // Divider
+  const divider = document.createElement('div');
+  divider.style.cssText = 'grid-column:1/-1;border-top:1px solid var(--border);margin:8px 0;';
+  body.appendChild(divider);
+
+  // Non-rebindable hardcoded shortcuts
+  const hardcoded = [
+    ['?',         'Show keyboard shortcuts'],
+    ['/',         'Toggle chart search (chart only)'],
+    ['⌘↵ / Ctrl+↵', 'Save note (encounter only)'],
+    ['Esc',       'Close modal'],
+  ];
+  hardcoded.forEach(([key, desc]) => {
     const keys = document.createElement('div');
     keys.className = 'shortcut-keys';
     key.split(' / ').forEach((k, i) => {
       if (i > 0) {
         const sep = document.createElement('span');
-        sep.textContent = '/';
+        sep.textContent = ' / ';
         sep.style.color = 'var(--text-muted)';
         keys.appendChild(sep);
       }
@@ -277,8 +436,18 @@ let _keyboardHandler = null;
 function initKeyboardShortcuts() {
   // Remove previous handler to prevent duplicates on re-login
   if (_keyboardHandler) document.removeEventListener('keydown', _keyboardHandler);
+
+  // Build dynamic keybind map from saved/default bindings
+  const binds = getKeybinds();
+  const actions = getKeybindActions();
+  const bindMap = {};
+  binds.forEach(b => {
+    const combo = (b.shift ? 'shift+' : '') + b.key.toLowerCase();
+    bindMap[combo] = actions[b.id];
+  });
+
   _keyboardHandler = e => {
-    // Escape: close modal
+    // Escape: close modal (non-rebindable)
     if (e.key === 'Escape') {
       const backdrop = document.getElementById('modal-backdrop');
       if (!backdrop.classList.contains('hidden')) { closeModal(); return; }
@@ -294,23 +463,41 @@ function initKeyboardShortcuts() {
       }
     }
 
-    // Ctrl/Cmd shortcuts (work even in text fields for some)
     const isMod = e.ctrlKey || e.metaKey;
-    if (isMod && (e.key === 'k' || e.key === 'K')) {
-      e.preventDefault();
-      if (typeof openCalculatorsModal === 'function') openCalculatorsModal();
-      return;
-    }
-    if (isMod && (e.key === 'p' || e.key === 'P')) {
-      if (_currentChartPatientId) {
-        e.preventDefault();
-        if (typeof printPatientSummary === 'function') printPatientSummary(_currentChartPatientId);
-      }
-      return;
-    }
+
+    // Cmd+Enter: save note (non-rebindable)
     if (isMod && e.key === 'Enter') {
       const ta = document.querySelector('.note-textarea');
       if (ta) { e.preventDefault(); ta.dispatchEvent(new Event('input')); }
+      return;
+    }
+
+    // Cmd+N in messages → compose new message (context-sensitive, takes priority)
+    if (isMod && !e.shiftKey && e.key.toLowerCase() === 'n' && location.hash === '#messages') {
+      if (typeof openMessagesComposeModal === 'function') {
+        e.preventDefault();
+        openMessagesComposeModal();
+        return;
+      }
+    }
+
+    // Cmd+S in orders → place order (context-sensitive)
+    if (isMod && !e.shiftKey && e.key.toLowerCase() === 's' && location.hash.startsWith('#orders/')) {
+      if (typeof placeOrder === 'function' && typeof _ordersEncounterId !== 'undefined' && _ordersEncounterId) {
+        const _oEnc = getEncounter(_ordersEncounterId);
+        const _oPat = _oEnc ? getPatient(_oEnc.patientId) : null;
+        if (_oEnc && _oPat) { e.preventDefault(); placeOrder(_oEnc, _oPat); return; }
+      }
+    }
+
+    // Dynamic keybind dispatch
+    if (isMod) {
+      const combo = (e.shiftKey ? 'shift+' : '') + e.key.toLowerCase();
+      const action = bindMap[combo];
+      if (action) {
+        e.preventDefault();
+        action();
+      }
     }
   };
   document.addEventListener('keydown', _keyboardHandler);
@@ -363,9 +550,6 @@ function initLoginDarkToggle() {
     document.body.classList.toggle('light-mode', !isDark);
     localStorage.setItem('emr_dark_mode', isDark ? 'dark' : 'light');
     btn.textContent = isDark ? '🌙' : '☀️';
-    // Sync the sidebar toggle too
-    const sidebarBtn = document.getElementById('dark-toggle');
-    if (sidebarBtn) sidebarBtn.textContent = isDark ? '🌙' : '☀️';
   });
 }
 
@@ -472,11 +656,28 @@ function updateAdminBadge() {
 
 function initLoginForm() {
   const form = document.getElementById('login-form');
+
+  // Remember email: pre-fill on load
+  const remembered = localStorage.getItem('emr_remembered_email');
+  if (remembered) {
+    document.getElementById('login-email').value = remembered;
+    const cb = document.getElementById('login-remember');
+    if (cb) cb.checked = true;
+  }
+
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const email = document.getElementById('login-email').value.trim();
     const pw    = document.getElementById('login-password').value;
     if (!email || !pw) { showToast('Please fill in all fields.', 'error'); return; }
+
+    // Remember email preference
+    const rememberCb = document.getElementById('login-remember');
+    if (rememberCb && rememberCb.checked) {
+      localStorage.setItem('emr_remembered_email', email);
+    } else {
+      localStorage.removeItem('emr_remembered_email');
+    }
 
     try {
       const result = await login(email, pw);
@@ -488,6 +689,11 @@ function initLoginForm() {
       if (match) setCurrentProvider(match.id);
 
       form.reset();
+      // Re-fill remembered email after reset
+      if (rememberCb && rememberCb.checked) {
+        document.getElementById('login-email').value = email;
+        document.getElementById('login-remember').checked = true;
+      }
       handlePostLogin(result.user);
     } catch (err) {
       console.error('Login error:', err);
@@ -500,6 +706,14 @@ function initLoginForm() {
     document.getElementById('login-form').classList.add('hidden');
     document.getElementById('register-form').classList.remove('hidden');
   });
+
+  const portalLink = document.getElementById('show-patient-portal');
+  if (portalLink) {
+    portalLink.addEventListener('click', e => {
+      e.preventDefault();
+      if (typeof showPatientLoginForm === 'function') showPatientLoginForm();
+    });
+  }
 }
 
 function initRegisterForm() {
@@ -609,13 +823,400 @@ function initSidebarToggle() {
   });
 }
 
+/* ---------- Feature: Collapsible Sidebar ---------- */
+function initSidebarCollapse() {
+  const btn = document.getElementById('sidebar-collapse-btn');
+  if (!btn) return;
+  const shell = document.getElementById('shell');
+  if (localStorage.getItem('emr_sidebar_collapsed') === '1') {
+    shell.classList.add('sidebar-collapsed');
+  }
+  btn.addEventListener('click', () => {
+    shell.classList.toggle('sidebar-collapsed');
+    localStorage.setItem('emr_sidebar_collapsed', shell.classList.contains('sidebar-collapsed') ? '1' : '0');
+  });
+}
+
+/* ---------- Feature: Quick Patient Search ---------- */
+let _sidebarSearchTimer = null;
+function initSidebarSearch() {
+  const input = document.getElementById('sidebar-search');
+  const results = document.getElementById('sidebar-search-results');
+  if (!input || !results) return;
+
+  input.addEventListener('input', () => {
+    clearTimeout(_sidebarSearchTimer);
+    _sidebarSearchTimer = setTimeout(() => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { results.classList.add('hidden'); results.innerHTML = ''; return; }
+      const patients = getPatients();
+      const matches = patients.filter(p => {
+        const full = ((p.firstName || '') + ' ' + (p.lastName || '')).toLowerCase();
+        const mrn = (p.mrn || '').toLowerCase();
+        return full.includes(q) || mrn.includes(q);
+      }).slice(0, 8);
+      if (matches.length === 0) {
+        results.innerHTML = '<div class="sidebar-search-no-results">No patients found</div>';
+      } else {
+        results.innerHTML = matches.map(p =>
+          '<div class="sidebar-search-result" data-id="' + esc(p.id) + '">' +
+            '<span class="sidebar-search-result-name">' + esc(p.firstName) + ' ' + esc(p.lastName) + '</span>' +
+            '<span class="sidebar-search-result-mrn">' + esc(p.mrn) + '</span>' +
+          '</div>'
+        ).join('');
+      }
+      results.classList.remove('hidden');
+    }, 150);
+  });
+
+  results.addEventListener('click', e => {
+    const row = e.target.closest('.sidebar-search-result');
+    if (!row) return;
+    const id = row.dataset.id;
+    input.value = '';
+    results.classList.add('hidden');
+    results.innerHTML = '';
+    navigate('#chart/' + id);
+    // Close mobile sidebar
+    const sidebar = document.getElementById('sidebar');
+    if (window.innerWidth <= 768 && sidebar) sidebar.classList.remove('open');
+  });
+
+  // Close on click outside
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.sidebar-search-wrap')) {
+      results.classList.add('hidden');
+    }
+  });
+
+  // Close on Escape
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      input.value = '';
+      results.classList.add('hidden');
+      results.innerHTML = '';
+      input.blur();
+    }
+  });
+}
+
+/* ---------- Feature: Recently Viewed Patients ---------- */
+let _recentsPeriod = (() => { try { return parseInt(localStorage.getItem('emr_recents_period') || '30', 10); } catch(e) { return 30; } })();
+
+function trackRecentPatient(patientId) {
+  if (!patientId) return;
+  let recents = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem('emr_recent_patients') || '[]');
+    recents = raw.map(r => typeof r === 'string' ? { id: r, viewedAt: 0 } : r);
+  } catch(e) { recents = []; }
+  recents = recents.filter(r => r.id !== patientId);
+  recents.unshift({ id: patientId, viewedAt: Date.now() });
+  recents = recents.slice(0, 200);
+  localStorage.setItem('emr_recent_patients', JSON.stringify(recents));
+}
+
+function renderRecentPatients() { /* no-op — recents live on their own page */ }
+
+function renderRecents() {
+  const PERIODS = [
+    { label: 'Past Week',    days: 7   },
+    { label: 'Past Month',   days: 30  },
+    { label: 'Past 6 Months', days: 180 },
+    { label: 'Past Year',    days: 365 },
+  ];
+
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  setTopbar({ title: 'Recent Patients', meta: '', actions: '' });
+  setActiveNav('recents');
+
+  // Period picker
+  const picker = document.createElement('div');
+  picker.className = 'recents-period-picker';
+  PERIODS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'recents-period-pill' + (_recentsPeriod === p.days ? ' active' : '');
+    btn.textContent = p.label;
+    btn.addEventListener('click', () => {
+      _recentsPeriod = p.days;
+      localStorage.setItem('emr_recents_period', p.days);
+      renderRecents();
+    });
+    picker.appendChild(btn);
+  });
+  app.appendChild(picker);
+
+  // Patient list
+  const cutoff = Date.now() - _recentsPeriod * 86400000;
+  let recents = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem('emr_recent_patients') || '[]');
+    recents = raw.map(r => typeof r === 'string' ? { id: r, viewedAt: 0 } : r);
+  } catch(e) { recents = []; }
+
+  const patients = getPatients();
+  const items = recents
+    .filter(r => r.viewedAt >= cutoff)
+    .map(r => ({ patient: patients.find(p => p.id === r.id), viewedAt: r.viewedAt }))
+    .filter(r => r.patient);
+
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = '<div class="empty-state-icon">🕐</div><div class="empty-state-title">No recent patients</div><div class="empty-state-body">No patients viewed in the selected period.</div>';
+    app.appendChild(empty);
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  table.className = 'table';
+  table.innerHTML = '<thead><tr><th>Name</th><th>MRN</th><th>DOB</th><th>Last Viewed</th></tr></thead>';
+  const tbody = document.createElement('tbody');
+  items.forEach(({ patient: p, viewedAt }) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => navigate('#chart/' + p.id));
+    const when = viewedAt ? new Date(viewedAt).toLocaleDateString() : '—';
+    tr.innerHTML = '<td><strong>' + esc(p.lastName) + ', ' + esc(p.firstName) + '</strong></td>'
+      + '<td>' + esc(p.mrn || '—') + '</td>'
+      + '<td>' + esc(p.dob || '—') + '</td>'
+      + '<td>' + when + '</td>';
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  app.appendChild(wrap);
+}
+
+/* ---------- Feature: Favorites / Pinned Pages ---------- */
+const PINNABLE_NAV_ITEMS = ['dashboard','schedule','calculators','reference','messages','inbox-labs','inbox-refills','inbox-notes','settings','providers','admin'];
+
+function getPinnedNavItems() {
+  try { return JSON.parse(localStorage.getItem('emr_pinned_nav') || '[]'); } catch(e) { return []; }
+}
+function savePinnedNavItems(arr) {
+  localStorage.setItem('emr_pinned_nav', JSON.stringify(arr));
+}
+
+function togglePinNavItem(navKey) {
+  let pinned = getPinnedNavItems();
+  if (pinned.includes(navKey)) {
+    pinned = pinned.filter(k => k !== navKey);
+  } else {
+    pinned.push(navKey);
+  }
+  savePinnedNavItems(pinned);
+  renderFavorites();
+  updatePinButtons();
+}
+
+function renderFavorites() {
+  const container = document.getElementById('sidebar-favorites');
+  if (!container) return;
+  const pinned = getPinnedNavItems();
+  if (pinned.length === 0) { container.innerHTML = ''; return; }
+
+  let html = '<div class="sidebar-favorites-label">Favorites</div>';
+  pinned.forEach(navKey => {
+    const orig = document.querySelector('.nav-item[data-nav="' + navKey + '"]');
+    if (!orig) return;
+    const svgEl = orig.querySelector('svg');
+    const svgHTML = svgEl ? svgEl.outerHTML : '';
+    // Get the text content (excluding badge/button text)
+    let label = '';
+    orig.childNodes.forEach(n => {
+      if (n.nodeType === 3) label += n.textContent;
+    });
+    label = label.trim();
+
+    const href = navKey === 'calculators' ? '#' : (orig.getAttribute('href') || '#');
+    html += '<a href="' + esc(href) + '" class="sidebar-fav-item" data-fav-nav="' + esc(navKey) + '">' +
+      svgHTML +
+      '<span>' + esc(label) + '</span>' +
+      '<button class="sidebar-fav-unpin" data-unpin="' + esc(navKey) + '" title="Unpin">' +
+        '&#9733;' +
+      '</button>' +
+    '</a>';
+  });
+  container.innerHTML = html;
+
+  // Wire unpin buttons
+  container.querySelectorAll('.sidebar-fav-unpin').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePinNavItem(btn.dataset.unpin);
+    });
+  });
+
+  // Wire calculators favorite click
+  container.querySelectorAll('.sidebar-fav-item[data-fav-nav="calculators"]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      if (typeof openCalculatorsModal === 'function') openCalculatorsModal();
+    });
+  });
+
+  // Sync active state
+  const hash = location.hash || '#dashboard';
+  const parts = hash.slice(1).split('/');
+  const currentNav = _hashToNav(parts[0], parts[1]);
+  container.querySelectorAll('.sidebar-fav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.favNav === currentNav);
+  });
+}
+
+function _hashToNav(view, param) {
+  if (view === 'inbox' && param) return 'inbox-' + param;
+  return view;
+}
+
+function initPinButtons() {
+  PINNABLE_NAV_ITEMS.forEach(navKey => {
+    const navItem = document.querySelector('.nav-item[data-nav="' + navKey + '"]');
+    if (!navItem) return;
+    // Don't add duplicate pin buttons
+    if (navItem.querySelector('.nav-pin-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'nav-pin-btn';
+    btn.title = 'Pin to favorites';
+    btn.dataset.pinNav = navKey;
+    btn.innerHTML = '&#9734;'; // empty star
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePinNavItem(navKey);
+    });
+    navItem.appendChild(btn);
+  });
+  updatePinButtons();
+}
+
+function updatePinButtons() {
+  const pinned = getPinnedNavItems();
+  document.querySelectorAll('.nav-pin-btn').forEach(btn => {
+    const key = btn.dataset.pinNav;
+    const isPinned = pinned.includes(key);
+    btn.classList.toggle('pinned', isPinned);
+    btn.innerHTML = isPinned ? '&#9733;' : '&#9734;'; // filled vs empty star
+    btn.title = isPinned ? 'Unpin from favorites' : 'Pin to favorites';
+  });
+}
+
+/* ---------- Remove a patient from recent history ---------- */
+function removeFromRecents(patientId) {
+  let recents = [];
+  try { recents = JSON.parse(localStorage.getItem('emr_recent_patients') || '[]'); } catch(e) { recents = []; }
+  recents = recents.filter(r => (typeof r === 'string' ? r : r.id) !== patientId);
+  localStorage.setItem('emr_recent_patients', JSON.stringify(recents));
+  if (_recentsOpen) renderRecentsPanel();
+}
+
+/* ---------- Sidebar context menus (event delegation) ---------- */
+function _navItemLabel(el) {
+  // Collect direct text nodes only (skips SVG, badges, buttons)
+  let text = '';
+  el.childNodes.forEach(n => { if (n.nodeType === Node.TEXT_NODE) text += n.textContent; });
+  return text.trim();
+}
+
+function initNavContextMenus() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+
+  sidebar.addEventListener('contextmenu', e => {
+    // --- Recent patient links ---
+    const recentItem = e.target.closest('.sidebar-recent-item');
+    if (recentItem) {
+      const patId = (recentItem.getAttribute('href') || '').replace('#chart/', '');
+      const name = recentItem.textContent.trim();
+      showContextMenu(e, [
+        { label: 'Open Chart — ' + name, action: () => navigate('#chart/' + patId) },
+        'separator',
+        { label: 'Remove from Recents', action: () => removeFromRecents(patId) },
+      ]);
+      return;
+    }
+
+    // --- Favorites items ---
+    const favItem = e.target.closest('.sidebar-fav-item');
+    if (favItem) {
+      const navKey = favItem.dataset.favNav;
+      const label = _navItemLabel(favItem) || navKey;
+      const href = favItem.getAttribute('href');
+      showContextMenu(e, [
+        { label: 'Open ' + label, action: () => {
+            if (navKey === 'calculators') { if (typeof openCalculatorsModal === 'function') openCalculatorsModal(); }
+            else if (href && href !== '#') navigate(href);
+        }},
+        'separator',
+        { label: 'Unpin from Favorites', action: () => togglePinNavItem(navKey) },
+      ]);
+      return;
+    }
+
+    // --- Standard nav items ---
+    const navItem = e.target.closest('.nav-item[data-nav]');
+    if (!navItem) return;
+    const navKey = navItem.dataset.nav;
+
+    // List/smart-list items have their own handlers (stop propagation)
+    if (navKey.startsWith('list-') || navKey.startsWith('smart-')) return;
+
+    // Action-only items — give them a quick "open" context menu
+    const actionKeys = { 'new-list': null, 'import-list': null, 'new-smart-list': null };
+    if (navKey in actionKeys) return;
+
+    const label = _navItemLabel(navItem);
+    const href  = navItem.getAttribute('href');
+    const items = [];
+
+    // Open
+    if (navKey === 'calculators') {
+      items.push({ label: 'Open ' + label, action: () => { if (typeof openCalculatorsModal === 'function') openCalculatorsModal(); } });
+    } else if (href && href !== '#') {
+      items.push({ label: 'Open ' + label, action: () => navigate(href) });
+    }
+
+    // Pin / unpin
+    if (PINNABLE_NAV_ITEMS.includes(navKey)) {
+      const isPinned = getPinnedNavItems().includes(navKey);
+      items.push('separator');
+      items.push({ label: isPinned ? 'Unpin from Favorites' : 'Pin to Favorites', action: () => togglePinNavItem(navKey) });
+    }
+
+    // All Patients shortcut
+    if (navKey === 'patients') {
+      items.push('separator');
+      items.push({ label: '+ New Patient', action: () => {
+        navigate('#patients');
+        setTimeout(() => { const btn = document.getElementById('btn-new-patient'); if (btn) btn.click(); }, 150);
+      }});
+    }
+
+    if (items.length) showContextMenu(e, items);
+  });
+}
+
 /* ---------- App init after authentication ---------- */
 function initAppAfterAuth() {
   initKeyboardShortcuts();
   initCalculatorsNav();
   initEncounterModeToggle();
   initSidebarToggle();
-  if (typeof updateInboxBadge === 'function') updateInboxBadge();
+  initSidebarCollapse();
+  initSidebarSearch();
+  initPinButtons();
+  initNavContextMenus();
+  renderFavorites();
+  initSidebarSections();
+  initSidebarResize();
+  initListsNav();
+  if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
+  if (typeof refreshSidebarLists === 'function') refreshSidebarLists();
   startSessionTimer();
   updateSessionActivity();
   updateAdminBadge();
@@ -624,10 +1225,104 @@ function initAppAfterAuth() {
   route();
 }
 
+function initSidebarSections() {
+  // [toggleId, bodyId, storageKey, defaultOpen]
+  const sections = [
+    ['section-patients-toggle',  'section-patients-body',  'emr_section_patients',  true],
+    ['section-clinical-toggle',  'section-clinical-body',  'emr_section_clinical',  true],
+    ['section-messaging-toggle', 'section-messaging-body', 'emr_section_messaging', true],
+    ['section-settings-toggle',  'section-settings-body',  'emr_section_settings',  true],
+    ['my-lists-toggle',          'my-lists-body',          'emr_my_lists_open',     true],
+  ];
+  sections.forEach(([toggleId, bodyId, storageKey, defaultOpen]) => {
+    const toggle = document.getElementById(toggleId);
+    const body   = document.getElementById(bodyId);
+    if (!toggle || !body) return;
+    let open = localStorage.getItem(storageKey) !== 'false';
+    const apply = () => {
+      body.style.display = open ? '' : 'none';
+      const arrow = toggle.querySelector('.sidebar-collapse-arrow');
+      if (arrow) arrow.textContent = open ? '▾' : '▸';
+    };
+    apply();
+    toggle.addEventListener('click', () => {
+      open = !open;
+      localStorage.setItem(storageKey, open);
+      apply();
+    });
+  });
+}
+
+function initSidebarResize() {
+  const handle  = document.getElementById('sidebar-resize-handle');
+  const sidebar = document.getElementById('sidebar');
+  const main    = document.getElementById('main');
+  if (!handle || !sidebar) return;
+
+  function applySidebarWidth(w) {
+    const shell = document.getElementById('shell');
+    if (shell) shell.style.gridTemplateColumns = w + 'px 1fr';
+  }
+
+  const saved = parseInt(localStorage.getItem('emr_sidebar_width') || '0', 10);
+  if (saved >= 160 && saved <= 440) applySidebarWidth(saved);
+
+  let startX, startWidth;
+  handle.addEventListener('mousedown', e => {
+    startX     = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    const w = Math.min(440, Math.max(160, startWidth + e.clientX - startX));
+    applySidebarWidth(w);
+  }
+
+  function onUp() {
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    localStorage.setItem('emr_sidebar_width', sidebar.offsetWidth);
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+}
+
+function initListsNav() {
+  const newListBtn = document.getElementById('nav-new-list');
+  if (newListBtn) {
+    newListBtn.addEventListener('click', e => {
+      e.preventDefault();
+      if (typeof openCreateListModal === 'function') openCreateListModal();
+    });
+  }
+  const importBtn = document.getElementById('nav-import-list');
+  if (importBtn) {
+    importBtn.addEventListener('click', e => {
+      e.preventDefault();
+      if (typeof openImportListModal === 'function') openImportListModal();
+    });
+  }
+  const newSmartBtn = document.getElementById('nav-new-smart-list');
+  if (newSmartBtn) {
+    newSmartBtn.addEventListener('click', e => {
+      e.preventDefault();
+      if (typeof openCreateSmartListModal === 'function') openCreateSmartListModal();
+    });
+  }
+}
+
 /* ---------- Init ---------- */
 async function init() {
   try {
   await seedIfEmpty();
+  seedExtraPatients();
   } catch (err) {
     console.error('Seed error:', err);
     // Continue — seed may partially work or data may already exist

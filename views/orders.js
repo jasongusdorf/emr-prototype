@@ -24,6 +24,64 @@ const CONSULT_SERVICES = [
   'Orthopedics', 'Surgery', 'Psychiatry', 'Physical Therapy', 'Social Work', 'Other',
 ];
 
+const ORDER_SETS = [
+  { name: 'CHF Admission', orders: [
+    { type: 'Medication', detail: { drug: 'Furosemide', dose: '40', unit: 'mg', route: 'IV', frequency: 'BID', duration: 'Ongoing' }, priority: 'Routine' },
+    { type: 'Medication', detail: { drug: 'Lisinopril', dose: '10', unit: 'mg', route: 'PO', frequency: 'QDay', duration: 'Ongoing' }, priority: 'Routine' },
+    { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'Routine' },
+    { type: 'Lab', detail: { panel: 'B-type Natriuretic Peptide', tests: [] }, priority: 'Routine' },
+    { type: 'Imaging', detail: { study: 'Chest X-Ray', modality: 'X-Ray', bodyPart: 'Chest', indication: 'CHF evaluation' }, priority: 'Routine' },
+  ]},
+  { name: 'Pneumonia', orders: [
+    { type: 'Medication', detail: { drug: 'Ceftriaxone', dose: '1', unit: 'g', route: 'IV', frequency: 'QDay', duration: '7 days' }, priority: 'Urgent' },
+    { type: 'Medication', detail: { drug: 'Azithromycin', dose: '500', unit: 'mg', route: 'IV', frequency: 'QDay', duration: '5 days' }, priority: 'Urgent' },
+    { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
+    { type: 'Lab', detail: { panel: 'Blood Culture', tests: [] }, priority: 'STAT' },
+    { type: 'Imaging', detail: { study: 'Chest X-Ray', modality: 'X-Ray', bodyPart: 'Chest', indication: 'Pneumonia' }, priority: 'Routine' },
+  ]},
+  { name: 'DKA Protocol', orders: [
+    { type: 'Medication', detail: { drug: 'Insulin Regular', dose: '0.1', unit: 'units', route: 'IV', frequency: 'Q1h', duration: 'Ongoing' }, priority: 'STAT' },
+    { type: 'Medication', detail: { drug: 'Normal Saline', dose: '1000', unit: 'mL', route: 'IV', frequency: 'Once', duration: '' }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Arterial Blood Gas', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
+  ]},
+  { name: 'Sepsis Bundle', orders: [
+    { type: 'Medication', detail: { drug: 'Vancomycin', dose: '1', unit: 'g', route: 'IV', frequency: 'Q12h', duration: '7 days' }, priority: 'STAT' },
+    { type: 'Medication', detail: { drug: 'Piperacillin-Tazobactam', dose: '4.5', unit: 'g', route: 'IV', frequency: 'Q6h', duration: '7 days' }, priority: 'STAT' },
+    { type: 'Medication', detail: { drug: 'Normal Saline', dose: '1000', unit: 'mL', route: 'IV', frequency: 'Once', duration: '' }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Blood Culture', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Lactic Acid', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'STAT' },
+  ]},
+  { name: 'GI Bleed', orders: [
+    { type: 'Medication', detail: { drug: 'Pantoprazole', dose: '80', unit: 'mg', route: 'IV', frequency: 'Once', duration: '' }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Type and Screen', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'Routine' },
+    { type: 'Lab', detail: { panel: 'Coagulation (PT/INR/PTT)', tests: [] }, priority: 'Routine' },
+  ]},
+  { name: 'Stroke Protocol', orders: [
+    { type: 'Imaging', detail: { study: 'CT Head without Contrast', modality: 'CT', bodyPart: 'Head', indication: 'Acute stroke evaluation' }, priority: 'STAT' },
+    { type: 'Imaging', detail: { study: 'CT Angiography Head/Neck', modality: 'CT', bodyPart: 'Head/Neck', indication: 'Stroke' }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Coagulation (PT/INR/PTT)', tests: [] }, priority: 'STAT' },
+  ]},
+  { name: 'Post-Op General', orders: [
+    { type: 'Medication', detail: { drug: 'Acetaminophen', dose: '1000', unit: 'mg', route: 'PO', frequency: 'Q6h', duration: '3 days' }, priority: 'Routine' },
+    { type: 'Medication', detail: { drug: 'Ondansetron', dose: '4', unit: 'mg', route: 'IV', frequency: 'Q8h', duration: '3 days' }, priority: 'Routine' },
+    { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
+    { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'Routine' },
+  ]},
+  { name: 'DVT/PE Treatment', orders: [
+    { type: 'Medication', detail: { drug: 'Heparin', dose: '80', unit: 'units', route: 'IV', frequency: 'Once', duration: '' }, priority: 'STAT' },
+    { type: 'Medication', detail: { drug: 'Heparin Drip', dose: '18', unit: 'units', route: 'IV', frequency: 'Q1h', duration: 'Ongoing' }, priority: 'STAT' },
+    { type: 'Lab', detail: { panel: 'Coagulation (PT/INR/PTT)', tests: [] }, priority: 'STAT' },
+    { type: 'Imaging', detail: { study: 'CT Pulmonary Angiography', modality: 'CT', bodyPart: 'Chest', indication: 'PE evaluation' }, priority: 'STAT' },
+  ]},
+];
+
 let _selectedType     = 'Medication';
 let _selectedPriority = 'Routine';
 let _ordersEncounterId = null;
@@ -51,15 +109,23 @@ function renderOrders(encounterId) {
   const patName  = patient  ? patient.firstName + ' ' + patient.lastName : 'Unknown Patient';
   const provName = provider ? provider.firstName + ' ' + provider.lastName + ', ' + provider.degree : '[Removed Provider]';
 
+  const isInpatient = getEncounterMode() === 'inpatient';
   setTopbar({
     title:  'Orders',
     meta:   patName + ' · ' + (patient ? patient.mrn : ''),
     actions: `
       <a href="${patient ? '#chart/' + patient.id : '#dashboard'}" class="btn btn-secondary btn-sm">← Chart</a>
       <a href="#encounter/${encounterId}" class="btn btn-secondary btn-sm">Note</a>
+      ${isInpatient ? '<button class="btn btn-primary btn-sm" id="btn-order-sets">Order Sets</button>' : ''}
     `,
   });
   setActiveNav('dashboard');
+
+  // Order Sets button handler
+  const orderSetsBtn = document.getElementById('btn-order-sets');
+  if (orderSetsBtn) {
+    orderSetsBtn.addEventListener('click', () => openOrderSetsModal(encounter, patient));
+  }
 
   // Patient identity banner
   if (patient) app.appendChild(buildPatientBanner(patient.id));
@@ -296,39 +362,6 @@ function renderOrderEntryForm(container, encounter, patient) {
   const body = document.createElement('div');
   body.className = 'card-body';
 
-  // Orderer selector
-  const providers = getProviders();
-  const ordererGroup = document.createElement('div');
-  ordererGroup.className = 'form-group';
-  const ordererLabel = document.createElement('label');
-  ordererLabel.className = 'form-label';
-  ordererLabel.textContent = 'Ordering Provider';
-  const ordererSelect = document.createElement('select');
-  ordererSelect.className = 'form-control';
-  ordererSelect.id = 'ord-provider';
-
-  if (providers.length === 0) {
-    const opt = document.createElement('option');
-    opt.textContent = '— No providers —';
-    ordererSelect.appendChild(opt);
-    ordererSelect.disabled = true;
-  } else {
-    const encProvider = getProvider(encounter.providerId);
-    const sorted = encProvider
-      ? [encProvider, ...providers.filter(p => p.id !== encounter.providerId)]
-      : providers;
-    sorted.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.firstName + ' ' + p.lastName + ', ' + p.degree;
-      ordererSelect.appendChild(opt);
-    });
-  }
-
-  ordererGroup.appendChild(ordererLabel);
-  ordererGroup.appendChild(ordererSelect);
-  body.appendChild(ordererGroup);
-
   // Type selector cards
   const typeLabel = document.createElement('div');
   typeLabel.className = 'form-label';
@@ -495,12 +528,44 @@ function renderTypeFields(container, type) {
           </div>
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Duration</label>
+          <select class="form-control" id="med-duration">
+            <option value="">Select duration</option>
+            <option value="3">3 days</option>
+            <option value="5">5 days</option>
+            <option value="7">7 days</option>
+            <option value="10">10 days</option>
+            <option value="14">14 days</option>
+            <option value="21">21 days</option>
+            <option value="30">30 days</option>
+            <option value="60">60 days</option>
+            <option value="90">90 days</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group" id="med-duration-other-group" style="display:none">
+          <label class="form-label">Custom Duration (days)</label>
+          <input class="form-control" id="med-duration-other" type="number" min="1" placeholder="Days" />
+        </div>
+      </div>
       <div class="form-group">
         <label class="form-label">Indication</label>
         <input class="form-control" id="med-indication" placeholder="Reason for medication" />
       </div>
       <div id="med-pharmacy-section"></div>
     `;
+
+    // Duration "Other" toggle
+    const durSel = container.querySelector('#med-duration');
+    if (durSel) {
+      durSel.addEventListener('change', () => {
+        const otherG = container.querySelector('#med-duration-other-group');
+        if (otherG) otherG.style.display = durSel.value === 'other' ? '' : 'none';
+      });
+    }
 
     // Get encounter/patient context for pharmacy section
     const encEl = container.closest('[data-encounter-id]') || document.getElementById('order-entry-form');
@@ -522,6 +587,17 @@ function renderTypeFields(container, type) {
           if (unitSel)  unitSel.value  = defaultForm.unit;
           if (routeSel) routeSel.value = defaultForm.route;
           if (freqSel)  freqSel.value  = defaultForm.defaultFreq;
+
+          // Auto-populate duration based on drug class
+          const durSel = container.querySelector('#med-duration');
+          if (durSel && medEntry.drugClass) {
+            const cls = medEntry.drugClass.toLowerCase();
+            if (cls.includes('antibiotic') || cls.includes('antimicrobial')) durSel.value = '7';
+            else if (cls.includes('antifungal')) durSel.value = '14';
+            else if (cls.includes('steroid') && !cls.includes('inhaled')) durSel.value = '5';
+            else if (cls.includes('analgesic') || cls.includes('nsaid') || cls.includes('pain')) durSel.value = '7';
+            else durSel.value = 'ongoing';
+          }
 
           // Build dose pill selector
           _renderDosePills(container, medEntry, medEntry.defaultDoseIndex);
@@ -709,7 +785,7 @@ function placeOrder(encounter, patient) {
     return;
   }
 
-  const orderedBy = document.getElementById('ord-provider')?.value;
+  const orderedBy = getCurrentProvider() || (getSessionUser() || {}).id || '';
   const notes     = document.getElementById('ord-notes')?.value.trim() || '';
   const type      = _selectedType;
   const priority  = _selectedPriority;
@@ -728,6 +804,7 @@ function placeOrder(encounter, patient) {
       route:      document.getElementById('med-route')?.value,
       frequency:  document.getElementById('med-freq')?.value,
       prn:        document.getElementById('med-prn')?.checked || false,
+      duration:   (() => { const d = document.getElementById('med-duration')?.value; return d === 'other' ? (document.getElementById('med-duration-other')?.value || '') + ' days' : d === 'ongoing' ? 'Ongoing' : d ? d + ' days' : ''; })(),
       indication: document.getElementById('med-indication')?.value.trim(),
     };
   }
@@ -914,6 +991,7 @@ function getOrderSubtext(order) {
     case 'Medication': {
       const parts = [d.route, d.frequency].filter(Boolean);
       if (d.prn) parts.push('PRN');
+      if (d.duration) parts.push(d.duration);
       return parts.join(', ') || '';
     }
     case 'Lab':     return d.specimen ? 'Specimen: ' + d.specimen : '';
@@ -1053,7 +1131,7 @@ function _continueAfterDupeCheck(encounter, patient, type, detail, priority, not
     saveOrder({
       encounterId: encounter.id,
       patientId:   encounter.patientId,
-      orderedBy:   document.getElementById('ord-provider')?.value || '',
+      orderedBy:   getCurrentProvider() || (getSessionUser() || {}).id || '',
       type, priority, status: 'Pending', detail, notes,
       dateTime: new Date().toISOString(),
     });
@@ -1178,4 +1256,73 @@ function _checkDrugAllergy(drugName, patientId, medEntry) {
 /* ---------- getChartOrderName (used by chart search) ---------- */
 function getChartOrderName(order) {
   return getOrderDisplayName(order);
+}
+
+/* ============================================================
+   Order Sets Modal
+   ============================================================ */
+function openOrderSetsModal(encounter, patient) {
+  let selectedSetIdx = null;
+
+  let bodyHTML = '<div id="order-set-list">';
+  ORDER_SETS.forEach((set, idx) => {
+    bodyHTML += '<button class="btn btn-secondary btn-block order-set-item" data-set-idx="' + idx + '" style="margin-bottom:8px;text-align:left">';
+    bodyHTML += '<strong>' + esc(set.name) + '</strong> <span class="text-muted text-sm">(' + set.orders.length + ' orders)</span>';
+    bodyHTML += '</button>';
+  });
+  bodyHTML += '</div>';
+  bodyHTML += '<div id="order-set-detail" style="display:none"></div>';
+
+  const footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="btn-place-order-set" disabled>Place Selected Orders</button>';
+
+  openModal({ title: 'Inpatient Order Sets', bodyHTML, footerHTML, size: 'lg' });
+
+  // Set selection
+  document.querySelectorAll('.order-set-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedSetIdx = parseInt(btn.dataset.setIdx);
+      const set = ORDER_SETS[selectedSetIdx];
+      document.getElementById('order-set-list').style.display = 'none';
+      const detailDiv = document.getElementById('order-set-detail');
+      detailDiv.style.display = '';
+      detailDiv.innerHTML = '<h3>' + esc(set.name) + '</h3>';
+      set.orders.forEach((ord, oi) => {
+        const desc = ord.type === 'Medication'
+          ? ord.detail.drug + ' ' + ord.detail.dose + ord.detail.unit + ' ' + ord.detail.route + ' ' + ord.detail.frequency
+          : (ord.detail.panel || ord.detail.study || ord.type);
+        detailDiv.innerHTML += '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
+          '<input type="checkbox" checked data-order-idx="' + oi + '" class="order-set-check" />' +
+          '<span><strong>' + esc(ord.type) + ':</strong> ' + esc(desc) + ' <span class="badge badge-' + ord.priority.toLowerCase() + '">' + esc(ord.priority) + '</span></span></label>';
+      });
+      document.getElementById('btn-place-order-set').disabled = false;
+    });
+  });
+
+  // Place orders
+  document.getElementById('btn-place-order-set').addEventListener('click', () => {
+    if (selectedSetIdx === null) return;
+    const set = ORDER_SETS[selectedSetIdx];
+    const checks = document.querySelectorAll('.order-set-check');
+    let placed = 0;
+    checks.forEach(cb => {
+      if (!cb.checked) return;
+      const oi = parseInt(cb.dataset.orderIdx);
+      const ord = set.orders[oi];
+      saveOrder({
+        encounterId: encounter.id,
+        patientId: encounter.patientId,
+        orderedBy: getCurrentProvider() || (getSessionUser() || {}).id || '',
+        type: ord.type,
+        priority: ord.priority,
+        status: 'Pending',
+        detail: { ...ord.detail },
+        notes: 'From order set: ' + set.name,
+        dateTime: new Date().toISOString(),
+      });
+      placed++;
+    });
+    closeModal();
+    showToast(placed + ' orders placed from ' + set.name + '.', 'success');
+    refreshOrderList();
+  });
 }
