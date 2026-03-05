@@ -294,20 +294,24 @@ const LAB_DB = [
 
 function searchLabTests(query) {
   if (!query || query.length < 2) return [];
-  const q = query.toLowerCase();
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const scored = [];
   for (const lab of LAB_DB) {
     const nLower = lab.name.toLowerCase();
     const aLower = lab.abbreviation.toLowerCase();
     const aliasLower = lab.aliases.map(a => a.toLowerCase());
+    const searchText = nLower + ' ' + aLower + ' ' + aliasLower.join(' ');
+
+    if (!words.every(w => searchText.includes(w))) continue;
+
+    const q = words[0];
     let score = 0;
     if (nLower.startsWith(q)) score = 4;
     else if (aLower.startsWith(q)) score = 3;
     else if (aliasLower.some(a => a.startsWith(q))) score = 3;
     else if (nLower.includes(q)) score = 2;
-    else if (aLower.includes(q)) score = 1;
-    else if (aliasLower.some(a => a.includes(q))) score = 1;
-    if (score > 0) scored.push({ lab, score });
+    else score = 1;
+    scored.push({ lab, score });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, 10).map(s => s.lab);

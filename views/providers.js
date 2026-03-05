@@ -102,7 +102,7 @@ function renderProviders() {
       const tdActions = document.createElement('td');
       tdActions.style.textAlign = 'right';
       if (canManage) {
-        tdActions.innerHTML = '<button class="btn btn-secondary btn-sm" data-action="edit" data-id="' + prov.id + '">Edit</button> <button class="btn btn-danger btn-sm" data-action="delete" data-id="' + prov.id + '">Delete</button>';
+        tdActions.innerHTML = '<button class="btn btn-secondary btn-sm" data-action="edit" data-id="' + esc(prov.id) + '">Edit</button> <button class="btn btn-danger btn-sm" data-action="delete" data-id="' + esc(prov.id) + '">Delete</button>';
       }
 
       tr.appendChild(tdName);
@@ -293,7 +293,8 @@ function buildPatientBanner(patientId) {
 
   const nameEl = document.createElement('span');
   nameEl.className = 'patient-banner-name';
-  nameEl.textContent = patient.lastName + ', ' + patient.firstName;
+  const codeStatus = patient.codeStatus || 'Full Code';
+  nameEl.textContent = patient.lastName + ', ' + patient.firstName + ' (' + codeStatus + ')';
 
   const metaEl = document.createElement('span');
   metaEl.className = 'patient-banner-meta';

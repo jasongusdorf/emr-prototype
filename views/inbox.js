@@ -34,28 +34,48 @@ function _getInboxMessageCount() {
   return getUnreadMessageCount(providerId, 'provider');
 }
 
+function getFilteredRefillsInbox() {
+  return getOrders().filter(o => o.type === 'Medication' && o.status === 'Pending' && _inboxEncounterFilter(o));
+}
+
 function getInboxCounts() {
   const labs = getFilteredLabsInbox().length;
   const notes = getFilteredNotesInbox().length;
   const orders = getFilteredOrdersInbox().length;
   const referrals = getFilteredReferralsInbox().length;
   const messages = _getInboxMessageCount();
-  return { labs, notes, orders, referrals, messages, total: labs + notes + orders + referrals + messages };
+  const refills = getFilteredRefillsInbox().length;
+  return { labs, notes, orders, referrals, messages, refills, total: labs + notes + orders + referrals + messages + refills };
+}
+
+function updateSidebarBadges() {
+  const counts = getInboxCounts();
+  const setBadge = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val > 0 ? val : '';
+  };
+  setBadge('messages-badge', counts.messages);
+  setBadge('labs-badge', counts.labs);
+  setBadge('refills-badge', counts.refills);
+  setBadge('notes-badge', counts.notes);
 }
 
 function updateInboxBadge() {
-  const badge = document.getElementById('inbox-badge');
-  if (!badge) return;
-  const counts = getInboxCounts();
-  badge.textContent = counts.total > 0 ? counts.total : '';
+  updateSidebarBadges();
 }
 
-function renderInbox() {
+function renderInbox(preselectedTab) {
+  if (preselectedTab) {
+    _inboxTab = preselectedTab;
+    setActiveNav('inbox-' + preselectedTab);
+  } else {
+    setActiveNav('inbox-' + _inboxTab);
+  }
+
   const app = document.getElementById('app');
   app.innerHTML = '';
 
   setTopbar({ title: 'Inbox', meta: '', actions: '' });
-  setActiveNav('inbox');
 
   const counts = getInboxCounts();
 
@@ -64,11 +84,11 @@ function renderInbox() {
   tabs.className = 'inbox-tabs';
 
   const tabDefs = [
-    { key: 'labs',      label: 'Unreviewed Labs', count: counts.labs },
-    { key: 'notes',     label: 'Unsigned Notes',  count: counts.notes },
-    { key: 'orders',    label: 'Pending Orders',  count: counts.orders },
-    { key: 'referrals', label: 'Pending Referrals', count: counts.referrals },
-    { key: 'messages',  label: 'Messages',         count: counts.messages },
+    { key: 'labs',      label: 'Test Results',       count: counts.labs },
+    { key: 'refills',   label: 'Refill Requests',    count: counts.refills },
+    { key: 'notes',     label: 'Unsigned Notes',     count: counts.notes },
+    { key: 'orders',    label: 'Pending Orders',     count: counts.orders },
+    { key: 'referrals', label: 'Pending Referrals',  count: counts.referrals },
   ];
 
   tabDefs.forEach(t => {
@@ -86,7 +106,10 @@ function renderInbox() {
     }
     btn.appendChild(badge);
 
-    btn.addEventListener('click', () => { _inboxTab = t.key; renderInbox(); });
+    btn.addEventListener('click', () => {
+      _inboxTab = t.key;
+      location.hash = '#inbox/' + t.key;
+    });
     tabs.appendChild(btn);
   });
   app.appendChild(tabs);
@@ -98,10 +121,10 @@ function renderInbox() {
 
   switch (_inboxTab) {
     case 'labs':      buildLabsInbox(card); break;
+    case 'refills':   buildRefillsInbox(card); break;
     case 'notes':     buildNotesInbox(card); break;
     case 'orders':    buildOrdersInbox(card); break;
     case 'referrals': buildReferralsInbox(card); break;
-    case 'messages':  buildMessagesInbox(card); break;
   }
 
   app.appendChild(card);
@@ -127,7 +150,8 @@ function buildLabsInbox(card) {
     title.textContent = lab.panel;
     const meta = document.createElement('div');
     meta.className = 'inbox-item-meta';
-    meta.textContent = (patient ? patient.lastName + ', ' + patient.firstName : 'Unknown') + ' · ' + formatDateTime(lab.resultDate);
+    if (patient) { meta.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName)); meta.appendChild(document.createTextNode(' · ' + formatDateTime(lab.resultDate))); }
+    else { meta.textContent = 'Unknown · ' + formatDateTime(lab.resultDate); }
     body.appendChild(title);
     body.appendChild(meta);
 
@@ -218,7 +242,7 @@ function openLabReviewModal(labId) {
     });
     closeModal();
     showToast('Lab result marked as reviewed.', 'success');
-    updateInboxBadge();
+    updateSidebarBadges();
     renderInbox();
   });
 }
@@ -245,7 +269,8 @@ function buildNotesInbox(card) {
     title.textContent = note.chiefComplaint || 'Untitled Note';
     const meta = document.createElement('div');
     meta.className = 'inbox-item-meta';
-    meta.textContent = (patient ? patient.lastName + ', ' + patient.firstName : 'Unknown') + ' · ' + formatDateTime(note.lastModified);
+    if (patient) { meta.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName)); meta.appendChild(document.createTextNode(' · ' + formatDateTime(note.lastModified))); }
+    else { meta.textContent = 'Unknown · ' + formatDateTime(note.lastModified); }
     body.appendChild(title);
     body.appendChild(meta);
 
@@ -284,7 +309,48 @@ function buildOrdersInbox(card) {
     title.textContent = order.type + ': ' + (order.detail.drug || order.detail.panel || order.detail.modality || order.detail.service || 'Order');
     const meta = document.createElement('div');
     meta.className = 'inbox-item-meta';
-    meta.textContent = (patient ? patient.lastName + ', ' + patient.firstName : 'Unknown') + ' · ' + order.priority + ' · ' + formatDateTime(order.dateTime);
+    if (patient) { meta.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName)); meta.appendChild(document.createTextNode(' · ' + order.priority + ' · ' + formatDateTime(order.dateTime))); }
+    else { meta.textContent = 'Unknown · ' + order.priority + ' · ' + formatDateTime(order.dateTime); }
+    body.appendChild(title);
+    body.appendChild(meta);
+
+    const goBtn = document.createElement('button');
+    goBtn.className = 'btn btn-secondary btn-sm';
+    goBtn.textContent = 'View';
+    goBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigate('#orders/' + order.encounterId);
+    });
+
+    item.appendChild(body);
+    item.appendChild(goBtn);
+    item.addEventListener('click', () => navigate('#orders/' + order.encounterId));
+    card.appendChild(item);
+  });
+}
+
+function buildRefillsInbox(card) {
+  const refills = getFilteredRefillsInbox();
+
+  if (refills.length === 0) {
+    card.appendChild(buildEmptyState('💊', 'No refill requests', 'All medication refills have been processed.'));
+    return;
+  }
+
+  refills.forEach(order => {
+    const patient = getPatient(order.patientId);
+    const item = document.createElement('div');
+    item.className = 'inbox-item';
+
+    const body = document.createElement('div');
+    body.className = 'inbox-item-body';
+    const title = document.createElement('div');
+    title.className = 'inbox-item-title';
+    title.textContent = 'Refill: ' + (order.detail.drug || 'Medication');
+    const meta = document.createElement('div');
+    meta.className = 'inbox-item-meta';
+    if (patient) { meta.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName)); meta.appendChild(document.createTextNode(' · ' + order.priority + ' · ' + formatDateTime(order.dateTime))); }
+    else { meta.textContent = 'Unknown · ' + order.priority + ' · ' + formatDateTime(order.dateTime); }
     body.appendChild(title);
     body.appendChild(meta);
 
@@ -324,7 +390,8 @@ function buildReferralsInbox(card) {
     title.textContent = ref.specialty + ' — ' + (ref.providerName || 'TBD');
     const meta = document.createElement('div');
     meta.className = 'inbox-item-meta';
-    meta.textContent = (patient ? patient.lastName + ', ' + patient.firstName : 'Unknown') + ' · ' + ref.status + ' · ' + formatDate(ref.referralDate);
+    if (patient) { meta.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName)); meta.appendChild(document.createTextNode(' · ' + ref.status + ' · ' + formatDate(ref.referralDate))); }
+    else { meta.textContent = 'Unknown · ' + ref.status + ' · ' + formatDate(ref.referralDate); }
     body.appendChild(title);
     body.appendChild(meta);
 
@@ -488,7 +555,8 @@ function buildMessagesInbox(card) {
 
     const patName = document.createElement('div');
     patName.className = 'message-thread-patient';
-    patName.textContent = patient ? patient.lastName + ', ' + patient.firstName : 'Unknown';
+    if (patient) { patName.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName)); }
+    else { patName.textContent = 'Unknown'; }
 
     const typeBadge = document.createElement('span');
     typeBadge.className = 'message-type-badge ' + _getMessageTypeBadgeClass(thread.type);
@@ -647,7 +715,7 @@ function openComposeMessageModal(replyThreadId, replyPatientId) {
 
     closeModal();
     showToast('Message sent.', 'success');
-    updateInboxBadge();
+    updateSidebarBadges();
     if (_inboxTab === 'messages') renderInbox();
   });
 }
@@ -673,7 +741,7 @@ function openMessageThreadModal(threadId) {
       markedAny = true;
     }
   });
-  if (markedAny) updateInboxBadge();
+  if (markedAny) updateSidebarBadges();
 
   // Reload after marking read
   const freshMsgs = getMessageThread(threadId);
@@ -753,7 +821,7 @@ function openMessageThreadModal(threadId) {
 
     closeModal();
     showToast('Reply sent.', 'success');
-    updateInboxBadge();
+    updateSidebarBadges();
     // Re-open the thread to show updated messages
     openMessageThreadModal(threadId);
   });

@@ -1512,6 +1512,287 @@ const PHARMACY_DB = [
   {chain:'Rite Aid',name:'Rite Aid #2605',address:'1010 Clock Tower Dr',city:'Springfield',state:'IL',zip:'62704',phone:'(555) 330-1009',fax:'(555) 330-1010',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
   {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #524',address:'3901 W Iles Ave',city:'Springfield',state:'IL',zip:'62711',phone:'(555) 340-1007',fax:'(555) 340-1008',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
   {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #1250',address:'3401 S Veterans Pkwy',city:'Springfield',state:'IL',zip:'62704',phone:'(555) 320-1007',fax:'(555) 320-1008',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Alabama (AL) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1001',address:'2801 Eastern Blvd',city:'Montgomery',state:'AL',zip:'36116',phone:'(555) 501-1001',fax:'(555) 501-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3001',address:'3500 Memorial Pkwy SW',city:'Huntsville',state:'AL',zip:'35801',phone:'(555) 501-2001',fax:'(555) 501-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2001',address:'5555 McClellan Blvd',city:'Anniston',state:'AL',zip:'36206',phone:'(555) 501-3001',fax:'(555) 501-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1002',address:'1650 Montclair Rd',city:'Birmingham',state:'AL',zip:'35210',phone:'(555) 501-1003',fax:'(555) 501-1004',hours:'24 Hours',is24hr:true},
+
+  // ── Alaska (AK) ──
+  {chain:'Walgreens',name:'Walgreens #3010',address:'1260 N Muldoon Rd',city:'Anchorage',state:'AK',zip:'99504',phone:'(555) 502-2001',fax:'(555) 502-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 9am-7pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2010',address:'3101 A St',city:'Anchorage',state:'AK',zip:'99503',phone:'(555) 502-3001',fax:'(555) 502-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1750',address:'3901 Old Seward Hwy',city:'Anchorage',state:'AK',zip:'99503',phone:'(555) 502-4001',fax:'(555) 502-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Arizona (AZ) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1010',address:'3402 N Central Ave',city:'Phoenix',state:'AZ',zip:'85012',phone:'(555) 503-1001',fax:'(555) 503-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3020',address:'7110 E McDowell Rd',city:'Scottsdale',state:'AZ',zip:'85257',phone:'(555) 503-2001',fax:'(555) 503-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2020',address:'1050 S Gilbert Rd',city:'Gilbert',state:'AZ',zip:'85296',phone:'(555) 503-3001',fax:'(555) 503-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1760',address:'4700 E Speedway Blvd',city:'Tucson',state:'AZ',zip:'85712',phone:'(555) 503-4001',fax:'(555) 503-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1210',address:'15055 N Northsight Blvd',city:'Scottsdale',state:'AZ',zip:'85260',phone:'(555) 503-5001',fax:'(555) 503-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Arkansas (AR) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1015',address:'9600 N Rodney Parham Rd',city:'Little Rock',state:'AR',zip:'72227',phone:'(555) 504-1001',fax:'(555) 504-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3025',address:'1620 S Caraway Rd',city:'Jonesboro',state:'AR',zip:'72401',phone:'(555) 504-2001',fax:'(555) 504-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2025',address:'5701 Rogers Ave',city:'Fort Smith',state:'AR',zip:'72903',phone:'(555) 504-3001',fax:'(555) 504-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #540',address:'2801 Lakewood Village Dr',city:'North Little Rock',state:'AR',zip:'72116',phone:'(555) 504-4001',fax:'(555) 504-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── California (CA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1020',address:'8490 Beverly Blvd',city:'Los Angeles',state:'CA',zip:'90048',phone:'(555) 505-1001',fax:'(555) 505-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3030',address:'135 Powell St',city:'San Francisco',state:'CA',zip:'94102',phone:'(555) 505-2001',fax:'(555) 505-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Rite Aid',name:'Rite Aid #2700',address:'2801 Marconi Ave',city:'Sacramento',state:'CA',zip:'95821',phone:'(555) 505-3001',fax:'(555) 505-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1770',address:'1450 Howard St',city:'San Francisco',state:'CA',zip:'94103',phone:'(555) 505-4001',fax:'(555) 505-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1220',address:'2700 Park Blvd',city:'San Diego',state:'CA',zip:'92103',phone:'(555) 505-5001',fax:'(555) 505-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2030',address:'3250 Dale Rd',city:'Modesto',state:'CA',zip:'95356',phone:'(555) 505-6001',fax:'(555) 505-6002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Colorado (CO) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1025',address:'2005 S University Blvd',city:'Denver',state:'CO',zip:'80210',phone:'(555) 506-1001',fax:'(555) 506-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3035',address:'500 E 8th Ave',city:'Denver',state:'CO',zip:'80203',phone:'(555) 506-2001',fax:'(555) 506-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1780',address:'2160 S Colorado Blvd',city:'Denver',state:'CO',zip:'80222',phone:'(555) 506-4001',fax:'(555) 506-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2035',address:'7455 W Colfax Ave',city:'Lakewood',state:'CO',zip:'80214',phone:'(555) 506-3001',fax:'(555) 506-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Connecticut (CT) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1030',address:'1099 Whalley Ave',city:'New Haven',state:'CT',zip:'06515',phone:'(555) 507-1001',fax:'(555) 507-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3040',address:'505 Farmington Ave',city:'Hartford',state:'CT',zip:'06105',phone:'(555) 507-2001',fax:'(555) 507-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2710',address:'1500 Boston Post Rd',city:'Milford',state:'CT',zip:'06460',phone:'(555) 507-3001',fax:'(555) 507-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1230',address:'1 Costco Dr',city:'Norwalk',state:'CT',zip:'06851',phone:'(555) 507-5001',fax:'(555) 507-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Delaware (DE) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1035',address:'4001 Concord Pike',city:'Wilmington',state:'DE',zip:'19803',phone:'(555) 508-1001',fax:'(555) 508-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3045',address:'250 S State St',city:'Dover',state:'DE',zip:'19901',phone:'(555) 508-2001',fax:'(555) 508-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2720',address:'1515 N DuPont Hwy',city:'Dover',state:'DE',zip:'19901',phone:'(555) 508-3001',fax:'(555) 508-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Florida (FL) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1040',address:'3000 Biscayne Blvd',city:'Miami',state:'FL',zip:'33137',phone:'(555) 509-1001',fax:'(555) 509-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3050',address:'100 N Orange Ave',city:'Orlando',state:'FL',zip:'32801',phone:'(555) 509-2001',fax:'(555) 509-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Publix Pharmacy',name:'Publix Pharmacy #0820',address:'3601 W Kennedy Blvd',city:'Tampa',state:'FL',zip:'33609',phone:'(555) 509-4001',fax:'(555) 509-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 11am-6pm',is24hr:false},
+  {chain:'Publix Pharmacy',name:'Publix Pharmacy #0821',address:'5225 A1A S',city:'St. Augustine',state:'FL',zip:'32080',phone:'(555) 509-4003',fax:'(555) 509-4004',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 11am-6pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2040',address:'4600 W Newberry Rd',city:'Gainesville',state:'FL',zip:'32607',phone:'(555) 509-3001',fax:'(555) 509-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Georgia (GA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1045',address:'200 Peachtree St NE',city:'Atlanta',state:'GA',zip:'30303',phone:'(555) 510-1001',fax:'(555) 510-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3055',address:'725 Ponce De Leon Ave NE',city:'Atlanta',state:'GA',zip:'30306',phone:'(555) 510-2001',fax:'(555) 510-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Publix Pharmacy',name:'Publix Pharmacy #0830',address:'3535 Peachtree Rd NE',city:'Atlanta',state:'GA',zip:'30326',phone:'(555) 510-4001',fax:'(555) 510-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 11am-6pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #545',address:'1311 Johnson Ferry Rd',city:'Marietta',state:'GA',zip:'30068',phone:'(555) 510-5001',fax:'(555) 510-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2045',address:'6149 Old National Hwy',city:'College Park',state:'GA',zip:'30349',phone:'(555) 510-3001',fax:'(555) 510-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Hawaii (HI) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1050',address:'1030 Ala Moana Blvd',city:'Honolulu',state:'HI',zip:'96814',phone:'(555) 511-1001',fax:'(555) 511-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3060',address:'2155 Kalakaua Ave',city:'Honolulu',state:'HI',zip:'96815',phone:'(555) 511-2001',fax:'(555) 511-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2050',address:'700 Keeaumoku St',city:'Honolulu',state:'HI',zip:'96814',phone:'(555) 511-3001',fax:'(555) 511-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Idaho (ID) ──
+  {chain:'Walgreens',name:'Walgreens #3065',address:'1219 N Milwaukee St',city:'Boise',state:'ID',zip:'83704',phone:'(555) 512-2001',fax:'(555) 512-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2055',address:'8300 W Overland Rd',city:'Boise',state:'ID',zip:'83709',phone:'(555) 512-3001',fax:'(555) 512-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1790',address:'1650 S 25th E',city:'Idaho Falls',state:'ID',zip:'83404',phone:'(555) 512-4001',fax:'(555) 512-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Indiana (IN) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1060',address:'155 E Market St',city:'Indianapolis',state:'IN',zip:'46204',phone:'(555) 513-1001',fax:'(555) 513-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3070',address:'3902 N Meridian St',city:'Indianapolis',state:'IN',zip:'46208',phone:'(555) 513-2001',fax:'(555) 513-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #550',address:'1217 S Rangeline Rd',city:'Carmel',state:'IN',zip:'46032',phone:'(555) 513-5001',fax:'(555) 513-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2060',address:'4650 W 86th St',city:'Indianapolis',state:'IN',zip:'46268',phone:'(555) 513-3001',fax:'(555) 513-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Iowa (IA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1065',address:'2545 Hubbell Ave',city:'Des Moines',state:'IA',zip:'50317',phone:'(555) 514-1001',fax:'(555) 514-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3075',address:'1015 2nd Ave SE',city:'Cedar Rapids',state:'IA',zip:'52403',phone:'(555) 514-2001',fax:'(555) 514-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2065',address:'4218 Elmore Ave',city:'Davenport',state:'IA',zip:'52807',phone:'(555) 514-3001',fax:'(555) 514-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Kansas (KS) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1070',address:'1133 SW Topeka Blvd',city:'Topeka',state:'KS',zip:'66612',phone:'(555) 515-1001',fax:'(555) 515-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3080',address:'550 N Rock Rd',city:'Wichita',state:'KS',zip:'67206',phone:'(555) 515-2001',fax:'(555) 515-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2070',address:'3030 Iowa St',city:'Lawrence',state:'KS',zip:'66046',phone:'(555) 515-3001',fax:'(555) 515-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Kentucky (KY) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1075',address:'525 W Broadway',city:'Louisville',state:'KY',zip:'40202',phone:'(555) 516-1001',fax:'(555) 516-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3085',address:'901 Beaumont Centre Ln',city:'Lexington',state:'KY',zip:'40513',phone:'(555) 516-2001',fax:'(555) 516-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #555',address:'2710 Lexington Rd',city:'Louisville',state:'KY',zip:'40206',phone:'(555) 516-5001',fax:'(555) 516-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2075',address:'3600 US 60',city:'Owensboro',state:'KY',zip:'42301',phone:'(555) 516-3001',fax:'(555) 516-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Louisiana (LA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1080',address:'900 Canal St',city:'New Orleans',state:'LA',zip:'70112',phone:'(555) 517-1001',fax:'(555) 517-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3090',address:'3001 Highland Rd',city:'Baton Rouge',state:'LA',zip:'70802',phone:'(555) 517-2001',fax:'(555) 517-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2080',address:'1353 E Bert Kouns Industrial Loop',city:'Shreveport',state:'LA',zip:'71105',phone:'(555) 517-3001',fax:'(555) 517-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Maine (ME) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1085',address:'510 Congress St',city:'Portland',state:'ME',zip:'04101',phone:'(555) 518-1001',fax:'(555) 518-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3095',address:'440 Western Ave',city:'Augusta',state:'ME',zip:'04330',phone:'(555) 518-2001',fax:'(555) 518-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2730',address:'623 Stillwater Ave',city:'Bangor',state:'ME',zip:'04401',phone:'(555) 518-3001',fax:'(555) 518-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Maryland (MD) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1090',address:'201 E Pratt St',city:'Baltimore',state:'MD',zip:'21202',phone:'(555) 519-1001',fax:'(555) 519-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3100',address:'8501 Colesville Rd',city:'Silver Spring',state:'MD',zip:'20910',phone:'(555) 519-2001',fax:'(555) 519-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Rite Aid',name:'Rite Aid #2740',address:'5200 Wisconsin Ave',city:'Bethesda',state:'MD',zip:'20815',phone:'(555) 519-3001',fax:'(555) 519-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2085',address:'3231 Solomons Island Rd',city:'Edgewater',state:'MD',zip:'21037',phone:'(555) 519-4001',fax:'(555) 519-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Massachusetts (MA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1095',address:'210 Border St',city:'Boston',state:'MA',zip:'02128',phone:'(555) 520-1001',fax:'(555) 520-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3105',address:'841 Boylston St',city:'Boston',state:'MA',zip:'02116',phone:'(555) 520-2001',fax:'(555) 520-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2750',address:'358 Main St',city:'Worcester',state:'MA',zip:'01608',phone:'(555) 520-3001',fax:'(555) 520-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1240',address:'71 2nd Ave',city:'Waltham',state:'MA',zip:'02451',phone:'(555) 520-5001',fax:'(555) 520-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Michigan (MI) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1100',address:'1250 Woodward Ave',city:'Detroit',state:'MI',zip:'48226',phone:'(555) 521-1001',fax:'(555) 521-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3110',address:'2975 28th St SE',city:'Grand Rapids',state:'MI',zip:'49512',phone:'(555) 521-2001',fax:'(555) 521-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2760',address:'401 S Saginaw St',city:'Flint',state:'MI',zip:'48502',phone:'(555) 521-3001',fax:'(555) 521-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #560',address:'3145 Washtenaw Ave',city:'Ann Arbor',state:'MI',zip:'48104',phone:'(555) 521-5001',fax:'(555) 521-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2090',address:'29555 Plymouth Rd',city:'Livonia',state:'MI',zip:'48150',phone:'(555) 521-4001',fax:'(555) 521-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Minnesota (MN) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1105',address:'700 Nicollet Mall',city:'Minneapolis',state:'MN',zip:'55402',phone:'(555) 522-1001',fax:'(555) 522-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3115',address:'1585 University Ave W',city:'St. Paul',state:'MN',zip:'55104',phone:'(555) 522-2001',fax:'(555) 522-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2095',address:'13505 Ridgedale Dr',city:'Minnetonka',state:'MN',zip:'55305',phone:'(555) 522-3001',fax:'(555) 522-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1250',address:'8400 Springbrook Dr NW',city:'Coon Rapids',state:'MN',zip:'55433',phone:'(555) 522-5001',fax:'(555) 522-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Mississippi (MS) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1110',address:'4500 I-55 N',city:'Jackson',state:'MS',zip:'39211',phone:'(555) 523-1001',fax:'(555) 523-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3120',address:'3100 Hardy St',city:'Hattiesburg',state:'MS',zip:'39401',phone:'(555) 523-2001',fax:'(555) 523-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2100',address:'2711 N Gloster St',city:'Tupelo',state:'MS',zip:'38801',phone:'(555) 523-3001',fax:'(555) 523-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Montana (MT) ──
+  {chain:'Walgreens',name:'Walgreens #3130',address:'501 S Higgins Ave',city:'Missoula',state:'MT',zip:'59801',phone:'(555) 525-2001',fax:'(555) 525-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2110',address:'2525 King Ave W',city:'Billings',state:'MT',zip:'59102',phone:'(555) 525-3001',fax:'(555) 525-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1800',address:'1003 Helena Ave',city:'Helena',state:'MT',zip:'59601',phone:'(555) 525-4001',fax:'(555) 525-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Nebraska (NE) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1120',address:'7020 Dodge St',city:'Omaha',state:'NE',zip:'68132',phone:'(555) 526-1001',fax:'(555) 526-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3135',address:'2550 S 48th St',city:'Lincoln',state:'NE',zip:'68506',phone:'(555) 526-2001',fax:'(555) 526-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2115',address:'1606 S Locust St',city:'Grand Island',state:'NE',zip:'68801',phone:'(555) 526-3001',fax:'(555) 526-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Nevada (NV) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1125',address:'3758 Las Vegas Blvd S',city:'Las Vegas',state:'NV',zip:'89109',phone:'(555) 527-1001',fax:'(555) 527-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3140',address:'5005 S Eastern Ave',city:'Las Vegas',state:'NV',zip:'89119',phone:'(555) 527-2001',fax:'(555) 527-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2120',address:'300 E 2nd St',city:'Reno',state:'NV',zip:'89501',phone:'(555) 527-3001',fax:'(555) 527-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1810',address:'4900 S McCarran Blvd',city:'Reno',state:'NV',zip:'89502',phone:'(555) 527-4001',fax:'(555) 527-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── New Hampshire (NH) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1130',address:'80 S Main St',city:'Concord',state:'NH',zip:'03301',phone:'(555) 528-1001',fax:'(555) 528-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3145',address:'200 Elm St',city:'Manchester',state:'NH',zip:'03101',phone:'(555) 528-2001',fax:'(555) 528-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2770',address:'1275 Elm St',city:'Manchester',state:'NH',zip:'03101',phone:'(555) 528-3001',fax:'(555) 528-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── New Jersey (NJ) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1135',address:'510 Broad St',city:'Newark',state:'NJ',zip:'07102',phone:'(555) 529-1001',fax:'(555) 529-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3150',address:'2100 Route 38',city:'Cherry Hill',state:'NJ',zip:'08002',phone:'(555) 529-2001',fax:'(555) 529-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2780',address:'1 Journal Sq',city:'Jersey City',state:'NJ',zip:'07306',phone:'(555) 529-3001',fax:'(555) 529-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2125',address:'3575 US 1',city:'Princeton',state:'NJ',zip:'08540',phone:'(555) 529-4001',fax:'(555) 529-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── New Mexico (NM) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1140',address:'6100 Coors Blvd NW',city:'Albuquerque',state:'NM',zip:'87120',phone:'(555) 530-1001',fax:'(555) 530-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3155',address:'3401 Cerrillos Rd',city:'Santa Fe',state:'NM',zip:'87507',phone:'(555) 530-2001',fax:'(555) 530-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2130',address:'1550 S Valley Dr',city:'Las Cruces',state:'NM',zip:'88005',phone:'(555) 530-3001',fax:'(555) 530-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── New York (NY) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1145',address:'200 W 57th St',city:'New York',state:'NY',zip:'10019',phone:'(555) 531-1001',fax:'(555) 531-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3160',address:'350 5th Ave',city:'New York',state:'NY',zip:'10118',phone:'(555) 531-2001',fax:'(555) 531-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Rite Aid',name:'Rite Aid #2790',address:'408 Grand Concourse',city:'Bronx',state:'NY',zip:'10451',phone:'(555) 531-3001',fax:'(555) 531-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2135',address:'4975 Transit Rd',city:'Depew',state:'NY',zip:'14043',phone:'(555) 531-4001',fax:'(555) 531-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1260',address:'976 3rd Ave',city:'New York',state:'NY',zip:'10022',phone:'(555) 531-5001',fax:'(555) 531-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── North Carolina (NC) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1150',address:'310 S Elm St',city:'Greensboro',state:'NC',zip:'27401',phone:'(555) 532-1001',fax:'(555) 532-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3165',address:'200 S Tryon St',city:'Charlotte',state:'NC',zip:'28202',phone:'(555) 532-2001',fax:'(555) 532-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Publix Pharmacy',name:'Publix Pharmacy #0840',address:'4540 Yadkin Rd',city:'Fayetteville',state:'NC',zip:'28303',phone:'(555) 532-4001',fax:'(555) 532-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 11am-6pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2140',address:'4500 New Bern Ave',city:'Raleigh',state:'NC',zip:'27610',phone:'(555) 532-3001',fax:'(555) 532-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── North Dakota (ND) ──
+  {chain:'Walgreens',name:'Walgreens #3170',address:'1301 S University Dr',city:'Fargo',state:'ND',zip:'58103',phone:'(555) 533-2001',fax:'(555) 533-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2145',address:'2717 State St',city:'Bismarck',state:'ND',zip:'58503',phone:'(555) 533-3001',fax:'(555) 533-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1155',address:'3100 32nd Ave S',city:'Grand Forks',state:'ND',zip:'58201',phone:'(555) 533-1001',fax:'(555) 533-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Ohio (OH) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1160',address:'1375 E 9th St',city:'Cleveland',state:'OH',zip:'44114',phone:'(555) 534-1001',fax:'(555) 534-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3175',address:'220 E Broad St',city:'Columbus',state:'OH',zip:'43215',phone:'(555) 534-2001',fax:'(555) 534-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Rite Aid',name:'Rite Aid #2800',address:'4102 W 3rd St',city:'Dayton',state:'OH',zip:'45417',phone:'(555) 534-3001',fax:'(555) 534-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #565',address:'1350 W Lane Ave',city:'Columbus',state:'OH',zip:'43221',phone:'(555) 534-5001',fax:'(555) 534-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2150',address:'2801 N Reynolds Rd',city:'Toledo',state:'OH',zip:'43615',phone:'(555) 534-4001',fax:'(555) 534-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Oklahoma (OK) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1165',address:'3030 NW Expressway',city:'Oklahoma City',state:'OK',zip:'73112',phone:'(555) 535-1001',fax:'(555) 535-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3180',address:'1830 S Harvard Ave',city:'Tulsa',state:'OK',zip:'74112',phone:'(555) 535-2001',fax:'(555) 535-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2155',address:'501 N 9th St',city:'Broken Arrow',state:'OK',zip:'74012',phone:'(555) 535-3001',fax:'(555) 535-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Oregon (OR) ──
+  {chain:'Walgreens',name:'Walgreens #3185',address:'940 SW 6th Ave',city:'Portland',state:'OR',zip:'97204',phone:'(555) 536-2001',fax:'(555) 536-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1820',address:'1030 NW Couch St',city:'Portland',state:'OR',zip:'97209',phone:'(555) 536-4001',fax:'(555) 536-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2160',address:'1330 Goldfish Farm Rd',city:'Eugene',state:'OR',zip:'97404',phone:'(555) 536-3001',fax:'(555) 536-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1270',address:'4849 NE 138th Ave',city:'Portland',state:'OR',zip:'97230',phone:'(555) 536-5001',fax:'(555) 536-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Pennsylvania (PA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1170',address:'1826 Chestnut St',city:'Philadelphia',state:'PA',zip:'19103',phone:'(555) 537-1001',fax:'(555) 537-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3190',address:'200 Forbes Ave',city:'Pittsburgh',state:'PA',zip:'15222',phone:'(555) 537-2001',fax:'(555) 537-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2810',address:'3420 Simpson Ferry Rd',city:'Camp Hill',state:'PA',zip:'17011',phone:'(555) 537-3001',fax:'(555) 537-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2165',address:'1091 Millcreek Mall',city:'Erie',state:'PA',zip:'16509',phone:'(555) 537-4001',fax:'(555) 537-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1275',address:'500 W Germantown Pike',city:'Plymouth Meeting',state:'PA',zip:'19462',phone:'(555) 537-5001',fax:'(555) 537-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Rhode Island (RI) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1175',address:'1 CVS Dr',city:'Woonsocket',state:'RI',zip:'02895',phone:'(555) 538-1001',fax:'(555) 538-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3195',address:'250 Main St',city:'Pawtucket',state:'RI',zip:'02860',phone:'(555) 538-2001',fax:'(555) 538-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2170',address:'650 Bald Hill Rd',city:'Warwick',state:'RI',zip:'02886',phone:'(555) 538-3001',fax:'(555) 538-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── South Carolina (SC) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1180',address:'1200 Main St',city:'Columbia',state:'SC',zip:'29201',phone:'(555) 539-1001',fax:'(555) 539-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3200',address:'1760 Sam Rittenberg Blvd',city:'Charleston',state:'SC',zip:'29407',phone:'(555) 539-2001',fax:'(555) 539-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Publix Pharmacy',name:'Publix Pharmacy #0850',address:'3620 Pelham Rd',city:'Greenville',state:'SC',zip:'29615',phone:'(555) 539-4001',fax:'(555) 539-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 11am-6pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2175',address:'10060 Two Notch Rd',city:'Columbia',state:'SC',zip:'29223',phone:'(555) 539-3001',fax:'(555) 539-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── South Dakota (SD) ──
+  {chain:'Walgreens',name:'Walgreens #3205',address:'3300 S Minnesota Ave',city:'Sioux Falls',state:'SD',zip:'57105',phone:'(555) 540-2001',fax:'(555) 540-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2180',address:'1200 N Lacrosse St',city:'Rapid City',state:'SD',zip:'57701',phone:'(555) 540-3001',fax:'(555) 540-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1185',address:'2101 W 41st St',city:'Sioux Falls',state:'SD',zip:'57105',phone:'(555) 540-1001',fax:'(555) 540-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Tennessee (TN) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1190',address:'1501 Broadway',city:'Nashville',state:'TN',zip:'37203',phone:'(555) 541-1001',fax:'(555) 541-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3210',address:'1863 Union Ave',city:'Memphis',state:'TN',zip:'38104',phone:'(555) 541-2001',fax:'(555) 541-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #570',address:'4100 Hillsboro Pike',city:'Nashville',state:'TN',zip:'37215',phone:'(555) 541-5001',fax:'(555) 541-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2185',address:'5764 Brainerd Rd',city:'Chattanooga',state:'TN',zip:'37411',phone:'(555) 541-3001',fax:'(555) 541-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Texas (TX) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1195',address:'5959 Richmond Ave',city:'Houston',state:'TX',zip:'77057',phone:'(555) 542-1001',fax:'(555) 542-1002',hours:'24 Hours',is24hr:true},
+  {chain:'Walgreens',name:'Walgreens #3215',address:'100 S Akard St',city:'Dallas',state:'TX',zip:'75202',phone:'(555) 542-2001',fax:'(555) 542-2002',hours:'24 Hours',is24hr:true},
+  {chain:'HEB Pharmacy',name:'HEB Pharmacy #301',address:'300 W Olmos Dr',city:'San Antonio',state:'TX',zip:'78212',phone:'(555) 542-6001',fax:'(555) 542-6002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'HEB Pharmacy',name:'HEB Pharmacy #302',address:'1601 S Congress Ave',city:'Austin',state:'TX',zip:'78704',phone:'(555) 542-6003',fax:'(555) 542-6004',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2190',address:'2700 W Pioneer Pkwy',city:'Arlington',state:'TX',zip:'76013',phone:'(555) 542-3001',fax:'(555) 542-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1280',address:'1001 W Arbrook Blvd',city:'Arlington',state:'TX',zip:'76015',phone:'(555) 542-5001',fax:'(555) 542-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Utah (UT) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1200',address:'424 S 300 E',city:'Salt Lake City',state:'UT',zip:'84111',phone:'(555) 543-1001',fax:'(555) 543-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3220',address:'3320 S State St',city:'Salt Lake City',state:'UT',zip:'84115',phone:'(555) 543-2001',fax:'(555) 543-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2195',address:'1142 N Main St',city:'Logan',state:'UT',zip:'84341',phone:'(555) 543-3001',fax:'(555) 543-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1285',address:'1818 S 300 W',city:'Salt Lake City',state:'UT',zip:'84115',phone:'(555) 543-5001',fax:'(555) 543-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Vermont (VT) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1205',address:'208 College St',city:'Burlington',state:'VT',zip:'05401',phone:'(555) 544-1001',fax:'(555) 544-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3225',address:'364 Dorset St',city:'South Burlington',state:'VT',zip:'05403',phone:'(555) 544-2001',fax:'(555) 544-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2820',address:'1 Scale Ave',city:'Rutland',state:'VT',zip:'05701',phone:'(555) 544-3001',fax:'(555) 544-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Virginia (VA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1210',address:'1001 E Broad St',city:'Richmond',state:'VA',zip:'23219',phone:'(555) 545-1001',fax:'(555) 545-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3230',address:'4815 Seminary Rd',city:'Alexandria',state:'VA',zip:'22311',phone:'(555) 545-2001',fax:'(555) 545-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2830',address:'19620 Williamsburg Rd',city:'Williamsburg',state:'VA',zip:'23185',phone:'(555) 545-3001',fax:'(555) 545-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Kroger Pharmacy',name:'Kroger Pharmacy #575',address:'3536 Ferncliff Ave NW',city:'Roanoke',state:'VA',zip:'24017',phone:'(555) 545-5001',fax:'(555) 545-5002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2200',address:'1400 Reservoir St',city:'Harrisonburg',state:'VA',zip:'22801',phone:'(555) 545-4001',fax:'(555) 545-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── Washington (WA) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1215',address:'1501 4th Ave',city:'Seattle',state:'WA',zip:'98101',phone:'(555) 546-1001',fax:'(555) 546-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3235',address:'601 Union St',city:'Seattle',state:'WA',zip:'98101',phone:'(555) 546-2001',fax:'(555) 546-2002',hours:'24 Hours',is24hr:true},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1830',address:'3500 S Othello St',city:'Seattle',state:'WA',zip:'98118',phone:'(555) 546-4001',fax:'(555) 546-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1290',address:'4401 4th Ave S',city:'Seattle',state:'WA',zip:'98134',phone:'(555) 546-5001',fax:'(555) 546-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2205',address:'5727 Littlerock Rd SW',city:'Tumwater',state:'WA',zip:'98512',phone:'(555) 546-3001',fax:'(555) 546-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+
+  // ── West Virginia (WV) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1220',address:'903 Quarrier St',city:'Charleston',state:'WV',zip:'25301',phone:'(555) 547-1001',fax:'(555) 547-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3240',address:'20 RHL Blvd',city:'Morgantown',state:'WV',zip:'26508',phone:'(555) 547-2001',fax:'(555) 547-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Rite Aid',name:'Rite Aid #2840',address:'200 Stafford Dr',city:'Huntington',state:'WV',zip:'25705',phone:'(555) 547-3001',fax:'(555) 547-3002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+
+  // ── Wisconsin (WI) ──
+  {chain:'CVS Pharmacy',name:'CVS Pharmacy #1225',address:'210 W Wisconsin Ave',city:'Milwaukee',state:'WI',zip:'53203',phone:'(555) 548-1001',fax:'(555) 548-1002',hours:'Mon-Fri 8am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
+  {chain:'Walgreens',name:'Walgreens #3245',address:'30 E Mifflin St',city:'Madison',state:'WI',zip:'53703',phone:'(555) 548-2001',fax:'(555) 548-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2210',address:'4198 Calumet Ave',city:'Manitowoc',state:'WI',zip:'54220',phone:'(555) 548-3001',fax:'(555) 548-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Costco Pharmacy',name:'Costco Pharmacy #1295',address:'13130 W Silver Spring Dr',city:'Butler',state:'WI',zip:'53007',phone:'(555) 548-5001',fax:'(555) 548-5002',hours:'Mon-Fri 10am-8:30pm, Sat 9:30am-6pm, Sun Closed',is24hr:false},
+
+  // ── Wyoming (WY) ──
+  {chain:'Walgreens',name:'Walgreens #3250',address:'1900 Dell Range Blvd',city:'Cheyenne',state:'WY',zip:'82009',phone:'(555) 549-2001',fax:'(555) 549-2002',hours:'Mon-Fri 7am-10pm, Sat 8am-10pm, Sun 8am-9pm',is24hr:false},
+  {chain:'Walmart Pharmacy',name:'Walmart Pharmacy #2215',address:'4400 Foothill Blvd',city:'Rock Springs',state:'WY',zip:'82901',phone:'(555) 549-3001',fax:'(555) 549-3002',hours:'Mon-Fri 9am-9pm, Sat 9am-7pm, Sun 10am-6pm',is24hr:false},
+  {chain:'Safeway Pharmacy',name:'Safeway Pharmacy #1840',address:'951 E Main St',city:'Riverton',state:'WY',zip:'82501',phone:'(555) 549-4001',fax:'(555) 549-4002',hours:'Mon-Fri 9am-9pm, Sat 9am-6pm, Sun 10am-5pm',is24hr:false},
 ];
 
 /* ============================================================
@@ -1813,20 +2094,25 @@ function checkDrugInteractions(drugName, medEntry, patientId) {
  */
 function searchMedications(query) {
   if (!query || query.length < 2) return [];
-  const q = query.toLowerCase();
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
 
   const scored = [];
   for (const med of MEDICATION_DB) {
     const gLower = med.generic.toLowerCase();
     const bLower = med.brands.map(b => b.toLowerCase());
+    const searchText = gLower + ' ' + bLower.join(' ');
+
+    // All words must be present
+    if (!words.every(w => searchText.includes(w))) continue;
 
     let score = 0;
+    const q = words[0];
     if (gLower.startsWith(q)) score = 3;
     else if (bLower.some(b => b.startsWith(q))) score = 2;
     else if (gLower.includes(q)) score = 1;
-    else if (bLower.some(b => b.includes(q))) score = 1;
+    else score = 1;
 
-    if (score > 0) scored.push({ med, score });
+    scored.push({ med, score });
   }
 
   scored.sort((a, b) => b.score - a.score);

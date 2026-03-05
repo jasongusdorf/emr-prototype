@@ -90,6 +90,30 @@ function renderChart(patientId) {
     return;
   }
 
+  // Patient-level authorization: user must be on patient's panel or have admin/attending override
+  const patient = getPatient(patientId);
+  if (!patient) {
+    const app = document.getElementById('app');
+    app.innerHTML = '';
+    app.textContent = 'Patient not found.';
+    return;
+  }
+  const sessionUser = getSessionUser();
+  const userRole = sessionUser ? (sessionUser.role || '').toLowerCase() : '';
+  const isOnPanel = patient.panelProviders && patient.panelProviders.indexOf(sessionUser.id) !== -1;
+  const hasOverride = userRole === 'admin' || userRole === 'attending';
+  if (!isOnPanel && !hasOverride) {
+    const app = document.getElementById('app');
+    app.innerHTML = '<div style="padding:40px;text-align:center">' +
+      '<h2 style="color:var(--warning,#f59e0b)">Access Restricted</h2>' +
+      '<p style="margin:12px 0;color:var(--text-secondary)">You are not on this patient\'s care team. Contact an administrator for access.</p>' +
+      '<button class="btn btn-primary" onclick="navigate(\'#dashboard\')">Back to Dashboard</button></div>';
+    if (typeof logAudit === 'function') {
+      logAudit('ACCESS_DENIED', 'patient', patientId, patientId, 'User ' + sessionUser.id + ' denied access to patient chart');
+    }
+    return;
+  }
+
   _currentChartPatientId = patientId;
   _currentChartTab       = 'overview';
   _searchOpen            = false;
@@ -105,13 +129,6 @@ function renderChart(patientId) {
   chartHeaderBars.id = 'chart-header-bars';
   const mainEl = document.getElementById('main');
   mainEl.insertBefore(chartHeaderBars, app);
-
-  const patient = getPatient(patientId);
-  if (!patient) {
-    app.textContent = 'Patient not found.';
-    setTopbar({ title: 'Patient Not Found' });
-    return;
-  }
 
   setTopbar({
     title:   '',
@@ -916,7 +933,7 @@ function buildVitalsStrip(patientId) {
   pairs.filter(([, v]) => v !== null).forEach(([lbl, val]) => {
     const item = document.createElement('span');
     item.className = 'vs-item';
-    item.innerHTML = lbl + ' <strong>' + val + '</strong>';
+    item.innerHTML = esc(lbl) + ' <strong>' + esc(val) + '</strong>';
     strip.appendChild(item);
   });
 
@@ -3216,10 +3233,10 @@ function openNoteReadModal(enc, note, prov) {
   }
 
   const metaParts = [
-    dateStr + (timeStr ? ' &middot; ' + timeStr : ''),
-    provName,
-    prov && prov.specialty ? prov.specialty : null,
-    enc.visitType || null,
+    esc(dateStr) + (timeStr ? ' &middot; ' + esc(timeStr) : ''),
+    esc(provName),
+    prov && prov.specialty ? esc(prov.specialty) : null,
+    enc.visitType ? esc(enc.visitType) : null,
   ].filter(Boolean);
 
   const bodyHTML =

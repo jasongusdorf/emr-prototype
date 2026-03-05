@@ -2,11 +2,29 @@
    views/encounter.js — Clinical note form + vitals + autosave + sign + addenda
    ============================================================ */
 
-let autosaveTimer = null;
+let _autosaveTimers = {};
+
+function _startAutosave(encounterId, saveFn) {
+  _stopAutosave(encounterId);
+  _autosaveTimers[encounterId] = setInterval(saveFn, 30000);
+}
+
+function _stopAutosave(encounterId) {
+  if (_autosaveTimers[encounterId]) {
+    clearInterval(_autosaveTimers[encounterId]);
+    delete _autosaveTimers[encounterId];
+  }
+}
 
 function renderEncounter(encounterId) {
-  clearTimeout(autosaveTimer);
-  autosaveTimer = null;
+  // Stop any previous autosave timers
+  Object.keys(_autosaveTimers).forEach(function(k) { _stopAutosave(k); });
+
+  if (typeof registerCleanup === 'function') {
+    registerCleanup(function() {
+      Object.keys(_autosaveTimers).forEach(function(k) { _stopAutosave(k); });
+    });
+  }
 
   const app = document.getElementById('app');
   app.innerHTML = '';
@@ -223,7 +241,7 @@ function renderEncounter(encounterId) {
         saveNote({ ...noteFields, encounterId, signed: false });
         saveNote({ encounterId, signed: true, signedBy: providerId, signedAt: signedAt.toISOString() });
         saveEncounter({ id: encounterId, status: 'Signed' });
-        clearTimeout(autosaveTimer); autosaveTimer = null;
+        _stopAutosave(encounterId);
         closeModal();
         showToast('Note signed successfully.', 'success');
         renderEncounter(encounterId);
@@ -256,12 +274,13 @@ function renderEncounter(encounterId) {
     /* ---------- Diagnoses & Billing card ---------- */
     app.appendChild(buildBillingSection(encounter, isSigned));
 
-    // Autosave
+    // Autosave (scoped to encounterId)
+    let _autosaveDebounce = null;
     function triggerAutosave() {
-      clearTimeout(autosaveTimer);
+      clearTimeout(_autosaveDebounce);
       const ind = document.getElementById('autosave-indicator');
       if (ind) { ind.className = 'autosave-indicator saving'; ind.textContent = 'Saving…'; }
-      autosaveTimer = setTimeout(() => {
+      _autosaveDebounce = setTimeout(() => {
         saveNote({ ...readNoteFields(textareas), encounterId });
         const mod = document.getElementById('last-modified');
         if (mod) mod.textContent = 'Last saved: ' + formatDateTime(new Date().toISOString());
@@ -269,7 +288,7 @@ function renderEncounter(encounterId) {
           ind.className = 'autosave-indicator saved'; ind.textContent = '✓ Saved';
           setTimeout(() => { if (ind) { ind.className = 'autosave-indicator'; ind.textContent = ''; } }, 2000);
         }
-        autosaveTimer = null;
+        _autosaveDebounce = null;
       }, 1000);
     }
 

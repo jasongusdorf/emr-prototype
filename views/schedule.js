@@ -312,7 +312,11 @@ function buildApptBlock(appt) {
 
   const name = document.createElement('div');
   name.className = 'appt-patient';
-  name.textContent = patient ? patient.lastName + ', ' + patient.firstName : 'Unknown';
+  if (patient) {
+    name.appendChild(makePatientLink(patient.id, patient.lastName + ', ' + patient.firstName));
+  } else {
+    name.textContent = 'Unknown';
+  }
 
   block.appendChild(time);
   block.appendChild(name);
@@ -444,7 +448,7 @@ function openAppointmentDetailModal(apptId) {
       <div><strong>Duration:</strong> ${appt.duration} minutes</div>
       <div><strong>Visit Type:</strong> <span id="appt-det-type"></span></div>
       <div><strong>Reason:</strong> <span id="appt-det-reason"></span></div>
-      <div><strong>Status:</strong> <span class="badge badge-${appt.status.toLowerCase()}" id="appt-det-status"></span></div>
+      <div><strong>Status:</strong> <span class="badge badge-${esc(appt.status.toLowerCase())}" id="appt-det-status"></span></div>
     </div>
   `;
 
@@ -467,7 +471,8 @@ function openAppointmentDetailModal(apptId) {
   openModal({ title: 'Appointment Details', bodyHTML, footerHTML });
 
   // Set text content safely
-  document.getElementById('appt-det-patient').textContent = patName;
+  const patEl = document.getElementById('appt-det-patient');
+  if (patient) { patEl.appendChild(makePatientLink(patient.id, patName)); } else { patEl.textContent = patName; }
   document.getElementById('appt-det-provider').textContent = provName;
   document.getElementById('appt-det-datetime').textContent = formatDateTime(appt.dateTime);
   document.getElementById('appt-det-type').textContent = appt.visitType;

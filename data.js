@@ -46,16 +46,40 @@ const KEYS = {
   smartLists:      'emr_smart_lists',
   handoffNotes:    'emr_handoff_notes',
   listSubscriptions:'emr_list_subscriptions',
+  claims:          'emr_claims',
+  priorAuths:      'emr_prior_auths',
+  payerRules:      'emr_payer_rules',
 };
+
+/* ---------- Data Versioning ---------- */
+var DATA_VERSION = 1;
+var DATA_VERSION_KEY = 'emr_data_version';
+
+function runMigrations() {
+  var currentVersion = parseInt(_storageAdapter.getItem(DATA_VERSION_KEY) || '0', 10);
+  if (currentVersion >= DATA_VERSION) return;
+
+  // Migration 1: Add _deleted support (ensure all records are clean)
+  if (currentVersion < 1) {
+    console.log('[EMR] Running migration to v1: soft-delete support');
+    // No data changes needed for v1 — just marks the schema version
+  }
+
+  _storageAdapter.setItem(DATA_VERSION_KEY, String(DATA_VERSION));
+  console.log('[EMR] Data migrated to v' + DATA_VERSION);
+}
 
 /* ---------- Utility ---------- */
 function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
 function generateMRN() {
-  const counter = parseInt(localStorage.getItem(KEYS.mrnCounter) || '1000', 10);
-  safeSave(KEYS.mrnCounter, String(counter + 1));
+  const counter = parseInt(_storageAdapter.getItem(KEYS.mrnCounter) || '1000', 10);
+  _storageAdapter.setItem(KEYS.mrnCounter, String(counter + 1));
   return 'MRN' + String(counter).padStart(6, '0');
 }
 
@@ -75,14 +99,106 @@ function safeSave(key, value) {
   }
 }
 
-function loadAll(key) {
+var _dataCache = {};
+
+function loadAll(key, includeDeleted) {
+  var cacheKey = key + (includeDeleted ? ':all' : '');
+  if (_dataCache[cacheKey]) return _dataCache[cacheKey];
+  var arr;
   try {
-    return JSON.parse(localStorage.getItem(key) || '[]');
-  } catch { return []; }
+    arr = _storageAdapter.getAll(key);
+  } catch (e) {
+    console.error('[EMR] Data corrupted for key "' + key + '":', e.message);
+    if (typeof showToast === 'function') {
+      showToast('Data error in ' + key.replace('emr_', '') + ' — some records may be missing', 'error', 5000);
+    }
+    return [];
+  }
+  if (!Array.isArray(arr)) arr = [];
+  if (!includeDeleted) {
+    arr = arr.filter(function(x) { return !x._deleted; });
+  }
+  _dataCache[cacheKey] = arr;
+  return arr;
+}
+
+function _invalidateCache(key) {
+  delete _dataCache[key + ':all'];
+  delete _dataCache[key];
+}
+
+/* ---------- DataStore Adapter (PR-21) ---------- */
+/* Wraps storage behind a swappable interface.
+   Current adapter: localStorage.
+   To migrate to a backend API, replace _storageAdapter methods. */
+
+var _storageAdapter = {
+  name: 'localStorage',
+
+  getAll: function(key) {
+    var raw = localStorage.getItem(key);
+    if (raw === null) return [];
+    return JSON.parse(raw);
+  },
+
+  putAll: function(key, arr) {
+    safeSave(key, JSON.stringify(arr));
+  },
+
+  getItem: function(key) {
+    return localStorage.getItem(key);
+  },
+
+  setItem: function(key, value) {
+    safeSave(key, value);
+  },
+
+  removeItem: function(key) {
+    localStorage.removeItem(key);
+  }
+};
+
+/**
+ * Switch to a different storage adapter.
+ * adapter must implement: getAll(key), putAll(key, arr), getItem(key), setItem(key, value), removeItem(key)
+ * Example: setStorageAdapter(apiAdapter) to switch from localStorage to a REST API.
+ */
+function setStorageAdapter(adapter) {
+  if (!adapter || typeof adapter.getAll !== 'function' || typeof adapter.putAll !== 'function') {
+    throw new Error('Invalid storage adapter: must implement getAll and putAll');
+  }
+  _storageAdapter = adapter;
+  _dataCache = {}; // Clear cache on adapter switch
+  console.log('[EMR] Storage adapter switched to: ' + (adapter.name || 'custom'));
+}
+
+function getStorageAdapter() {
+  return _storageAdapter;
 }
 
 function saveAll(key, arr) {
-  safeSave(key, JSON.stringify(arr));
+  _invalidateCache(key);
+  _storageAdapter.putAll(key, arr);
+}
+
+function softDeleteRecord(key, id) {
+  var all = loadAll(key, true);
+  var idx = all.findIndex(function(x) { return x.id === id; });
+  if (idx === -1) return false;
+  all[idx]._deleted = true;
+  all[idx]._deletedAt = new Date().toISOString();
+  saveAll(key, all);
+  return true;
+}
+
+function restoreRecord(key, id) {
+  var all = loadAll(key, true);
+  var idx = all.findIndex(function(x) { return x.id === id; });
+  if (idx === -1) return false;
+  delete all[idx]._deleted;
+  delete all[idx]._deletedAt;
+  saveAll(key, all);
+  return true;
 }
 
 /* ---------- Generic Validation Helpers (hardening) ---------- */
@@ -127,17 +243,106 @@ function validateDate(dateStr) {
   return !isNaN(d.getTime());
 }
 
+/* ---------- Entity Schemas & Schema Validation ---------- */
+var ENTITY_SCHEMAS = {
+  patient: {
+    required: ['firstName', 'lastName'],
+    strings: ['firstName', 'lastName', 'email', 'phone', 'insurance'],
+    maxLength: { firstName: 100, lastName: 100, email: 200, phone: 20, insurance: 100, addressStreet: 200 }
+  },
+  encounter: {
+    required: ['patientId'],
+    enums: { visitType: ['Outpatient', 'Inpatient', 'Emergency', 'Urgent Care'], status: ['Open', 'Signed', 'Cancelled'] }
+  },
+  order: {
+    required: ['patientId', 'type'],
+    enums: { type: ['Medication', 'Lab', 'Imaging', 'Consult'], priority: ['Routine', 'Urgent', 'STAT'], status: ['Pending', 'Active', 'Completed', 'Cancelled'] }
+  },
+  allergy: {
+    required: ['patientId', 'allergen'],
+    enums: { severity: ['Mild', 'Moderate', 'Severe', 'Life-threatening'], type: ['Drug', 'Food', 'Environmental', 'Other'] }
+  },
+  note: {
+    required: ['encounterId']
+  },
+  vital: {
+    required: ['encounterId', 'patientId']
+  },
+  appointment: {
+    required: ['patientId', 'providerId', 'dateTime'],
+    enums: { status: ['Scheduled', 'Checked In', 'In Progress', 'Completed', 'Cancelled', 'No Show'] }
+  },
+  message: {
+    required: ['fromId', 'toId', 'body']
+  },
+  claim: {
+    required: ['encounterId', 'patientId'],
+    enums: { status: ['Draft', 'Ready', 'Submitted', 'Accepted', 'Denied', 'Paid', 'Appealed'] }
+  },
+  priorAuth: {
+    required: ['patientId', 'requestedService'],
+    enums: {
+      status: ['Required', 'Submitted', 'Approved', 'Denied', 'Expired', 'Not Required'],
+      urgency: ['Standard', 'Urgent', 'Retrospective']
+    }
+  }
+};
+
+function validateSchema(data, schemaName) {
+  var schema = ENTITY_SCHEMAS[schemaName];
+  if (!schema) return { valid: true, errors: [] };
+  var errors = [];
+
+  // Required fields
+  if (schema.required) {
+    schema.required.forEach(function(f) {
+      if (data[f] === undefined || data[f] === null || (typeof data[f] === 'string' && data[f].trim() === '')) {
+        errors.push(f + ' is required');
+      }
+    });
+  }
+
+  // String type checks
+  if (schema.strings) {
+    schema.strings.forEach(function(f) {
+      if (data[f] !== undefined && data[f] !== null && data[f] !== '' && typeof data[f] !== 'string') {
+        errors.push(f + ' must be a string');
+      }
+    });
+  }
+
+  // Max length
+  if (schema.maxLength) {
+    Object.keys(schema.maxLength).forEach(function(f) {
+      if (typeof data[f] === 'string' && data[f].length > schema.maxLength[f]) {
+        errors.push(f + ' exceeds maximum length of ' + schema.maxLength[f]);
+      }
+    });
+  }
+
+  // Enum checks
+  if (schema.enums) {
+    Object.keys(schema.enums).forEach(function(f) {
+      if (data[f] !== undefined && data[f] !== null && data[f] !== '' && schema.enums[f].indexOf(data[f]) === -1) {
+        errors.push(f + ' must be one of: ' + schema.enums[f].join(', '));
+      }
+    });
+  }
+
+  return { valid: errors.length === 0, errors: errors };
+}
+
 /* ============================================================
    Encounter Mode (Outpatient / Inpatient)
    ============================================================ */
 function getEncounterMode() {
-  const v = localStorage.getItem(KEYS.encounterMode);
+  const v = _storageAdapter.getItem(KEYS.encounterMode);
   return v === 'inpatient' ? 'inpatient' : 'outpatient';
 }
 
 function setEncounterMode(mode) {
   if (mode !== 'outpatient' && mode !== 'inpatient') return;
-  safeSave(KEYS.encounterMode, mode);
+  _storageAdapter.setItem(KEYS.encounterMode, mode);
 }
 
 function encounterMatchesMode(encounter, mode) {
@@ -166,6 +371,11 @@ function getPatients() { return loadAll(KEYS.patients); }
 function getPatient(id) { return getPatients().find(p => p.id === id) || null; }
 
 function savePatient(data) {
+  /* --- Schema validation (PR-7) --- */
+  if (!data.id || !getPatient(data.id)) {
+    var schemaCheck = validateSchema(data, 'patient');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
   /* --- Data validation (hardening) --- */
   // Only validate on new patient creation (no existing id) or if names are explicitly being set
   if (!data.id || !getPatient(data.id)) {
@@ -189,7 +399,7 @@ function savePatient(data) {
   }
   /* --- End validation --- */
 
-  const patients = getPatients();
+  const patients = loadAll(KEYS.patients, true);
   const existing = patients.findIndex(p => p.id === data.id);
   if (existing >= 0) {
     patients[existing] = { ...patients[existing], ...data };
@@ -227,31 +437,42 @@ function savePatient(data) {
 }
 
 function deletePatient(id) {
-  // Cascade: delete encounters, notes, orders, vitals
-  const encounters = getEncounters().filter(e => e.patientId === id);
-  encounters.forEach(e => {
+  // Cascade soft-delete: encounters, notes, orders, vitals
+  var encounters = getEncounters().filter(function(e) { return e.patientId === id; });
+  encounters.forEach(function(e) {
     deleteNote(e.id);
     deleteOrdersByEncounter(e.id);
-    saveAll(KEYS.vitals, loadAll(KEYS.vitals).filter(v => v.encounterId !== e.id));
+    loadAll(KEYS.vitals).filter(function(v) { return v.encounterId === e.id; }).forEach(function(v) {
+      softDeleteRecord(KEYS.vitals, v.id);
+    });
+    softDeleteRecord(KEYS.encounters, e.id);
   });
-  saveAll(KEYS.encounters,     getEncounters().filter(e => e.patientId !== id));
-  // Delete patient-level clinical records
-  saveAll(KEYS.allergies,      loadAll(KEYS.allergies).filter(a => a.patientId !== id));
-  saveAll(KEYS.pmh,            loadAll(KEYS.pmh).filter(d => d.patientId !== id));
-  saveAll(KEYS.patientMeds,    loadAll(KEYS.patientMeds).filter(m => m.patientId !== id));
-  saveAll(KEYS.socialHistory,  loadAll(KEYS.socialHistory).filter(s => s.patientId !== id));
-  saveAll(KEYS.surgeries,      loadAll(KEYS.surgeries).filter(s => s.patientId !== id));
-  saveAll(KEYS.familyHistory,  loadAll(KEYS.familyHistory).filter(f => f.patientId !== id));
-  saveAll(KEYS.problems,       loadAll(KEYS.problems).filter(p => p.patientId !== id));
-  saveAll(KEYS.labResults,     loadAll(KEYS.labResults).filter(l => l.patientId !== id));
-  saveAll(KEYS.immunizations,  loadAll(KEYS.immunizations).filter(i => i.patientId !== id));
-  saveAll(KEYS.referrals,      loadAll(KEYS.referrals).filter(r => r.patientId !== id));
-  saveAll(KEYS.screenings,     loadAll(KEYS.screenings).filter(s => s.patientId !== id));
-  saveAll(KEYS.documents,      loadAll(KEYS.documents).filter(d => d.patientId !== id));
-  saveAll(KEYS.medRec,         loadAll(KEYS.medRec).filter(r => r.patientId !== id));
-  saveAll(KEYS.auditLog,       loadAll(KEYS.auditLog).filter(e => e.patientId !== id));
-  saveAll(KEYS.appointments,   loadAll(KEYS.appointments).filter(a => a.patientId !== id));
-  saveAll(KEYS.patients,       getPatients().filter(p => p.id !== id));
+  // Soft-delete patient-level clinical records
+  var cascadeKeys = [
+    { key: KEYS.allergies,      field: 'patientId' },
+    { key: KEYS.pmh,            field: 'patientId' },
+    { key: KEYS.patientMeds,    field: 'patientId' },
+    { key: KEYS.socialHistory,  field: 'patientId' },
+    { key: KEYS.surgeries,      field: 'patientId' },
+    { key: KEYS.familyHistory,  field: 'patientId' },
+    { key: KEYS.problems,       field: 'patientId' },
+    { key: KEYS.labResults,     field: 'patientId' },
+    { key: KEYS.immunizations,  field: 'patientId' },
+    { key: KEYS.referrals,      field: 'patientId' },
+    { key: KEYS.screenings,     field: 'patientId' },
+    { key: KEYS.documents,      field: 'patientId' },
+    { key: KEYS.medRec,         field: 'patientId' },
+    { key: KEYS.auditLog,       field: 'patientId' },
+    { key: KEYS.messages,       field: 'patientId' },
+    { key: KEYS.appointments,   field: 'patientId' },
+  ];
+  cascadeKeys.forEach(function(ck) {
+    loadAll(ck.key).filter(function(r) { return r[ck.field] === id; }).forEach(function(r) {
+      softDeleteRecord(ck.key, r.id);
+    });
+  });
+  // Soft-delete the patient record itself
+  softDeleteRecord(KEYS.patients, id);
 }
 
 /* ============================================================
@@ -262,7 +483,7 @@ function getProviders() { return loadAll(KEYS.providers); }
 function getProvider(id) { return getProviders().find(p => p.id === id) || null; }
 
 function saveProvider(data) {
-  const providers = getProviders();
+  const providers = loadAll(KEYS.providers, true);
   const existing = providers.findIndex(p => p.id === data.id);
   if (existing >= 0) {
     providers[existing] = { ...providers[existing], ...data };
@@ -285,7 +506,9 @@ function saveProvider(data) {
 
 function deleteProvider(id) {
   // Encounters still reference providerId; renderer falls back to '[Removed Provider]'
-  saveAll(KEYS.providers, getProviders().filter(p => p.id !== id));
+  softDeleteRecord(KEYS.providers, id);
+  var user = getSessionUser();
+  logSystemAudit('PROVIDER_DELETED', user ? user.id : '', id, 'Provider soft-deleted (id: ' + id + ')', user ? user.email : '');
 }
 
 /* ============================================================
@@ -302,6 +525,11 @@ function getEncountersByPatient(patientId) {
 function getEncounter(id) { return getEncounters().find(e => e.id === id) || null; }
 
 function saveEncounter(data) {
+  /* --- Schema validation (PR-7) --- */
+  if (!data.id || !getEncounter(data.id)) {
+    var schemaCheck = validateSchema(data, 'encounter');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
   /* --- Data validation (hardening) --- */
   if (!data.id || !getEncounter(data.id)) {
     var encReq = validateRequired(data, ['patientId']);
@@ -313,7 +541,7 @@ function saveEncounter(data) {
   }
   /* --- End validation --- */
 
-  const encounters = getEncounters();
+  const encounters = loadAll(KEYS.encounters, true);
   const existing = encounters.findIndex(e => e.id === data.id);
   if (existing >= 0) {
     encounters[existing] = { ...encounters[existing], ...data };
@@ -342,9 +570,13 @@ function saveEncounter(data) {
 function deleteEncounter(id) {
   deleteNote(id);
   deleteOrdersByEncounter(id);
-  saveAll(KEYS.vitals,     loadAll(KEYS.vitals).filter(v => v.encounterId !== id));
-  saveAll(KEYS.medRec,     loadAll(KEYS.medRec).filter(r => r.encounterId !== id));
-  saveAll(KEYS.encounters, getEncounters().filter(e => e.id !== id));
+  loadAll(KEYS.vitals).filter(function(v) { return v.encounterId === id; }).forEach(function(v) {
+    softDeleteRecord(KEYS.vitals, v.id);
+  });
+  loadAll(KEYS.medRec).filter(function(r) { return r.encounterId === id; }).forEach(function(r) {
+    softDeleteRecord(KEYS.medRec, r.id);
+  });
+  softDeleteRecord(KEYS.encounters, id);
 }
 
 /* ============================================================
@@ -357,7 +589,13 @@ function getNoteByEncounter(encounterId) {
 }
 
 function saveNote(data) {
-  const notes = getNotes();
+  /* --- Schema validation (PR-7) --- */
+  var existingNote = getNotes().find(function(n) { return n.encounterId === data.encounterId; });
+  if (!existingNote) {
+    var schemaCheck = validateSchema(data, 'note');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
+  const notes = loadAll(KEYS.notes, true);
   const existing = notes.findIndex(n => n.encounterId === data.encounterId);
   if (existing >= 0) {
     const wasUnsigned = !notes[existing].signed;
@@ -397,7 +635,9 @@ function saveNote(data) {
 }
 
 function deleteNote(encounterId) {
-  saveAll(KEYS.notes, getNotes().filter(n => n.encounterId !== encounterId));
+  getNotes().filter(function(n) { return n.encounterId === encounterId; }).forEach(function(n) {
+    softDeleteRecord(KEYS.notes, n.id);
+  });
 }
 
 /* ============================================================
@@ -414,6 +654,11 @@ function getOrdersByEncounter(encounterId) {
 function getOrder(id) { return getOrders().find(o => o.id === id) || null; }
 
 function saveOrder(data) {
+  /* --- Schema validation (PR-7) --- */
+  if (!data.id || !getOrder(data.id)) {
+    var schemaCheck = validateSchema(data, 'order');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
   /* --- Data validation (hardening) --- */
   var VALID_ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult'];
   if (!data.id || !getOrder(data.id)) {
@@ -439,7 +684,7 @@ function saveOrder(data) {
   }
   /* --- End validation --- */
 
-  const orders = getOrders();
+  const orders = loadAll(KEYS.orders, true);
   const existing = orders.findIndex(o => o.id === data.id);
   if (existing >= 0) {
     orders[existing] = { ...orders[existing], ...data };
@@ -472,15 +717,17 @@ function saveOrder(data) {
 }
 
 function deleteOrder(id) {
-  saveAll(KEYS.orders, getOrders().filter(o => o.id !== id));
+  softDeleteRecord(KEYS.orders, id);
 }
 
 function deleteOrdersByEncounter(encounterId) {
-  saveAll(KEYS.orders, getOrders().filter(o => o.encounterId !== encounterId));
+  getOrders().filter(function(o) { return o.encounterId === encounterId; }).forEach(function(o) {
+    softDeleteRecord(KEYS.orders, o.id);
+  });
 }
 
 function updateOrderStatus(id, status) {
-  const orders = getOrders();
+  const orders = loadAll(KEYS.orders, true);
   const idx = orders.findIndex(o => o.id === id);
   if (idx < 0) return null;
   orders[idx].status = status;
@@ -499,7 +746,7 @@ function updateOrderStatus(id, status) {
    Addenda (appended to signed notes)
    ============================================================ */
 function addNoteAddendum(encounterId, { text, addedBy }) {
-  const notes = getNotes();
+  const notes = loadAll(KEYS.notes, true);
   const idx   = notes.findIndex(n => n.encounterId === encounterId);
   if (idx < 0) return null;
   if (!Array.isArray(notes[idx].addenda)) notes[idx].addenda = [];
@@ -532,7 +779,13 @@ function getLatestVitalsByPatient(patientId) {
 }
 
 function saveEncounterVitals(data) {
-  const all = loadAll(KEYS.vitals);
+  /* --- Schema validation (PR-7) --- */
+  var existingVital = loadAll(KEYS.vitals).find(function(v) { return v.encounterId === data.encounterId; });
+  if (!existingVital) {
+    var schemaCheck = validateSchema(data, 'vital');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
+  const all = loadAll(KEYS.vitals, true);
   const idx = all.findIndex(v => v.encounterId === data.encounterId);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -565,7 +818,7 @@ function getFamilyHistory(patientId) {
 }
 
 function saveFamilyHistory(data) {
-  const all = loadAll(KEYS.familyHistory);
+  const all = loadAll(KEYS.familyHistory, true);
   const idx = all.findIndex(f => f.patientId === data.patientId);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -602,7 +855,12 @@ function getPatientAllergies(patientId) {
 }
 
 function savePatientAllergy(data) {
-  const all = loadAll(KEYS.allergies);
+  /* --- Schema validation (PR-7) --- */
+  if (!data.id || loadAll(KEYS.allergies).findIndex(function(a) { return a.id === data.id; }) < 0) {
+    var schemaCheck = validateSchema(data, 'allergy');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
+  const all = loadAll(KEYS.allergies, true);
   const idx = all.findIndex(a => a.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -621,7 +879,7 @@ function savePatientAllergy(data) {
 }
 
 function deletePatientAllergy(id) {
-  saveAll(KEYS.allergies, loadAll(KEYS.allergies).filter(a => a.id !== id));
+  softDeleteRecord(KEYS.allergies, id);
 }
 
 /* ============================================================
@@ -632,7 +890,7 @@ function getPatientDiagnoses(patientId) {
 }
 
 function savePatientDiagnosis(data) {
-  const all = loadAll(KEYS.pmh);
+  const all = loadAll(KEYS.pmh, true);
   const idx = all.findIndex(d => d.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -651,7 +909,7 @@ function savePatientDiagnosis(data) {
 }
 
 function deletePatientDiagnosis(id) {
-  saveAll(KEYS.pmh, loadAll(KEYS.pmh).filter(d => d.id !== id));
+  softDeleteRecord(KEYS.pmh, id);
 }
 
 /* ============================================================
@@ -662,7 +920,7 @@ function getPatientMedications(patientId) {
 }
 
 function savePatientMedication(data) {
-  const all = loadAll(KEYS.patientMeds);
+  const all = loadAll(KEYS.patientMeds, true);
   const idx = all.findIndex(m => m.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -688,7 +946,7 @@ function savePatientMedication(data) {
 }
 
 function deletePatientMedication(id) {
-  saveAll(KEYS.patientMeds, loadAll(KEYS.patientMeds).filter(m => m.id !== id));
+  softDeleteRecord(KEYS.patientMeds, id);
 }
 
 /* ============================================================
@@ -699,7 +957,7 @@ function getSocialHistory(patientId) {
 }
 
 function saveSocialHistory(data) {
-  const all = loadAll(KEYS.socialHistory);
+  const all = loadAll(KEYS.socialHistory, true);
   const idx = all.findIndex(s => s.patientId === data.patientId);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -732,7 +990,7 @@ function getPatientSurgeries(patientId) {
 }
 
 function savePatientSurgery(data) {
-  const all = loadAll(KEYS.surgeries);
+  const all = loadAll(KEYS.surgeries, true);
   const idx = all.findIndex(s => s.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -752,7 +1010,7 @@ function savePatientSurgery(data) {
 }
 
 function deletePatientSurgery(id) {
-  saveAll(KEYS.surgeries, loadAll(KEYS.surgeries).filter(s => s.id !== id));
+  softDeleteRecord(KEYS.surgeries, id);
 }
 
 /* ============================================================
@@ -763,7 +1021,7 @@ function getActiveProblems(patientId) {
 }
 
 function saveActiveProblem(data) {
-  const all = loadAll(KEYS.problems);
+  const all = loadAll(KEYS.problems, true);
   const idx = all.findIndex(p => p.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -785,7 +1043,7 @@ function saveActiveProblem(data) {
 }
 
 function deleteActiveProblem(id) {
-  saveAll(KEYS.problems, loadAll(KEYS.problems).filter(p => p.id !== id));
+  softDeleteRecord(KEYS.problems, id);
 }
 
 /* ============================================================
@@ -798,7 +1056,7 @@ function getLabResults(patientId) {
 }
 
 function saveLabResult(data) {
-  const all = loadAll(KEYS.labResults);
+  const all = loadAll(KEYS.labResults, true);
   const idx = all.findIndex(l => l.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -822,7 +1080,7 @@ function saveLabResult(data) {
 }
 
 function deleteLabResult(id) {
-  saveAll(KEYS.labResults, loadAll(KEYS.labResults).filter(l => l.id !== id));
+  softDeleteRecord(KEYS.labResults, id);
 }
 
 /* ============================================================
@@ -835,7 +1093,7 @@ function getImagingResults(patientId) {
 }
 
 function saveImagingResult(data) {
-  const all = loadAll(KEYS.imagingResults);
+  const all = loadAll(KEYS.imagingResults, true);
   const idx = all.findIndex(r => r.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -860,7 +1118,7 @@ function saveImagingResult(data) {
 }
 
 function deleteImagingResult(id) {
-  saveAll(KEYS.imagingResults, loadAll(KEYS.imagingResults).filter(r => r.id !== id));
+  softDeleteRecord(KEYS.imagingResults, id);
 }
 
 /* ============================================================
@@ -873,7 +1131,7 @@ function getMicroResults(patientId) {
 }
 
 function saveMicroResult(data) {
-  const all = loadAll(KEYS.microResults);
+  const all = loadAll(KEYS.microResults, true);
   const idx = all.findIndex(r => r.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -895,7 +1153,7 @@ function saveMicroResult(data) {
 }
 
 function deleteMicroResult(id) {
-  saveAll(KEYS.microResults, loadAll(KEYS.microResults).filter(r => r.id !== id));
+  softDeleteRecord(KEYS.microResults, id);
 }
 
 /* ============================================================
@@ -908,7 +1166,7 @@ function getPathResults(patientId) {
 }
 
 function savePathResult(data) {
-  const all = loadAll(KEYS.pathResults);
+  const all = loadAll(KEYS.pathResults, true);
   const idx = all.findIndex(r => r.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -933,7 +1191,7 @@ function savePathResult(data) {
 }
 
 function deletePathResult(id) {
-  saveAll(KEYS.pathResults, loadAll(KEYS.pathResults).filter(r => r.id !== id));
+  softDeleteRecord(KEYS.pathResults, id);
 }
 
 /* ============================================================
@@ -946,7 +1204,7 @@ function getImmunizations(patientId) {
 }
 
 function saveImmunization(data) {
-  const all = loadAll(KEYS.immunizations);
+  const all = loadAll(KEYS.immunizations, true);
   const idx = all.findIndex(i => i.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -969,7 +1227,7 @@ function saveImmunization(data) {
 }
 
 function deleteImmunization(id) {
-  saveAll(KEYS.immunizations, loadAll(KEYS.immunizations).filter(i => i.id !== id));
+  softDeleteRecord(KEYS.immunizations, id);
 }
 
 /* ============================================================
@@ -982,7 +1240,7 @@ function getReferrals(patientId) {
 }
 
 function saveReferral(data) {
-  const all = loadAll(KEYS.referrals);
+  const all = loadAll(KEYS.referrals, true);
   const idx = all.findIndex(r => r.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -1006,7 +1264,7 @@ function saveReferral(data) {
 }
 
 function deleteReferral(id) {
-  saveAll(KEYS.referrals, loadAll(KEYS.referrals).filter(r => r.id !== id));
+  softDeleteRecord(KEYS.referrals, id);
 }
 
 /* ============================================================
@@ -1017,7 +1275,7 @@ function getScreeningRecords(patientId) {
 }
 
 function saveScreeningRecord(data) {
-  const all = loadAll(KEYS.screenings);
+  const all = loadAll(KEYS.screenings, true);
   const idx = all.findIndex(s => s.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -1044,7 +1302,7 @@ function getDocuments(patientId) {
 }
 
 function saveDocument(data) {
-  const all = loadAll(KEYS.documents);
+  const all = loadAll(KEYS.documents, true);
   const idx = all.findIndex(d => d.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -1066,14 +1324,14 @@ function saveDocument(data) {
 }
 
 function deleteDocument(id) {
-  saveAll(KEYS.documents, loadAll(KEYS.documents).filter(d => d.id !== id));
+  softDeleteRecord(KEYS.documents, id);
 }
 
 /* ============================================================
    Audit Log
    ============================================================ */
 function logAudit(action, entityType, entityId, patientId, details) {
-  const all = loadAll(KEYS.auditLog);
+  const all = loadAll(KEYS.auditLog, true);
   all.push({
     id:         generateId(),
     timestamp:  new Date().toISOString(),
@@ -1102,7 +1360,7 @@ function getMedRec(encounterId) {
 }
 
 function saveMedRec(encounterId, records) {
-  const all = loadAll(KEYS.medRec).filter(r => r.encounterId !== encounterId);
+  const all = loadAll(KEYS.medRec, true).filter(r => r.encounterId !== encounterId || r._deleted);
   records.forEach(r => {
     all.push({
       id:          generateId(),
@@ -1125,7 +1383,7 @@ function getNoteTemplates() {
 }
 
 function saveNoteTemplate(data) {
-  const all = loadAll(KEYS.noteTemplates);
+  const all = loadAll(KEYS.noteTemplates, true);
   const idx = all.findIndex(t => t.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -1148,7 +1406,7 @@ function saveNoteTemplate(data) {
 }
 
 function deleteNoteTemplate(id) {
-  saveAll(KEYS.noteTemplates, loadAll(KEYS.noteTemplates).filter(t => t.id !== id));
+  softDeleteRecord(KEYS.noteTemplates, id);
 }
 
 /* ============================================================
@@ -1182,7 +1440,12 @@ function getAppointmentsByWeek(mondayStr) {
 }
 
 function saveAppointment(data) {
-  const all = getAppointments();
+  /* --- Schema validation (PR-7) --- */
+  if (!data.id || !getAppointments().find(function(a) { return a.id === data.id; })) {
+    var schemaCheck = validateSchema(data, 'appointment');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
+  const all = loadAll(KEYS.appointments, true);
   const idx = all.findIndex(a => a.id === data.id);
   if (idx >= 0) {
     all[idx] = { ...all[idx], ...data };
@@ -1207,7 +1470,7 @@ function saveAppointment(data) {
 }
 
 function deleteAppointment(id) {
-  saveAll(KEYS.appointments, getAppointments().filter(a => a.id !== id));
+  softDeleteRecord(KEYS.appointments, id);
 }
 
 /* ============================================================
@@ -1219,11 +1482,11 @@ function assignPanel(patientId, providerIds) {
 }
 
 function getCurrentProvider() {
-  return localStorage.getItem(KEYS.currentProvider) || '';
+  return _storageAdapter.getItem(KEYS.currentProvider) || '';
 }
 
 function setCurrentProvider(providerId) {
-  safeSave(KEYS.currentProvider, providerId || '');
+  _storageAdapter.setItem(KEYS.currentProvider, providerId || '');
 }
 
 /* ============================================================
@@ -1238,7 +1501,7 @@ function getUserByEmail(email) {
 }
 
 function saveUser(data) {
-  const users = getUsers();
+  const users = loadAll(KEYS.users, true);
   const existing = users.findIndex(u => u.id === data.id);
   if (existing >= 0) {
     users[existing] = { ...users[existing], ...data };
@@ -1271,23 +1534,14 @@ function saveUser(data) {
 }
 
 async function hashPassword(pw) {
-  // crypto.subtle requires a secure context (HTTPS/localhost).
-  // For file:// protocol, fall back to a simple hash.
   if (typeof crypto !== 'undefined' && crypto.subtle) {
-    try {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(pw);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch (e) { /* fall through to fallback */ }
+    const encoder = new TextEncoder();
+    const data = encoder.encode(pw);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  // Simple fallback hash (djb2-based, not cryptographic — acceptable for prototype)
-  var hash = 5381;
-  for (var i = 0; i < pw.length; i++) {
-    hash = ((hash << 5) + hash + pw.charCodeAt(i)) >>> 0;
-  }
-  return 'fb' + hash.toString(16).padStart(8, '0');
+  throw new Error('Secure hashing unavailable — crypto.subtle requires HTTPS or localhost. Please use a local server.');
 }
 
 /* ---------- Account Lockout Helpers (hardening) ---------- */
@@ -1296,13 +1550,13 @@ var LOCKOUT_MINUTES = 15;
 
 function getLoginAttempts() {
   try {
-    var raw = localStorage.getItem(KEYS.loginAttempts);
+    var raw = _storageAdapter.getItem(KEYS.loginAttempts);
     return raw ? JSON.parse(raw) : {};
   } catch (e) { return {}; }
 }
 
 function saveLoginAttempts(data) {
-  safeSave(KEYS.loginAttempts, JSON.stringify(data));
+  _storageAdapter.setItem(KEYS.loginAttempts, JSON.stringify(data));
 }
 
 function recordFailedLogin(email) {
@@ -1378,7 +1632,7 @@ async function login(email, password) {
   /* --- Clear lockout on successful login (hardening) --- */
   clearLoginAttempts(email);
   /* --- End lockout clear --- */
-  safeSave(KEYS.session, JSON.stringify({ userId: user.id, loginAt: new Date().toISOString(), lastActivity: new Date().toISOString() }));
+  _storageAdapter.setItem(KEYS.session, JSON.stringify({ userId: user.id, loginAt: new Date().toISOString(), lastActivity: new Date().toISOString() }));
   logSystemAudit('LOGIN', user.id, '', 'Successful login', user.email);
   return { ok: true, user };
 }
@@ -1386,12 +1640,12 @@ async function login(email, password) {
 function logout() {
   const user = getSessionUser();
   if (user) logSystemAudit('LOGOUT', user.id, '', 'User logged out', user.email);
-  localStorage.removeItem(KEYS.session);
+  _storageAdapter.removeItem(KEYS.session);
 }
 
 function getSession() {
   try {
-    const raw = localStorage.getItem(KEYS.session);
+    const raw = _storageAdapter.getItem(KEYS.session);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
@@ -1411,7 +1665,7 @@ function getSessionUser() {
    System Audit Log (HIPAA)
    ============================================================ */
 function logSystemAudit(action, userId, targetUserId, details, email) {
-  const all = loadAll(KEYS.systemAuditLog);
+  const all = loadAll(KEYS.systemAuditLog, true);
   all.push({
     id:           generateId(),
     timestamp:    new Date().toISOString(),
@@ -1437,7 +1691,7 @@ function updateSessionActivity() {
   const session = getSession();
   if (!session) return;
   session.lastActivity = new Date().toISOString();
-  safeSave(KEYS.session, JSON.stringify(session));
+  _storageAdapter.setItem(KEYS.session, JSON.stringify(session));
 }
 
 function isSessionExpired(timeoutMinutes = 15) {
@@ -1598,10 +1852,10 @@ var ROLE_PERMISSIONS = {
 var ALL_PERMISSIONS = ['view_admin', 'place_orders', 'sign_notes', 'write_notes', 'edit_patient', 'view_chart', 'send_messages', 'prescribe_controlled', 'export_data'];
 
 function getCustomRolePermissions() {
-  try { return JSON.parse(localStorage.getItem('emr_custom_role_permissions') || '{}'); } catch(e) { return {}; }
+  try { return JSON.parse(_storageAdapter.getItem('emr_custom_role_permissions') || '{}'); } catch(e) { return {}; }
 }
 function saveCustomRolePermissions(perms) {
-  localStorage.setItem('emr_custom_role_permissions', JSON.stringify(perms));
+  _storageAdapter.setItem('emr_custom_role_permissions', JSON.stringify(perms));
 }
 function getEffectivePermissions(role) {
   const custom = getCustomRolePermissions();
@@ -1735,7 +1989,13 @@ function getUnreadMessageCount(userId, userType) {
 }
 
 function saveMessage(data) {
-  var all = getMessages();
+  /* --- Schema validation (PR-7) --- */
+  var existingMsg = data.id ? getMessages().find(function(m) { return m.id === data.id; }) : null;
+  if (!existingMsg) {
+    var schemaCheck = validateSchema(data, 'message');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  }
+  var all = loadAll(KEYS.messages, true);
   var idx = all.findIndex(function(m) { return m.id === data.id; });
   if (idx >= 0) {
     all[idx] = Object.assign({}, all[idx], data);
@@ -1775,13 +2035,227 @@ function saveMessage(data) {
 }
 
 function markMessageRead(messageId) {
-  var all = getMessages();
+  var all = loadAll(KEYS.messages, true);
   var idx = all.findIndex(function(m) { return m.id === messageId; });
   if (idx < 0) return null;
   all[idx].status = 'Read';
   all[idx].readAt = new Date().toISOString();
   saveAll(KEYS.messages, all);
   return all[idx];
+}
+
+/* ============================================================
+   Claims / Billing
+   ============================================================ */
+
+var PLACE_OF_SERVICE = {
+  '11': 'Office',
+  '21': 'Inpatient Hospital',
+  '23': 'Emergency Room',
+  '22': 'Outpatient Hospital',
+  '02': 'Telehealth',
+};
+
+function getClaims() { return loadAll(KEYS.claims); }
+function getClaimsByPatient(patientId) { return getClaims().filter(function(c) { return c.patientId === patientId; }); }
+function getClaimsByEncounter(encounterId) { return getClaims().filter(function(c) { return c.encounterId === encounterId; }); }
+function getClaim(id) { return getClaims().find(function(c) { return c.id === id; }) || null; }
+
+function saveClaim(data) {
+  var all = loadAll(KEYS.claims, true);
+  var existing = data.id ? all.find(function(c) { return c.id === data.id; }) : null;
+
+  if (!existing) {
+    var schemaCheck = validateSchema(data, 'claim');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+
+    var newClaim = {
+      id: generateId(),
+      status: 'Draft',
+      charges: [],
+      diagnoses: [],
+      totalCharge: 0,
+      allowedAmount: 0,
+      paidAmount: 0,
+      patientResponsibility: 0,
+      placeOfService: '11',
+      createdAt: new Date().toISOString(),
+      createdBy: (typeof getSessionUser === 'function' && getSessionUser()) ? getSessionUser().id : null,
+      ...data,
+    };
+    if (!newClaim.id || newClaim.id === data.id) newClaim.id = generateId();
+    all.push(newClaim);
+  } else {
+    Object.assign(existing, data);
+  }
+  saveAll(KEYS.claims, all);
+  return existing || all[all.length - 1];
+}
+
+function deleteClaim(id) { return softDeleteRecord(KEYS.claims, id); }
+
+function updateClaimStatus(id, status, details) {
+  var claim = getClaim(id);
+  if (!claim) return null;
+  claim.status = status;
+  if (details) Object.assign(claim, details);
+  if (status === 'Submitted') claim.submittedDate = new Date().toISOString();
+  if (status === 'Accepted' || status === 'Denied' || status === 'Paid') claim.adjudicatedDate = new Date().toISOString();
+  return saveClaim(claim);
+}
+
+function generateClaimFromEncounter(encounterId) {
+  var enc = getEncounter(encounterId);
+  if (!enc) return { error: true, errors: ['Encounter not found'] };
+
+  var existing = getClaimsByEncounter(encounterId);
+  if (existing.length > 0) return { error: true, errors: ['Claim already exists for this encounter'] };
+
+  var patient = getPatient(enc.patientId);
+  var charges = [];
+  var diagnoses = [];
+
+  // Pull diagnoses from encounter
+  if (enc.diagnoses && enc.diagnoses.length > 0) {
+    diagnoses = enc.diagnoses.map(function(dx, i) {
+      return { icd10: dx.code || dx.icd10 || '', description: dx.name || dx.description || '', rank: i + 1 };
+    });
+  }
+
+  // Pull CPT codes from encounter
+  if (enc.cptCodes && enc.cptCodes.length > 0) {
+    charges = enc.cptCodes.map(function(cpt) {
+      return {
+        cptCode: cpt.code || cpt,
+        description: cpt.description || '',
+        units: 1,
+        unitCharge: 0,
+        modifiers: [],
+        diagnosisPointers: [1],
+      };
+    });
+  }
+
+  // Determine place of service
+  var pos = '11';
+  if (enc.visitType === 'Inpatient') pos = '21';
+  else if (enc.visitType === 'Emergency') pos = '23';
+
+  return saveClaim({
+    encounterId: encounterId,
+    patientId: enc.patientId,
+    providerId: enc.providerId,
+    payerName: patient ? patient.insurance || '' : '',
+    serviceDate: enc.dateTime || enc.visitDate,
+    charges: charges,
+    diagnoses: diagnoses,
+    placeOfService: pos,
+  });
+}
+
+function getClaimStats() {
+  var claims = getClaims();
+  var stats = { total: claims.length, draft: 0, ready: 0, submitted: 0, accepted: 0, denied: 0, paid: 0, appealed: 0, totalCharged: 0, totalPaid: 0 };
+  claims.forEach(function(c) {
+    var key = (c.status || 'draft').toLowerCase();
+    if (stats[key] !== undefined) stats[key]++;
+    stats.totalCharged += (c.totalCharge || 0);
+    stats.totalPaid += (c.paidAmount || 0);
+  });
+  return stats;
+}
+
+/* ============================================================
+   Prior Authorizations
+   ============================================================ */
+
+var PA_RULES_DEFAULT = [
+  { type: 'Imaging', matchPattern: 'MRI|CT|PET', requiresPA: true, description: 'Advanced imaging requires prior authorization' },
+  { type: 'Medication', matchPattern: 'brand|biologic|specialty', requiresPA: true, description: 'Brand-name and specialty medications require PA' },
+  { type: 'Consult', matchPattern: 'surgery|transplant', requiresPA: true, description: 'Surgical and transplant consults require PA' },
+];
+
+function getPriorAuths() { return loadAll(KEYS.priorAuths); }
+function getPriorAuthsByPatient(patientId) { return getPriorAuths().filter(function(pa) { return pa.patientId === patientId; }); }
+function getPriorAuthByOrder(orderId) { return getPriorAuths().find(function(pa) { return pa.orderId === orderId; }) || null; }
+function getPriorAuth(id) { return getPriorAuths().find(function(pa) { return pa.id === id; }) || null; }
+
+function savePriorAuth(data) {
+  var all = loadAll(KEYS.priorAuths, true);
+  var existing = data.id ? all.find(function(pa) { return pa.id === data.id; }) : null;
+
+  if (!existing) {
+    var schemaCheck = validateSchema(data, 'priorAuth');
+    if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+
+    var newPA = {
+      id: generateId(),
+      status: 'Required',
+      urgency: 'Standard',
+      documents: [],
+      createdAt: new Date().toISOString(),
+      createdBy: (typeof getSessionUser === 'function' && getSessionUser()) ? getSessionUser().id : null,
+      ...data,
+    };
+    if (!newPA.id || newPA.id === data.id) newPA.id = generateId();
+    all.push(newPA);
+  } else {
+    Object.assign(existing, data);
+  }
+  saveAll(KEYS.priorAuths, all);
+  return existing || all[all.length - 1];
+}
+
+function deletePriorAuth(id) { return softDeleteRecord(KEYS.priorAuths, id); }
+
+function updatePriorAuthStatus(id, status, details) {
+  var pa = getPriorAuth(id);
+  if (!pa) return null;
+  pa.status = status;
+  if (details) Object.assign(pa, details);
+  if (status === 'Submitted') pa.submittedDate = new Date().toISOString();
+  if (status === 'Approved' || status === 'Denied') pa.responseDate = new Date().toISOString();
+  return savePriorAuth(pa);
+}
+
+function checkPriorAuthRequired(order) {
+  if (!order || !order.type) return false;
+  var rules = loadAll(KEYS.payerRules);
+  if (rules.length === 0) rules = PA_RULES_DEFAULT;
+
+  var detail = order.detail || {};
+  var searchText = [
+    order.type,
+    detail.drug || detail.drugName || '',
+    detail.panel || '',
+    detail.modality || '',
+    detail.studyName || '',
+    detail.service || '',
+  ].join(' ').toLowerCase();
+
+  for (var i = 0; i < rules.length; i++) {
+    var rule = rules[i];
+    if (rule.type && rule.type !== order.type) continue;
+    if (rule.matchPattern) {
+      var patterns = rule.matchPattern.toLowerCase().split('|');
+      for (var j = 0; j < patterns.length; j++) {
+        if (searchText.indexOf(patterns[j]) !== -1) return { required: true, reason: rule.description || 'Prior authorization required' };
+      }
+    }
+  }
+  return { required: false };
+}
+
+function getPriorAuthStats() {
+  var auths = getPriorAuths();
+  return {
+    total: auths.length,
+    required: auths.filter(function(pa) { return pa.status === 'Required'; }).length,
+    submitted: auths.filter(function(pa) { return pa.status === 'Submitted'; }).length,
+    approved: auths.filter(function(pa) { return pa.status === 'Approved'; }).length,
+    denied: auths.filter(function(pa) { return pa.status === 'Denied'; }).length,
+    expired: auths.filter(function(pa) { return pa.status === 'Expired'; }).length,
+  };
 }
 
 /* ============================================================
@@ -1796,7 +2270,7 @@ function exportAllData() {
   var keyNames = Object.keys(KEYS);
   keyNames.forEach(function (k) {
     var storageKey = KEYS[k];
-    var raw = localStorage.getItem(storageKey);
+    var raw = _storageAdapter.getItem(storageKey);
     if (raw !== null) {
       exported[storageKey] = raw;
     }
@@ -1830,7 +2304,8 @@ function importAllData(jsonString) {
   // Perform import
   var count = 0;
   keysToImport.forEach(function (k) {
-    safeSave(k, parsed[k]);
+    _invalidateCache(k);
+    _storageAdapter.setItem(k, parsed[k]);
     count++;
   });
   var user = getSessionUser();
@@ -1903,7 +2378,7 @@ function exportPatientData(patientId) {
 function getHospitals() { return loadAll(KEYS.hospitals); }
 function getHospital(id) { return getHospitals().find(h => h.id === id) || null; }
 function saveHospital(data) {
-  const all = getHospitals();
+  const all = loadAll(KEYS.hospitals, true);
   const idx = all.findIndex(h => h.id === data.id);
   if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
   else { all.push({ id: generateId(), name: '', ...data }); }
@@ -1915,7 +2390,7 @@ function getWards() { return loadAll(KEYS.wards); }
 function getWard(id) { return getWards().find(w => w.id === id) || null; }
 function getWardsByHospital(hospitalId) { return getWards().filter(w => w.hospitalId === hospitalId); }
 function saveWard(data) {
-  const all = getWards();
+  const all = loadAll(KEYS.wards, true);
   const idx = all.findIndex(w => w.id === data.id);
   if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
   else { all.push({ id: generateId(), hospitalId: '', floor: '', unit: '', name: '', beds: 0, ...data }); }
@@ -1927,7 +2402,7 @@ function getBedAssignments() { return loadAll(KEYS.bedAssignments); }
 function getBedAssignment(patientId) { return getBedAssignments().find(b => b.patientId === patientId && b.active) || null; }
 function getBedAssignmentsByWard(wardId) { return getBedAssignments().filter(b => b.wardId === wardId && b.active); }
 function saveBedAssignment(data) {
-  const all = getBedAssignments();
+  const all = loadAll(KEYS.bedAssignments, true);
   const idx = all.findIndex(b => b.id === data.id);
   if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
   else { all.push({ id: generateId(), patientId: '', wardId: '', bed: '', active: true, assignedAt: new Date().toISOString(), ...data }); }
@@ -1943,7 +2418,7 @@ function getPatientList(id) { return getPatientLists().find(l => l.id === id) ||
 function getPatientListsByOwner(ownerId) { return getPatientLists().filter(l => l.ownerId === ownerId); }
 function getSharedPatientLists() { return getPatientLists().filter(l => l.shared); }
 function savePatientList(data) {
-  const all = getPatientLists();
+  const all = loadAll(KEYS.patientLists, true);
   const idx = all.findIndex(l => l.id === data.id);
   if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
   else { all.push({ id: generateId(), name: '', ownerId: '', patientIds: [], shared: false, createdAt: new Date().toISOString(), ...data }); }
@@ -1951,8 +2426,7 @@ function savePatientList(data) {
   return all[idx >= 0 ? idx : all.length - 1];
 }
 function deletePatientList(id) {
-  const all = getPatientLists().filter(l => l.id !== id);
-  saveAll(KEYS.patientLists, all);
+  softDeleteRecord(KEYS.patientLists, id);
 }
 function addPatientToList(listId, patientId) {
   const list = getPatientList(listId);
@@ -2004,7 +2478,7 @@ function getPatientListPrefs(providerId) {
 }
 
 function savePatientListPrefs(providerId, prefs) {
-  const all = loadAll(KEYS.patientListPrefs);
+  const all = loadAll(KEYS.patientListPrefs, true);
   const idx = all.findIndex(p => p.providerId === providerId);
   const record = { providerId: providerId, ...prefs };
   if (idx >= 0) { all[idx] = { ...all[idx], ...record }; }
@@ -2024,7 +2498,7 @@ function getSmartListsByOwner(ownerId) {
 function getSmartList(id) { return getSmartLists().find(l => l.id === id) || null; }
 
 function saveSmartList(data) {
-  const all = getSmartLists();
+  const all = loadAll(KEYS.smartLists, true);
   const idx = all.findIndex(l => l.id === data.id);
   if (idx >= 0) { all[idx] = { ...all[idx], ...data }; }
   else {
@@ -2045,7 +2519,7 @@ function saveSmartList(data) {
 }
 
 function deleteSmartList(id) {
-  saveAll(KEYS.smartLists, getSmartLists().filter(l => l.id !== id));
+  softDeleteRecord(KEYS.smartLists, id);
 }
 
 function evaluateSmartList(listId) {
@@ -2129,7 +2603,7 @@ function getHandoffNotesByList(listId) {
 }
 
 function saveHandoffNote(data) {
-  const all = loadAll(KEYS.handoffNotes);
+  const all = loadAll(KEYS.handoffNotes, true);
   all.push({
     id: generateId(),
     listId: '',
@@ -2145,7 +2619,7 @@ function saveHandoffNote(data) {
 }
 
 function deleteHandoffNote(id) {
-  saveAll(KEYS.handoffNotes, loadAll(KEYS.handoffNotes).filter(n => n.id !== id));
+  softDeleteRecord(KEYS.handoffNotes, id);
 }
 
 /* ============================================================
@@ -2156,8 +2630,8 @@ function getListSubscriptions(providerId) {
 }
 
 function subscribeToList(listId, subscriberId) {
-  const all = loadAll(KEYS.listSubscriptions);
-  if (all.some(s => s.listId === listId && s.subscriberId === subscriberId)) return null;
+  const all = loadAll(KEYS.listSubscriptions, true);
+  if (all.some(s => !s._deleted && s.listId === listId && s.subscriberId === subscriberId)) return null;
   const sub = { id: generateId(), listId: listId, subscriberId: subscriberId, createdAt: new Date().toISOString() };
   all.push(sub);
   saveAll(KEYS.listSubscriptions, all);
@@ -2165,8 +2639,13 @@ function subscribeToList(listId, subscriberId) {
 }
 
 function unsubscribeFromList(listId, subscriberId) {
-  const all = loadAll(KEYS.listSubscriptions).filter(s => !(s.listId === listId && s.subscriberId === subscriberId));
-  saveAll(KEYS.listSubscriptions, all);
+  var all = loadAll(KEYS.listSubscriptions, true);
+  var idx = all.findIndex(function(s) { return !s._deleted && s.listId === listId && s.subscriberId === subscriberId; });
+  if (idx >= 0) {
+    all[idx]._deleted = true;
+    all[idx]._deletedAt = new Date().toISOString();
+    saveAll(KEYS.listSubscriptions, all);
+  }
 }
 
 /* ============================================================
@@ -2189,6 +2668,7 @@ function setPatientListMeta(listId, patientId, meta) {
    Seed data — populates on first load
    ============================================================ */
 async function seedAdminIfNeeded() {
+  runMigrations();
   const existing = getUserByEmail('admin@clinic.com');
   if (existing) return;
   const passwordHash = await hashPassword('Admin123');
@@ -2267,7 +2747,7 @@ async function seedIfEmpty() {
   });
 
   // Set MRN counter past seeds
-  safeSave(KEYS.mrnCounter, '1004');
+  _storageAdapter.setItem(KEYS.mrnCounter, '1004');
 
   // Encounter 1 — pat1 — signed note + all 4 order types
   const enc1 = saveEncounter({
@@ -2754,7 +3234,7 @@ async function seedIfEmpty() {
   saveBedAssignment({ patientId: ip28.id, wardId: wardNeuro.id, bed: '5-04' });
 
   // Update MRN counter to account for 28 new patients (MRN001004-MRN001031 -> next is 1032)
-  safeSave(KEYS.mrnCounter, '1032');
+  _storageAdapter.setItem(KEYS.mrnCounter, '1032');
 }
 
 function seedExtraPatients() {

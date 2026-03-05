@@ -178,21 +178,24 @@ const IMAGING_DB = [
 
 function searchImagingStudies(query) {
   if (!query || query.length < 2) return [];
-  const q = query.toLowerCase();
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const scored = [];
   for (const img of IMAGING_DB) {
     const nLower = img.name.toLowerCase();
     const aliasLower = img.aliases.map(a => a.toLowerCase());
     const modLower = img.modality.toLowerCase();
     const regLower = img.bodyRegion.toLowerCase();
+    const searchText = nLower + ' ' + aliasLower.join(' ') + ' ' + modLower + ' ' + regLower;
+
+    if (!words.every(w => searchText.includes(w))) continue;
+
+    const q = words[0];
     let score = 0;
     if (nLower.startsWith(q)) score = 4;
     else if (aliasLower.some(a => a.startsWith(q))) score = 3;
     else if (nLower.includes(q)) score = 2;
-    else if (aliasLower.some(a => a.includes(q))) score = 2;
-    else if (modLower.includes(q)) score = 1;
-    else if (regLower.includes(q)) score = 1;
-    if (score > 0) scored.push({ img, score });
+    else score = 1;
+    scored.push({ img, score });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, 10).map(s => s.img);

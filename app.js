@@ -3,6 +3,20 @@
    Runs last; assumes data.js and all view files are loaded.
    ============================================================ */
 
+/* ---------- View Lifecycle / Cleanup (PR-2) ---------- */
+var _viewCleanupFns = [];
+
+function registerCleanup(fn) {
+  _viewCleanupFns.push(fn);
+}
+
+function _cleanupCurrentView() {
+  _viewCleanupFns.forEach(function(fn) {
+    try { fn(); } catch(e) { console.warn('[EMR] View cleanup error:', e); }
+  });
+  _viewCleanupFns = [];
+}
+
 /* ---------- Topbar ---------- */
 function setTopbar({ title = '', meta = '', actions = '' }) {
   document.getElementById('topbar-title').textContent = title;
@@ -20,29 +34,15 @@ function setActiveNav(name) {
   });
 }
 
-/* ---------- Modal ---------- */
+/* ---------- Modal (with stacking support — PR-18) ---------- */
 let _modalCloseCallback = null;
+let _modalFocusTrap = null;
+let _modalStack = [];
 
-function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
-  const backdrop = document.getElementById('modal-backdrop');
-  const modal    = document.getElementById('modal');
-  document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-body').innerHTML   = bodyHTML;
-  document.getElementById('modal-footer').innerHTML = footerHTML;
-
-  modal.className = 'modal' + (size ? ' modal-' + size : '');
-  backdrop.classList.remove('hidden');
-  _modalCloseCallback = onClose;
-
-  // Focus first input
-  const first = modal.querySelector('input, select, textarea, button');
-  if (first) setTimeout(() => first.focus(), 50);
-
-  // Focus trap
-  _modalFocusTrap = function(e) {
+function _buildFocusTrap(modal) {
+  return function(e) {
     if (e.key === 'Enter') {
       const active = document.activeElement;
-      // Don't intercept Enter inside textareas or on buttons (let them handle it)
       if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'BUTTON')) return;
       const footer = document.getElementById('modal-footer');
       const primary = footer && (footer.querySelector('.btn-success, .btn-primary, .btn-danger'));
@@ -60,20 +60,87 @@ function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
       if (document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
     }
   };
+}
+
+function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
+  const backdrop = document.getElementById('modal-backdrop');
+  const modal    = document.getElementById('modal');
+  const bodyEl   = document.getElementById('modal-body');
+  const footerEl = document.getElementById('modal-footer');
+
+  // Stack current modal if one is already open
+  if (!backdrop.classList.contains('hidden')) {
+    const savedBody = document.createDocumentFragment();
+    while (bodyEl.firstChild) savedBody.appendChild(bodyEl.firstChild);
+    const savedFooter = document.createDocumentFragment();
+    while (footerEl.firstChild) savedFooter.appendChild(footerEl.firstChild);
+    _modalStack.push({
+      title: document.getElementById('modal-title').textContent,
+      body: savedBody,
+      footer: savedFooter,
+      size: modal.className,
+      onClose: _modalCloseCallback,
+      focusTrap: _modalFocusTrap
+    });
+    if (_modalFocusTrap) document.removeEventListener('keydown', _modalFocusTrap);
+  }
+
+  document.getElementById('modal-title').textContent = title;
+  bodyEl.innerHTML   = bodyHTML;
+  footerEl.innerHTML = footerHTML;
+
+  modal.className = 'modal' + (size ? ' modal-' + size : '');
+  backdrop.classList.remove('hidden');
+  _modalCloseCallback = onClose;
+
+  // Focus first input
+  const first = modal.querySelector('input, select, textarea, button');
+  if (first) setTimeout(() => first.focus(), 50);
+
+  // Focus trap
+  _modalFocusTrap = _buildFocusTrap(modal);
   document.addEventListener('keydown', _modalFocusTrap);
 }
 
-let _modalFocusTrap = null;
-
 function closeModal() {
-  document.getElementById('modal-backdrop').classList.add('hidden');
-  document.getElementById('modal-body').innerHTML   = '';
+  const bodyEl   = document.getElementById('modal-body');
+  const footerEl = document.getElementById('modal-footer');
+
+  bodyEl.innerHTML   = '';
+  footerEl.innerHTML = '';
+  if (_modalFocusTrap) { document.removeEventListener('keydown', _modalFocusTrap); _modalFocusTrap = null; }
+
+  if (typeof _modalCloseCallback === 'function') {
+    const cb = _modalCloseCallback;
+    _modalCloseCallback = null;
+    cb();
+  }
+
+  // Restore stacked modal or hide backdrop
+  if (_modalStack.length > 0) {
+    const prev = _modalStack.pop();
+    const modal = document.getElementById('modal');
+    document.getElementById('modal-title').textContent = prev.title;
+    bodyEl.appendChild(prev.body);
+    footerEl.appendChild(prev.footer);
+    modal.className = prev.size;
+    _modalCloseCallback = prev.onClose;
+    _modalFocusTrap = prev.focusTrap;
+    if (_modalFocusTrap) document.addEventListener('keydown', _modalFocusTrap);
+    const first = modal.querySelector('input, select, textarea, button');
+    if (first) setTimeout(() => first.focus(), 50);
+  } else {
+    document.getElementById('modal-backdrop').classList.add('hidden');
+  }
+}
+
+function closeAllModals() {
+  _modalStack = [];
+  _modalCloseCallback = null;
+  document.getElementById('modal-body').innerHTML = '';
   document.getElementById('modal-footer').innerHTML = '';
   if (_modalFocusTrap) { document.removeEventListener('keydown', _modalFocusTrap); _modalFocusTrap = null; }
-  if (typeof _modalCloseCallback === 'function') {
-    _modalCloseCallback();
-    _modalCloseCallback = null;
-  }
+  document.getElementById('modal-backdrop').classList.add('hidden');
 }
 
 /* ---------- Toast ---------- */
@@ -200,6 +267,9 @@ function initEncounterModeToggle() {
 
 /* ---------- Hash router ---------- */
 function route() {
+  _cleanupCurrentView();
+  closeAllModals();
+
   const hash = location.hash || '#dashboard';
   const parts = hash.slice(1).split('/');
   const view  = parts[0];
@@ -209,64 +279,84 @@ function route() {
   const _oldChartHeader = document.getElementById('chart-header-bars');
   if (_oldChartHeader) _oldChartHeader.remove();
 
-  switch (view) {
-    case 'dashboard':
-      renderDashboard();
-      break;
-    case 'patients':
-      renderPatients();
-      break;
-    case 'recents':
-      renderRecents();
-      break;
-    case 'chart':
-      if (param) { trackRecentPatient(param); renderChart(param); }
-      else navigate('#dashboard');
-      break;
-    case 'encounter':
-      if (param) renderEncounter(param);
-      else navigate('#dashboard');
-      break;
-    case 'orders':
-      if (param) renderOrders(param);
-      else navigate('#dashboard');
-      break;
-    case 'schedule':
-      if (getEncounterMode() === 'inpatient') { navigate('#dashboard'); return; }
-      renderSchedule();
-      break;
-    case 'inbox':
-      renderInbox(param);
-      break;
-    case 'messages':
-      if (typeof renderMessages === 'function') renderMessages();
-      else navigate('#dashboard');
-      break;
-    case 'settings':
-      if (typeof renderSettings === 'function') renderSettings();
-      else navigate('#dashboard');
-      break;
-    case 'reference':
-      if (typeof renderReference === 'function') renderReference();
-      else navigate('#dashboard');
-      break;
-    case 'providers':
-      renderProviders();
-      break;
-    case 'list':
-      if (param && typeof renderPatientList === 'function') renderPatientList(param);
-      else navigate('#dashboard');
-      break;
-    case 'smart-list':
-      if (param && typeof renderSmartList === 'function') renderSmartList(param);
-      else navigate('#dashboard');
-      break;
-    case 'admin':
-      if (isAdmin()) renderAdmin();
-      else navigate('#dashboard');
-      break;
-    default:
-      navigate('#dashboard');
+  try {
+    switch (view) {
+      case 'dashboard':
+        renderDashboard();
+        break;
+      case 'patients':
+        renderPatients();
+        break;
+      case 'recents':
+        renderRecents();
+        break;
+      case 'chart':
+        if (param) { trackRecentPatient(param); renderChart(param); }
+        else navigate('#dashboard');
+        break;
+      case 'encounter':
+        if (param) renderEncounter(param);
+        else navigate('#dashboard');
+        break;
+      case 'orders':
+        if (param) renderOrders(param);
+        else navigate('#dashboard');
+        break;
+      case 'schedule':
+        if (getEncounterMode() === 'inpatient') { navigate('#dashboard'); return; }
+        renderSchedule();
+        break;
+      case 'inbox':
+        renderInbox(param);
+        break;
+      case 'messages':
+        if (typeof renderMessages === 'function') renderMessages();
+        else navigate('#dashboard');
+        break;
+      case 'settings':
+        if (typeof renderSettings === 'function') renderSettings();
+        else navigate('#dashboard');
+        break;
+      case 'reference':
+        if (typeof renderReference === 'function') renderReference();
+        else navigate('#dashboard');
+        break;
+      case 'providers':
+        renderProviders();
+        break;
+      case 'list':
+        if (param && typeof renderPatientList === 'function') renderPatientList(param);
+        else navigate('#dashboard');
+        break;
+      case 'smart-list':
+        if (param && typeof renderSmartList === 'function') renderSmartList(param);
+        else navigate('#dashboard');
+        break;
+      case 'billing':
+        if (typeof renderBilling === 'function') renderBilling();
+        else navigate('#dashboard');
+        break;
+      case 'prior-auth':
+        if (typeof renderPriorAuth === 'function') renderPriorAuth(param);
+        else navigate('#dashboard');
+        break;
+      case 'admin':
+        if (isAdmin()) renderAdmin();
+        else navigate('#dashboard');
+        break;
+      default:
+        navigate('#dashboard');
+    }
+  } catch (err) {
+    console.error('[EMR] View render error (' + view + '):', err);
+    const app = document.getElementById('app');
+    app.innerHTML = '<div style="padding:40px;max-width:600px;margin:0 auto;text-align:center">' +
+      '<h2 style="color:var(--danger,#dc3545)">Something went wrong</h2>' +
+      '<p style="color:var(--text-secondary,#666);margin:12px 0">The <strong>' + esc(view) + '</strong> view encountered an error.</p>' +
+      '<pre style="text-align:left;background:var(--bg-card,#f8f9fa);padding:12px;border-radius:6px;font-size:13px;overflow:auto;max-height:200px">' + esc(err.message || String(err)) + '</pre>' +
+      '<button class="btn btn-primary" style="margin-top:16px" onclick="navigate(\'#dashboard\')">Back to Dashboard</button>' +
+      '</div>';
+    showToast('View error: ' + (err.message || 'Unknown error'), 'error');
   }
 }
 
@@ -807,18 +897,18 @@ function initSidebarToggle() {
   const sidebar = document.getElementById('sidebar');
   if (!toggle || !sidebar) return;
   toggle.addEventListener('click', () => {
-    sidebar.classList.toggle('open');
+    document.body.classList.toggle('sidebar-open');
   });
   // Close sidebar when a nav item is clicked (mobile)
   sidebar.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => {
-      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+      if (window.innerWidth <= 768) document.body.classList.remove('sidebar-open');
     });
   });
   // Close sidebar overlay when clicking main content on mobile
   document.getElementById('main').addEventListener('click', () => {
-    if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
-      sidebar.classList.remove('open');
+    if (window.innerWidth <= 768 && document.body.classList.contains('sidebar-open')) {
+      document.body.classList.remove('sidebar-open');
     }
   });
 }
@@ -1230,6 +1320,7 @@ function initSidebarSections() {
   const sections = [
     ['section-patients-toggle',  'section-patients-body',  'emr_section_patients',  true],
     ['section-clinical-toggle',  'section-clinical-body',  'emr_section_clinical',  true],
+    ['section-billing-toggle',   'section-billing-body',   'emr_section_billing',   true],
     ['section-messaging-toggle', 'section-messaging-body', 'emr_section_messaging', true],
     ['section-settings-toggle',  'section-settings-body',  'emr_section_settings',  true],
     ['my-lists-toggle',          'my-lists-body',          'emr_my_lists_open',     true],

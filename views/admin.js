@@ -16,6 +16,7 @@ function renderAdmin() {
     <div class="admin-tabs" role="tablist" aria-label="Admin sections">
       <button class="admin-tab active" data-tab="approvals" role="tab" aria-selected="true">Pending Approvals</button>
       <button class="admin-tab" data-tab="users" role="tab" aria-selected="false">User Management</button>
+      <button class="admin-tab" data-tab="permissions" role="tab" aria-selected="false">Role Permissions</button>
       <button class="admin-tab" data-tab="audit" role="tab" aria-selected="false">System Audit Log</button>
     </div>
     <div id="admin-content"></div>
@@ -31,6 +32,7 @@ function renderAdmin() {
       const container = document.getElementById('admin-content');
       if (target === 'approvals') renderApprovalsTab(container);
       else if (target === 'users') renderUsersTab(container);
+      else if (target === 'permissions') renderPermissionsTab(container);
       else if (target === 'audit') renderAuditTab(container);
     });
   });
@@ -65,12 +67,12 @@ function renderApprovalsTab(container) {
         <div class="admin-card-body">
           <div><strong>Email:</strong> ${esc(u.email || '')}</div>
           <div><strong>Degree:</strong> ${esc(u.degree || '—')}</div>
-          <div><strong>Role:</strong> ${roleLabel}</div>
+          <div><strong>Role:</strong> ${esc(roleLabel)}</div>
           <div><strong>Registered:</strong> ${created}</div>
         </div>
         <div class="admin-card-actions">
-          <button class="btn btn-primary btn-sm" onclick="handleApproveUser('${u.id}')">Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="handleDenyUser('${u.id}')">Deny</button>
+          <button class="btn btn-primary btn-sm" onclick="handleApproveUser('${esc(u.id)}')">Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="handleDenyUser('${esc(u.id)}')">Deny</button>
         </div>
       </div>
     `;
@@ -166,16 +168,16 @@ function renderUsersTab(container) {
       let actions = '';
       if (!isSelf) {
         if (status === 'active') {
-          actions += `<button class="btn btn-secondary btn-sm" onclick="handleDeactivateUser('${u.id}')">Deactivate</button> `;
+          actions += `<button class="btn btn-secondary btn-sm" onclick="handleDeactivateUser('${esc(u.id)}')">Deactivate</button> `;
         } else if (status === 'deactivated' || status === 'denied') {
-          actions += `<button class="btn btn-primary btn-sm" onclick="handleReactivateUser('${u.id}')">Activate</button> `;
+          actions += `<button class="btn btn-primary btn-sm" onclick="handleReactivateUser('${esc(u.id)}')">Activate</button> `;
         }
         if (role === 'user' && status === 'active') {
-          actions += `<button class="btn btn-secondary btn-sm" onclick="handlePromoteUser('${u.id}')">Promote</button> `;
+          actions += `<button class="btn btn-secondary btn-sm" onclick="handlePromoteUser('${esc(u.id)}')">Promote</button> `;
         } else if (role === 'admin' && status === 'active') {
-          actions += `<button class="btn btn-secondary btn-sm" onclick="handleDemoteUser('${u.id}')">Demote</button> `;
+          actions += `<button class="btn btn-secondary btn-sm" onclick="handleDemoteUser('${esc(u.id)}')">Demote</button> `;
         }
-        actions += `<button class="btn btn-secondary btn-sm" onclick="handleAdminResetPassword('${u.id}')">Reset PW</button>`;
+        actions += `<button class="btn btn-secondary btn-sm" onclick="handleAdminResetPassword('${esc(u.id)}')">Reset PW</button>`;
       } else {
         actions = '<span style="color:var(--text-muted);font-size:0.85rem;">You</span>';
       }
@@ -184,8 +186,8 @@ function renderUsersTab(container) {
         <td>${esc(name.trim() || 'Unknown')}</td>
         <td>${esc(u.email || '')}</td>
         <td>${esc(u.degree || '—')}</td>
-        <td>${roleLabel}</td>
-        <td><span class="user-status-badge ${statusClass}">${status}</span></td>
+        <td>${esc(roleLabel)}</td>
+        <td><span class="user-status-badge ${esc(statusClass)}">${esc(status)}</span></td>
         <td>${created}</td>
         <td style="white-space:nowrap">${actions}</td>
       </tr>`;
@@ -400,3 +402,69 @@ function renderAuditTab(container) {
 }
 
 /* escapeHTML removed — using global esc() from providers.js */
+
+/* ============================================================
+   Role Permissions Tab
+   ============================================================ */
+function renderPermissionsTab(container) {
+  const roles = ['admin', 'attending', 'resident', 'nurse', 'medical_assistant', 'front_desk', 'user'];
+  const roleLabels = { admin: 'Admin', attending: 'Attending', resident: 'Resident', nurse: 'Nurse', medical_assistant: 'Medical Assistant', front_desk: 'Front Desk', user: 'User' };
+  const permLabels = {
+    view_admin: 'View Admin', place_orders: 'Place Orders', sign_notes: 'Sign Notes',
+    write_notes: 'Write Notes', edit_patient: 'Edit Patient', view_chart: 'View Chart',
+    send_messages: 'Send Messages', prescribe_controlled: 'Prescribe Controlled', export_data: 'Export Data'
+  };
+
+  let html = '<div style="padding:20px">';
+  html += '<p class="text-muted" style="margin-bottom:16px">Configure permissions for each role. Changes take effect immediately.</p>';
+  html += '<div style="overflow-x:auto"><table class="table"><thead><tr><th>Role</th>';
+  ALL_PERMISSIONS.forEach(p => { html += '<th style="text-align:center;font-size:12px">' + (permLabels[p] || p) + '</th>'; });
+  html += '<th></th></tr></thead><tbody>';
+
+  roles.forEach(role => {
+    const perms = getEffectivePermissions(role);
+    html += '<tr><td><strong>' + (roleLabels[role] || role) + '</strong></td>';
+    ALL_PERMISSIONS.forEach(p => {
+      const checked = perms.indexOf(p) >= 0 ? 'checked' : '';
+      const disabled = role === 'admin' ? 'disabled' : '';
+      html += '<td style="text-align:center"><input type="checkbox" ' + checked + ' ' + disabled + ' data-role="' + role + '" data-perm="' + p + '" class="perm-cb" /></td>';
+    });
+    html += '<td><button class="btn btn-secondary btn-sm perm-reset" data-role="' + role + '">Reset</button></td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div></div>';
+  container.innerHTML = html;
+
+  // Checkbox change handler
+  container.querySelectorAll('.perm-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const role = cb.dataset.role;
+      if (role === 'admin') return;
+      const custom = getCustomRolePermissions();
+      const currentPerms = getEffectivePermissions(role);
+      const perm = cb.dataset.perm;
+      let newPerms;
+      if (cb.checked) {
+        newPerms = [...new Set([...currentPerms, perm])];
+      } else {
+        newPerms = currentPerms.filter(p => p !== perm);
+      }
+      custom[role] = newPerms;
+      saveCustomRolePermissions(custom);
+      showToast('Permissions updated for ' + role + '.', 'success');
+    });
+  });
+
+  // Reset buttons
+  container.querySelectorAll('.perm-reset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const role = btn.dataset.role;
+      const custom = getCustomRolePermissions();
+      delete custom[role];
+      saveCustomRolePermissions(custom);
+      showToast('Permissions reset to defaults for ' + role + '.', 'success');
+      renderPermissionsTab(container);
+    });
+  });
+}

@@ -252,7 +252,7 @@ function renderDashboard() {
 
       const text = document.createElement('div');
       text.style.cssText = 'font-size:14px;color:var(--text-primary);';
-      text.innerHTML = '<strong>' + curType + '</strong> · ' + curName;
+      text.innerHTML = '<strong>' + esc(curType) + '</strong> · ' + esc(curName);
 
       const editBtn = document.createElement('button');
       editBtn.className = 'btn-clinic-cog';
@@ -1261,7 +1261,7 @@ function openNewPatientModal() {
       const warn = document.createElement('div');
       warn.style.cssText = 'background:var(--warning-light,#fffceb);color:var(--warning,#b45309);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px';
       warn.id = 'np-dupe-warn';
-      warn.innerHTML = '<strong>Possible duplicate:</strong> ' + esc(existing.firstName) + ' ' + esc(existing.lastName) + ' (' + existing.mrn + ') born ' + formatDate(existing.dob) + '.<br>Click "Register Patient" again to create anyway.';
+      warn.innerHTML = '<strong>Possible duplicate:</strong> ' + esc(existing.firstName) + ' ' + esc(existing.lastName) + ' (' + esc(existing.mrn) + ') born ' + formatDate(existing.dob) + '.<br>Click "Register Patient" again to create anyway.';
       const old = document.getElementById('np-dupe-warn');
       if (old) old.remove();
       document.getElementById('modal-body').prepend(warn);
@@ -1522,11 +1522,11 @@ function renderInpatientFlatList(app, patients) {
       const ipEnc = getEncountersByPatient(pat.id).find(e =>
         (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled');
       const attending = ipEnc && ipEnc.providerId ? getProvider(ipEnc.providerId) : null;
-      tr.innerHTML = '<td><button class="table-link" onclick="navigate(\'#chart/' + pat.id + '\')">' + esc(pat.lastName + ', ' + pat.firstName) + '</button></td>' +
+      tr.innerHTML = '<td><button class="table-link" onclick="navigate(\'#chart/' + esc(pat.id) + '\')">' + esc(pat.lastName + ', ' + pat.firstName) + '</button></td>' +
         '<td>' + esc(pat.mrn) + '</td>' +
         '<td>' + (ipEnc ? formatDateTime(ipEnc.dateTime) : '—') + '</td>' +
         '<td>' + (attending ? esc(attending.lastName + ', ' + attending.firstName) : '—') + '</td>' +
-        '<td style="text-align:right"><button class="btn btn-secondary btn-sm" onclick="navigate(\'#chart/' + pat.id + '\')">View</button></td>';
+        '<td style="text-align:right"><button class="btn btn-secondary btn-sm" onclick="navigate(\'#chart/' + esc(pat.id) + '\')">View</button></td>';
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
