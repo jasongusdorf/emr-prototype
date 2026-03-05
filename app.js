@@ -759,7 +759,7 @@ function initLoginForm() {
     e.preventDefault();
     const email = document.getElementById('login-email').value.trim();
     const pw    = document.getElementById('login-password').value;
-    if (!email || !pw) { alert('Please fill in all fields.'); showToast('Please fill in all fields.', 'error'); return; }
+    if (!email || !pw) { showToast('Please fill in all fields.', 'error'); return; }
 
     // Remember email preference
     const rememberCb = document.getElementById('login-remember');
@@ -771,7 +771,7 @@ function initLoginForm() {
 
     try {
       const result = await login(email, pw);
-      if (!result.ok) { alert('Login error: ' + result.error); showToast(result.error, 'error'); return; }
+      if (!result.ok) { showToast(result.error, 'error'); return; }
 
       // Set current provider to matching provider
       const providers = getProviders();
@@ -787,7 +787,6 @@ function initLoginForm() {
       handlePostLogin(result.user);
     } catch (err) {
       console.error('Login error:', err);
-      alert('Login exception: ' + (err.message || String(err)));
       showToast('Login failed: ' + (err.message || 'Unknown error'), 'error');
     }
   });
@@ -1419,7 +1418,6 @@ async function init() {
     console.error('Seed error:', err);
     // Continue — seed may partially work or data may already exist
   }
-  console.log('[EMR] init() reached initLoginForm');
   initDarkMode();
   initLoginDarkToggle();
   initLoginForm();
