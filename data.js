@@ -49,6 +49,17 @@ const KEYS = {
   claims:          'emr_claims',
   priorAuths:      'emr_prior_auths',
   payerRules:      'emr_payer_rules',
+  careGapRules:    'emr_care_gap_rules',
+  patientCareGaps: 'emr_patient_care_gaps',
+  smartPhrases:    'emr_smart_phrases',
+  secureChats:     'emr_secure_chats',
+  chatMessages:    'emr_chat_messages',
+  externalRecords: 'emr_external_records',
+  patientMedia:    'emr_patient_media',
+  letters:         'emr_letters',
+  letterTemplates: 'emr_letter_templates',
+  reminders:       'emr_reminders',
+  slicerQueries:   'emr_slicer_queries',
 };
 
 /* ---------- Data Versioning ---------- */

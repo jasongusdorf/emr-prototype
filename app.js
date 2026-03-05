@@ -332,12 +332,28 @@ function route() {
         if (param && typeof renderSmartList === 'function') renderSmartList(param);
         else navigate('#dashboard');
         break;
+      case 'secure-chat':
+        if (typeof renderSecureChat === 'function') renderSecureChat();
+        else navigate('#dashboard');
+        break;
       case 'billing':
         if (typeof renderBilling === 'function') renderBilling();
         else navigate('#dashboard');
         break;
       case 'prior-auth':
         if (typeof renderPriorAuth === 'function') renderPriorAuth(param);
+        else navigate('#dashboard');
+        break;
+      case 'slicer':
+        if (typeof renderSlicer === 'function') renderSlicer();
+        else navigate('#dashboard');
+        break;
+      case 'care-gaps':
+        if (typeof renderCareGaps === 'function') renderCareGaps();
+        else navigate('#dashboard');
+        break;
+      case 'reminders':
+        if (typeof renderRemindersView === 'function') renderRemindersView();
         else navigate('#dashboard');
         break;
       case 'admin':
@@ -1340,6 +1356,7 @@ function initSidebarSections() {
   const sections = [
     ['section-patients-toggle',  'section-patients-body',  'emr_section_patients',  true],
     ['section-clinical-toggle',  'section-clinical-body',  'emr_section_clinical',  true],
+    ['section-analytics-toggle', 'section-analytics-body', 'emr_section_analytics', true],
     ['section-billing-toggle',   'section-billing-body',   'emr_section_billing',   true],
     ['section-messaging-toggle', 'section-messaging-body', 'emr_section_messaging', true],
     ['section-settings-toggle',  'section-settings-body',  'emr_section_settings',  true],
