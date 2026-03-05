@@ -5386,3 +5386,76 @@ select:focus-visible, textarea:focus-visible {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---- PA Status Badges ---- */
+.pa-badge-required     { background: var(--warning-light, #fffaf0); color: var(--warning, #c05621); }
+.pa-badge-submitted    { background: var(--accent-blue-light, #ebf4ff); color: var(--accent-blue, #2b6cb0); }
+.pa-badge-under-review { background: #f3e8ff; color: #6b21a8; }
+.pa-badge-approved     { background: var(--success-light, #f0fff4); color: var(--success, #276749); }
+.pa-badge-denied       { background: var(--danger-light, #fff5f5); color: var(--danger, #c53030); }
+.pa-badge-expired      { background: var(--bg-hover, #f8fafc); color: var(--text-secondary, #64748b); }
+.pa-badge-pending      { background: var(--warning-light, #fffaf0); color: var(--warning, #c05621); }
+.pa-badge-required-outline {
+  background: transparent;
+  color: var(--warning, #c05621);
+  border: 1px solid var(--warning, #c05621);
+}
+
+/* ---- PA Urgency Badges ---- */
+.pa-badge-urgent  { background: transparent; color: var(--danger, #c53030); border: 1px solid var(--danger, #c53030); }
+.pa-badge-standard { background: transparent; color: var(--text-secondary, #64748b); border: 1px solid var(--border, #e2e8f0); }
+
+/* ---- PA Stat Danger ---- */
+.pa-stat-card.pa-stat-danger .stat-value { color: var(--danger, #c53030); }
+
+/* ---- PA Empty state ---- */
+.pa-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary, #64748b);
+  font-size: 14px;
+}
+
+/* ---- PA Row Actions ---- */
+.pa-row-actions {
+  white-space: nowrap;
+}
+.pa-row-actions .btn + .btn {
+  margin-left: 4px;
+}
+
+/* ---- PA Patient Search Results ---- */
+.pa-patient-results {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+.pa-patient-results:empty {
+  display: none;
+}
+.pa-patient-result-item {
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-light, #f1f5f9);
+}
+.pa-patient-result-item:last-child {
+  border-bottom: none;
+}
+.pa-patient-result-item:hover {
+  background: var(--bg-hover, #f8fafc);
+}
+
+/* ---- Dark mode overrides for PA badges ---- */
+body.dark-mode .pa-badge-required     { background: #78350f33; color: #fbbf24; }
+body.dark-mode .pa-badge-submitted    { background: #1e3a5f33; color: #63b3ed; }
+body.dark-mode .pa-badge-under-review { background: #44337a33; color: #d6bcfa; }
+body.dark-mode .pa-badge-approved     { background: #22543d33; color: #68d391; }
+body.dark-mode .pa-badge-denied       { background: #742a2a33; color: #fc8181; }
+body.dark-mode .pa-badge-expired      { background: #2d3748; color: #a0aec0; }
+body.dark-mode .pa-badge-pending      { background: #78350f33; color: #fbbf24; }
+body.dark-mode .pa-badge-required-outline { background: transparent; color: #fbbf24; border-color: #fbbf24; }
+body.dark-mode .pa-badge-urgent       { color: #fc8181; border-color: #fc8181; }
+body.dark-mode .pa-badge-standard     { color: #a0aec0; border-color: #4a5568; }
