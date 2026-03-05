@@ -771,7 +771,19 @@ function initLoginForm() {
 
     try {
       const result = await login(email, pw);
-      if (!result.ok) { showToast(result.error, 'error'); return; }
+      if (!result.ok) {
+        // Show error directly on login form so it's always visible
+        let errEl = document.getElementById('login-error');
+        if (!errEl) {
+          errEl = document.createElement('div');
+          errEl.id = 'login-error';
+          errEl.style.cssText = 'background:#fecaca;color:#991b1b;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;border:1px solid #f87171';
+          form.insertBefore(errEl, form.querySelector('button[type="submit"]'));
+        }
+        errEl.textContent = result.error;
+        showToast(result.error, 'error');
+        return;
+      }
 
       // Set current provider to matching provider
       const providers = getProviders();
@@ -787,6 +799,14 @@ function initLoginForm() {
       handlePostLogin(result.user);
     } catch (err) {
       console.error('Login error:', err);
+      let errEl = document.getElementById('login-error');
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.id = 'login-error';
+        errEl.style.cssText = 'background:#fecaca;color:#991b1b;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;border:1px solid #f87171';
+        form.insertBefore(errEl, form.querySelector('button[type="submit"]'));
+      }
+      errEl.textContent = 'Login failed: ' + (err.message || 'Unknown error');
       showToast('Login failed: ' + (err.message || 'Unknown error'), 'error');
     }
   });
