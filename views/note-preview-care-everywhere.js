@@ -18,6 +18,14 @@ function renderNotePreviewPane(patientId, container) {
   const encounters = getEncountersByPatient(patientId);
   const allProviders = getProviders();
 
+  // Degree filter groups
+  const DEGREE_GROUPS = [
+    { key: 'physician', label: 'Physician Notes', degrees: ['MD', 'DO'] },
+    { key: 'app',       label: 'NP / PA',         degrees: ['NP', 'PA'] },
+    { key: 'nursing',   label: 'Nursing',          degrees: ['RN', 'LPN'] },
+    { key: 'other',     label: 'Other',            degrees: ['MA', 'PharmD'] },
+  ];
+
   // Build note items from encounters
   const noteItems = [];
   encounters.forEach(function(enc) {
@@ -106,6 +114,42 @@ function renderNotePreviewPane(patientId, container) {
 
   leftPanel.appendChild(filterBar);
 
+  // --- Degree filter pills ---
+  var activeDegreeGroup = null;
+  const degreeBar = document.createElement('div');
+  degreeBar.className = 'degree-filter-bar';
+
+  // Only show degree groups that have at least one matching note
+  var allDegreesInNotes = new Set();
+  noteItems.forEach(function(ni) { if (ni.prov && ni.prov.degree) allDegreesInNotes.add(ni.prov.degree); });
+
+  DEGREE_GROUPS.forEach(function(grp) {
+    var hasMatch = grp.degrees.some(function(d) { return allDegreesInNotes.has(d); });
+    if (!hasMatch) return;
+
+    var pill = document.createElement('button');
+    pill.className = 'degree-filter-pill';
+    pill.textContent = grp.label;
+    pill.dataset.key = grp.key;
+    pill.addEventListener('click', function() {
+      if (activeDegreeGroup === grp.key) {
+        activeDegreeGroup = null;
+      } else {
+        activeDegreeGroup = grp.key;
+      }
+      // Update pill active states
+      degreeBar.querySelectorAll('.degree-filter-pill').forEach(function(p) {
+        p.classList.toggle('active', p.dataset.key === activeDegreeGroup);
+      });
+      renderNoteList();
+    });
+    degreeBar.appendChild(pill);
+  });
+
+  if (degreeBar.children.length > 0) {
+    leftPanel.appendChild(degreeBar);
+  }
+
   // Note list container
   const noteListContainer = document.createElement('div');
   noteListContainer.className = 'note-list-panel-scroll';
@@ -114,6 +158,80 @@ function renderNotePreviewPane(patientId, container) {
   // === RIGHT PANEL ===
   const rightPanel = document.createElement('div');
   rightPanel.className = 'note-preview-panel';
+
+  // Tab bar
+  var activeRightTab = 'preview';
+  const tabBar = document.createElement('div');
+  tabBar.className = 'note-right-tab-bar';
+
+  var tabDefs = [
+    { key: 'preview', label: 'Note Preview' },
+    { key: 'write',   label: 'Write Note' },
+    { key: 'orders',  label: 'Orders' },
+  ];
+
+  tabDefs.forEach(function(td) {
+    var btn = document.createElement('button');
+    btn.className = 'note-right-tab' + (td.key === activeRightTab ? ' active' : '');
+    if (td.key !== 'preview' && !selectedEncId) btn.classList.add('disabled');
+    btn.textContent = td.label;
+    btn.dataset.tab = td.key;
+    btn.addEventListener('click', function() {
+      if (btn.classList.contains('disabled')) return;
+      activeRightTab = td.key;
+      _updateTabBar();
+      _cleanupRightPanel();
+      _renderRightContent(_getSelectedItem());
+    });
+    tabBar.appendChild(btn);
+  });
+
+  rightPanel.appendChild(tabBar);
+
+  const tabContent = document.createElement('div');
+  tabContent.className = 'note-right-tab-content';
+  rightPanel.appendChild(tabContent);
+
+  function _updateTabBar() {
+    tabBar.querySelectorAll('.note-right-tab').forEach(function(btn) {
+      btn.classList.toggle('active', btn.dataset.tab === activeRightTab);
+      if (btn.dataset.tab !== 'preview') {
+        btn.classList.toggle('disabled', !selectedEncId);
+      }
+    });
+  }
+
+  function _getSelectedItem() {
+    if (!selectedEncId) return null;
+    return noteItems.find(function(i) { return i.enc.id === selectedEncId; }) || null;
+  }
+
+  // Write tab cleanup state
+  var _writeTabTextareas = [];
+  var _writeTabAutosaveTimer = null;
+
+  function _cleanupRightPanel() {
+    // Destroy SmartPhrase listeners for write tab textareas
+    _writeTabTextareas.forEach(function(ta) {
+      if (typeof destroySmartPhraseListener === 'function') destroySmartPhraseListener(ta);
+    });
+    _writeTabTextareas = [];
+    if (_writeTabAutosaveTimer) {
+      clearTimeout(_writeTabAutosaveTimer);
+      _writeTabAutosaveTimer = null;
+    }
+    tabContent.innerHTML = '';
+  }
+
+  function _renderRightContent(item) {
+    if (activeRightTab === 'preview') {
+      _renderPreviewTab(item);
+    } else if (activeRightTab === 'write') {
+      _renderWriteTab(item);
+    } else if (activeRightTab === 'orders') {
+      _renderOrdersTab(item);
+    }
+  }
 
   // State
   var selectedEncId = null;
@@ -181,6 +299,10 @@ function renderNotePreviewPane(patientId, container) {
       if (fromDate && new Date(item.enc.dateTime) < fromDate) return false;
       if (toDate && new Date(item.enc.dateTime) > toDate) return false;
       if (!_matchesTextSearch(item, textQuery)) return false;
+      if (activeDegreeGroup) {
+        var grp = DEGREE_GROUPS.find(function(g) { return g.key === activeDegreeGroup; });
+        if (grp && (!item.prov || !grp.degrees.includes(item.prov.degree))) return false;
+      }
       return true;
     });
 
@@ -246,21 +368,21 @@ function renderNotePreviewPane(patientId, container) {
       row.addEventListener('click', function() {
         selectedEncId = item.enc.id;
         renderNoteList();
-        renderNotePreview(item);
+        _updateTabBar();
+        _cleanupRightPanel();
+        _renderRightContent(item);
       });
 
       noteListContainer.appendChild(row);
     });
   }
 
-  function renderNotePreview(item) {
-    rightPanel.innerHTML = '';
-
+  function _renderPreviewTab(item) {
     if (!item) {
       var placeholder = document.createElement('div');
       placeholder.className = 'note-preview-placeholder';
       placeholder.textContent = 'Select a note from the list to preview';
-      rightPanel.appendChild(placeholder);
+      tabContent.appendChild(placeholder);
       return;
     }
 
@@ -348,7 +470,7 @@ function renderNotePreviewPane(patientId, container) {
     }
 
     header.appendChild(actionBar);
-    rightPanel.appendChild(header);
+    tabContent.appendChild(header);
 
     // --- Body ---
     var body = document.createElement('div');
@@ -425,7 +547,274 @@ function renderNotePreviewPane(patientId, container) {
       body.appendChild(addendaWrap);
     }
 
-    rightPanel.appendChild(body);
+    tabContent.appendChild(body);
+  }
+
+  // === WRITE TAB ===
+  function _renderWriteTab(item) {
+    if (!item) return;
+
+    var enc = item.enc;
+    var note = getNoteByEncounter(enc.id); // get fresh copy
+    var prov = item.prov;
+
+    // Context banner
+    var banner = document.createElement('div');
+    banner.className = 'note-preview-header';
+    var d = enc.dateTime ? new Date(enc.dateTime) : null;
+    var dateStr = d && !isNaN(d)
+      ? d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      : '--';
+    banner.innerHTML =
+      '<div class="note-preview-meta">' +
+        '<span>' + esc(dateStr) + '</span>' +
+        '<span class="note-preview-sep">|</span>' +
+        '<span>' + esc(prov ? prov.firstName + ' ' + prov.lastName + (prov.degree ? ', ' + prov.degree : '') : '[Removed Provider]') + '</span>' +
+        '<span class="note-preview-sep">|</span>' +
+        '<span>' + esc(enc.visitType || '') + (enc.visitSubtype ? ' -- ' + esc(enc.visitSubtype) : '') + '</span>' +
+      '</div>';
+    tabContent.appendChild(banner);
+
+    var editorWrap = document.createElement('div');
+    editorWrap.style.cssText = 'padding:16px 20px; flex:1; overflow-y:auto;';
+
+    if (note.signed) {
+      // Read-only view for signed notes
+      var hasSections = NOTE_SECTIONS.some(function(s) { return note[s.key] && note[s.key].trim(); });
+      if (hasSections) {
+        NOTE_SECTIONS.forEach(function(s) {
+          if (note[s.key] && note[s.key].trim()) {
+            var secDiv = document.createElement('div');
+            secDiv.className = 'note-preview-section';
+            var secLabel = document.createElement('div');
+            secLabel.className = 'note-preview-section-label';
+            secLabel.textContent = s.label;
+            var secBody = document.createElement('div');
+            secBody.className = 'note-preview-section-body';
+            secBody.style.whiteSpace = 'pre-wrap';
+            secBody.textContent = note[s.key];
+            secDiv.appendChild(secLabel);
+            secDiv.appendChild(secBody);
+            editorWrap.appendChild(secDiv);
+          }
+        });
+      } else if (note.noteBody) {
+        var readDiv = document.createElement('div');
+        readDiv.style.cssText = 'white-space:pre-wrap; font-size:13px; color:var(--text-secondary); line-height:1.6;';
+        readDiv.textContent = note.noteBody;
+        editorWrap.appendChild(readDiv);
+      } else {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'note-preview-empty';
+        emptyDiv.textContent = '(not documented)';
+        editorWrap.appendChild(emptyDiv);
+      }
+
+      // Addendum button
+      var addBtn = makeBtn('Add Addendum', 'btn btn-secondary btn-sm', function() {
+        _openAddendumFromPreview(enc, note, prov);
+      });
+      addBtn.style.marginTop = '16px';
+      editorWrap.appendChild(addBtn);
+    } else {
+      // Editable section editor
+      var textareas = {};
+      var sectionContainer = document.createElement('div');
+      sectionContainer.className = 'note-section-container';
+
+      NOTE_SECTIONS.forEach(function(s) {
+        var secWrap = document.createElement('div');
+        secWrap.className = 'note-section-wrap';
+
+        var header = document.createElement('div');
+        header.className = 'note-section-header';
+        header.innerHTML = '<span class="note-section-chevron">&#9660;</span> ' + esc(s.label);
+        header.addEventListener('click', function() {
+          secWrap.classList.toggle('collapsed');
+          header.querySelector('.note-section-chevron').innerHTML = secWrap.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+        });
+
+        var ta = document.createElement('textarea');
+        ta.className = 'note-section-textarea';
+        ta.placeholder = s.label + '\u2026';
+        ta.value = note[s.key] || '';
+        textareas[s.key] = ta;
+
+        if (typeof initSmartPhraseListener === 'function') initSmartPhraseListener(ta);
+        _writeTabTextareas.push(ta);
+
+        secWrap.appendChild(header);
+        secWrap.appendChild(ta);
+        sectionContainer.appendChild(secWrap);
+      });
+
+      editorWrap.appendChild(sectionContainer);
+
+      // Quality indicator
+      var qualityWrap = document.createElement('div');
+      qualityWrap.className = 'note-quality-wrap';
+      qualityWrap.innerHTML =
+        '<div class="note-quality-bar"><div class="note-quality-fill" id="write-tab-quality-fill"></div></div>' +
+        '<span class="note-quality-label" id="write-tab-quality-label"></span>';
+      editorWrap.appendChild(qualityWrap);
+
+      function updateWriteQuality() {
+        var score = calcNoteQuality(textareas);
+        var fill = document.getElementById('write-tab-quality-fill');
+        var label = document.getElementById('write-tab-quality-label');
+        if (fill) {
+          fill.style.width = score + '%';
+          fill.className = 'note-quality-fill' + (score >= 70 ? ' good' : score >= 40 ? ' fair' : ' low');
+        }
+        if (label) label.textContent = 'Documentation: ' + score + '%';
+      }
+      updateWriteQuality();
+
+      // Autosave indicator
+      var autosaveEl = document.createElement('div');
+      autosaveEl.id = 'write-tab-autosave';
+      autosaveEl.className = 'autosave-indicator idle';
+      autosaveEl.style.cssText = 'font-size:11px; color:var(--text-muted); margin-top:6px;';
+      editorWrap.appendChild(autosaveEl);
+
+      // Wire input events: quality + autosave
+      Object.values(textareas).forEach(function(ta) {
+        ta.addEventListener('input', function() {
+          updateWriteQuality();
+          // Debounced autosave
+          var ind = document.getElementById('write-tab-autosave');
+          if (ind) ind.textContent = 'Editing...';
+          if (_writeTabAutosaveTimer) clearTimeout(_writeTabAutosaveTimer);
+          _writeTabAutosaveTimer = setTimeout(function() {
+            if (ind) ind.textContent = 'Saving...';
+            saveNote(Object.assign({}, readNoteFields(textareas), { encounterId: enc.id }));
+            if (ind) ind.textContent = 'Saved just now';
+            // Update the note item reference
+            item.note = getNoteByEncounter(enc.id);
+          }, 1000);
+        });
+      });
+
+      // Action buttons
+      var btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex; gap:8px; margin-top:12px;';
+
+      btnRow.appendChild(makeBtn('Save', 'btn btn-secondary btn-sm', function() {
+        saveNote(Object.assign({}, readNoteFields(textareas), { encounterId: enc.id }));
+        item.note = getNoteByEncounter(enc.id);
+        var ind = document.getElementById('write-tab-autosave');
+        if (ind) ind.textContent = 'Saved just now';
+        showToast('Note saved', 'success');
+      }));
+
+      var signBtn = makeBtn('Sign Note', 'btn btn-success btn-sm', function() {
+        if (!canSignNotes()) {
+          showToast('Only attending physicians can sign notes.', 'error');
+          return;
+        }
+        var quality = calcNoteQuality(textareas);
+        if (quality < 40) {
+          confirmAction({
+            title: 'Incomplete Documentation',
+            message: 'Several sections appear to be empty (documentation: ' + quality + '%). Sign anyway?',
+            confirmLabel: 'Sign Anyway',
+            danger: false,
+            onConfirm: function() { _doSignFromWriteTab(enc, textareas, item); },
+          });
+        } else {
+          _doSignFromWriteTab(enc, textareas, item);
+        }
+      });
+      if (!canSignNotes()) {
+        signBtn.disabled = true;
+        signBtn.title = 'Only attending physicians can sign notes';
+      }
+      btnRow.appendChild(signBtn);
+
+      editorWrap.appendChild(btnRow);
+    }
+
+    tabContent.appendChild(editorWrap);
+  }
+
+  function _doSignFromWriteTab(enc, textareas, item) {
+    var currentUser = getSessionUser();
+    var signingProvider = currentUser ? getProvider(currentUser.id) : null;
+    if (!signingProvider) {
+      showToast('Your account is not linked to a provider profile.', 'error');
+      return;
+    }
+    var signerName = signingProvider.firstName + ' ' + signingProvider.lastName + ', ' + signingProvider.degree;
+
+    openModal({
+      title: 'Sign Note',
+      bodyHTML:
+        '<div class="form-group">' +
+          '<label class="form-label">Signing as:</label>' +
+          '<div class="form-control" style="background:var(--surface-2);cursor:default;">' + esc(signerName) + '</div>' +
+        '</div>',
+      footerHTML:
+        '<button class="btn btn-secondary" id="write-sign-cancel">Cancel</button>' +
+        '<button class="btn btn-success" id="write-sign-confirm">Confirm Signature</button>',
+    });
+
+    setTimeout(function() {
+      var cancelBtn = document.getElementById('write-sign-cancel');
+      if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+      var confirmBtn = document.getElementById('write-sign-confirm');
+      if (confirmBtn) {
+        confirmBtn.addEventListener('click', function() {
+          var noteFields = readNoteFields(textareas);
+          var signedAt = new Date();
+          var sigDate = (signedAt.getMonth() + 1).toString().padStart(2, '0') + '/' +
+                        signedAt.getDate().toString().padStart(2, '0') + '/' +
+                        signedAt.getFullYear() + ' ' +
+                        signedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+          noteFields.noteBody = (noteFields.noteBody || '') + '\n\n---\nElectronically signed by: ' + signerName + '\nDate: ' + sigDate;
+          saveNote(Object.assign({}, noteFields, { encounterId: enc.id, signed: false }));
+          saveNote({ encounterId: enc.id, signed: true, signedBy: signingProvider.id, signedAt: signedAt.toISOString() });
+          saveEncounter({ id: enc.id, status: 'Signed' });
+          closeModal();
+          showToast('Note signed successfully.', 'success');
+          // Refresh item and re-render as read-only
+          item.note = getNoteByEncounter(enc.id);
+          _cleanupRightPanel();
+          _renderWriteTab(item);
+          updateStatusBar();
+          renderNoteList();
+        });
+      }
+    }, 60);
+  }
+
+  // === ORDERS TAB ===
+  function _renderOrdersTab(item) {
+    if (!item) return;
+
+    var enc = item.enc;
+    var patient = getPatient(patientId);
+
+    var layout = document.createElement('div');
+    layout.className = 'note-tab-orders-layout';
+
+    var orderListContainer = document.createElement('div');
+    orderListContainer.id = 'order-list-panel';
+    layout.appendChild(orderListContainer);
+
+    var orderEntryContainer = document.createElement('div');
+    layout.appendChild(orderEntryContainer);
+
+    tabContent.appendChild(layout);
+
+    // Set the global so refreshOrderList() works
+    _ordersEncounterId = enc.id;
+
+    if (typeof renderOrderList === 'function') {
+      renderOrderList(orderListContainer, enc.id);
+    }
+    if (typeof renderOrderEntryForm === 'function' && patient) {
+      renderOrderEntryForm(orderEntryContainer, enc, patient);
+    }
   }
 
   function _printNote(enc, note, prov) {
@@ -511,9 +900,11 @@ function renderNotePreviewPane(patientId, container) {
           saveNote({ encounterId: enc.id, addenda: addenda });
           closeModal();
           showToast('Addendum saved', 'success');
-          // Refresh the preview
+          // Refresh the current tab
           var updatedNote = getNoteByEncounter(enc.id);
-          renderNotePreview({ enc: enc, note: updatedNote, prov: prov });
+          var updatedItem = { enc: enc, note: updatedNote, prov: prov };
+          _cleanupRightPanel();
+          _renderRightContent(updatedItem);
         });
       }
     }, 60);
@@ -526,7 +917,7 @@ function renderNotePreviewPane(patientId, container) {
 
   // Initial renders
   renderNoteList();
-  renderNotePreview(null);
+  _renderRightContent(null);
 
   // Filter listeners
   typeSelect.addEventListener('change', renderNoteList);
@@ -541,9 +932,12 @@ function renderNotePreviewPane(patientId, container) {
     _searchDebounce = setTimeout(function() {
       renderNoteList();
       // Re-render preview if one is selected, to update highlighting
-      if (selectedEncId) {
+      if (selectedEncId && activeRightTab === 'preview') {
         var selectedItem = noteItems.find(function(i) { return i.enc.id === selectedEncId; });
-        if (selectedItem) renderNotePreview(selectedItem);
+        if (selectedItem) {
+          _cleanupRightPanel();
+          _renderPreviewTab(selectedItem);
+        }
       }
     }, 200);
   });
@@ -1468,6 +1862,23 @@ function openCareEverywhereSearch(patientId) {
     '.note-preview-addenda { margin-top:16px; }',
     '.note-preview-addendum { padding:10px 12px; background:var(--warning-light); border-radius:var(--radius); margin-bottom:8px; }',
     '.note-preview-addendum-hdr { font-weight:600; font-size:12px; color:var(--warning); margin-bottom:4px; }',
+
+    /* --- Degree Filter Pills --- */
+    '.degree-filter-bar { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border-bottom:1px solid var(--border); }',
+    '.degree-filter-pill { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:500; border:1px solid var(--border); background:var(--bg-surface); color:var(--text-secondary); cursor:pointer; transition:all var(--transition); }',
+    '.degree-filter-pill:hover { background:var(--bg-base); }',
+    '.degree-filter-pill.active { background:var(--accent-blue); color:#fff; border-color:var(--accent-blue); }',
+
+    /* --- Right Panel Tabs --- */
+    '.note-right-tab-bar { display:flex; border-bottom:1px solid var(--border); flex-shrink:0; }',
+    '.note-right-tab { padding:8px 16px; font-size:13px; font-weight:600; color:var(--text-secondary); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; transition:all var(--transition); }',
+    '.note-right-tab:hover { color:var(--text-primary); background:var(--bg-base); }',
+    '.note-right-tab.active { color:var(--accent-blue); border-bottom-color:var(--accent-blue); }',
+    '.note-right-tab.disabled { opacity:0.4; cursor:not-allowed; }',
+    '.note-right-tab-content { flex:1; overflow-y:auto; display:flex; flex-direction:column; }',
+
+    /* --- Orders Tab Layout --- */
+    '.note-tab-orders-layout { display:flex; flex-direction:column; gap:16px; padding:16px 20px; flex:1; overflow-y:auto; }',
 
     /* --- Care Everywhere --- */
     '.ce-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }',

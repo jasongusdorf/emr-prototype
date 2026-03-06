@@ -337,8 +337,8 @@ function renderOrderList(container, encounterId) {
   container.appendChild(card);
 }
 
-function refreshOrderList() {
-  const container = document.getElementById('order-list-panel');
+function refreshOrderList(containerId) {
+  const container = document.getElementById(containerId || 'order-list-panel');
   if (container && _ordersEncounterId) {
     renderOrderList(container, _ordersEncounterId);
   }
