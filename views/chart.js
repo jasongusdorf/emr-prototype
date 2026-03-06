@@ -606,8 +606,17 @@ function buildOverviewContent(app, patient, patientId) {
   // Results category
   wrap('results', buildResultsSection(patientId));
 
-  // Notes category
-  wrap('notes', buildPastNotesCard(patientId));
+  // Notes category — split-view with inline preview
+  const notesHeader = document.createElement('div');
+  notesHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
+  const notesNewBtn = makeBtn('+ New Note', 'btn btn-primary btn-sm', function() {
+    openNewNoteForPatient(patientId);
+  });
+  notesHeader.appendChild(notesNewBtn);
+  wrap('notes', notesHeader);
+  const notesContainer = document.createElement('div');
+  renderNotePreviewPane(patientId, notesContainer);
+  wrap('notes', notesContainer);
 
   // Orders category
   wrap('orders', buildChartOrdersCard(patientId));

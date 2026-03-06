@@ -3066,6 +3066,249 @@ async function seedIfEmpty() {
     plan: '1. Continue/adjust [medications].\n2. Repeat labs: BMP, BNP.\n3. Follow-up echo in [X] months.\n4. Restrict sodium <2g/day, daily weights.\n5. Return for weight gain >3 lbs in 1 day or >5 lbs in 1 week.',
   });
 
+  saveNoteTemplate({ name: 'Hypertension Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Hypertension follow-up.',
+    hpi: 'Patient presents for hypertension management follow-up. Home BP readings averaging [X/Y mmHg]. Reports [good/poor] medication adherence. [No/reports] headaches, visual changes, chest pain, or palpitations.',
+    ros: 'Constitutional: No fatigue or weight change.\nCV: No chest pain, palpitations, or palpitations.\nNeuro: No headache, visual changes, or focal deficits.\nRenal: No hematuria, foamy urine, or edema.\nEndocrine: No polyuria or polydipsia.',
+    physicalExam: 'General: Well-appearing, no acute distress.\nVitals: See above. Bilateral arm pressures: R [X/Y], L [X/Y].\nFunduscopic: [AV nicking/papilledema/normal].\nNeck: No carotid bruits, JVP normal.\nCV: RRR, no murmurs. PMI non-displaced.\nLungs: CTA bilaterally.\nAbdomen: No renal bruits. No pulsatile mass.\nExtremities: No edema. Pulses 2+ and symmetric.',
+    assessment: '1. Essential hypertension (I10) — [controlled/uncontrolled].\n2. Current regimen: [medications].',
+    plan: '1. [Continue/adjust] antihypertensive regimen.\n2. BP goal <130/80 mmHg.\n3. Lifestyle counseling: low-sodium diet (<2.3g/day), DASH diet, aerobic exercise 150 min/week, limit alcohol, smoking cessation.\n4. Labs: BMP, lipids, UA.\n5. Return in [4–12] weeks to reassess BP control.',
+  });
+
+  saveNoteTemplate({ name: 'New Patient Intake', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'New patient — comprehensive intake evaluation.',
+    hpi: 'New patient presents for comprehensive initial evaluation. Patient is a [age]-year-old [sex] with past medical history significant for [PMH]. Transferred care from [prior provider/location]. Primary concerns today: [list concerns].',
+    ros: 'Constitutional: No fever, chills, or significant unintentional weight changes.\nHEENT: No vision or hearing changes, no headache.\nCV: No chest pain, palpitations, or lower extremity edema.\nPulmonary: No dyspnea, cough, or wheezing.\nGI: No abdominal pain, nausea, vomiting, or bowel habit changes.\nGU: No dysuria, frequency, or hematuria.\nMusculoskeletal: No joint pain or muscle weakness.\nNeuro: No dizziness, syncope, numbness, or tingling.\nPsychiatric: No depression, anxiety, or sleep disturbance.\nSkin: No rashes or lesions.\nEndocrine: No polyuria, polydipsia, or heat/cold intolerance.',
+    physicalExam: 'General: Well-appearing, no acute distress.\nVitals: See above.\nHEENT: Normocephalic, PERRL, EOM intact, TMs clear, pharynx benign.\nNeck: Supple, no LAD, no thyromegaly, no bruits.\nCV: RRR, no murmurs/rubs/gallops. No JVD.\nLungs: CTA bilaterally, no wheezes, rales, or rhonchi.\nAbdomen: Soft, NT/ND, normoactive bowel sounds, no organomegaly.\nExtremities: No clubbing, cyanosis, or edema. Pulses 2+.\nSkin: No significant rashes or lesions.\nNeuro: Alert and oriented x3. CN II–XII intact. Strength 5/5. Reflexes 2+ and symmetric.',
+    assessment: '1. New patient evaluation — history reviewed and documented.\n2. [List active diagnoses].',
+    plan: '1. Establish care — records requested from prior provider.\n2. Order baseline labs: CBC, CMP, fasting lipids, HbA1c, TSH, UA.\n3. Age-appropriate cancer screenings reviewed and ordered as indicated.\n4. Immunizations reviewed; update per schedule.\n5. Medication reconciliation completed.\n6. Patient education provided.\n7. Return in [4–12] weeks or as needed.',
+  });
+
+  saveNoteTemplate({ name: 'COPD Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'COPD follow-up.',
+    hpi: 'Patient presents for COPD management follow-up. Reports [improved/stable/worsening] symptoms. Dyspnea on exertion at [X flights/blocks]. Sputum production: [none/minimal/increased], [color]. Number of exacerbations in past 12 months: [X]. Rescue inhaler use: [X times/week]. Adherence to maintenance inhalers: [good/poor].',
+    ros: 'Pulmonary: [Dyspnea, cough, wheezing, sputum — as applicable]. No hemoptysis.\nCV: No chest pain or palpitations.\nSleep: [No/reports] nocturnal dyspnea or sleep disruption.',
+    physicalExam: 'General: [Well-appearing/mild respiratory distress], speaking in full sentences.\nVitals: See above. SpO2 [X]% on [room air/O2 Xm/LNC].\nLungs: [Diminished breath sounds/diffuse expiratory wheezing/prolonged expiratory phase]. [No/mild] accessory muscle use.\nCV: RRR, no murmurs. No JVD.\nExtremities: No cyanosis. [No/pitting] edema.',
+    assessment: '1. COPD (J44.1) — [GOLD Stage I–IV], [Group A–D].\n2. Last PFTs: FEV1 [X]% predicted, FEV1/FVC [X] on [date].',
+    plan: '1. Continue/optimize [LABA/LAMA/ICS/combo inhaler].\n2. Rescue albuterol PRN — technique reviewed.\n3. Pulmonary rehab: [enrolled/referral placed/not a candidate].\n4. Smoking cessation counseling; [NRT/pharmacotherapy] offered.\n5. Annual influenza and pneumococcal vaccines reviewed.\n6. Supplemental O2 if SpO2 ≤88% at rest or with exertion.\n7. Action plan for exacerbations reviewed.\n8. Return in [3–6] months or sooner if exacerbation.',
+  });
+
+  saveNoteTemplate({ name: 'Asthma Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Asthma follow-up.',
+    hpi: 'Patient presents for asthma management. Symptom frequency: daytime symptoms [X/week], nighttime awakenings [X/month]. Rescue inhaler use: [X puffs/week]. Activity limitation: [present/absent]. ER visits or systemic steroid courses in past year: [X]. Known triggers: [list]. Adherence to controller therapy: [good/poor].',
+    ros: 'Pulmonary: [Wheeze, cough, dyspnea — as applicable]. No hemoptysis.\nENT: [Rhinitis, postnasal drip] — may be contributing.\nSkin: [Eczema or urticaria].',
+    physicalExam: 'General: No acute respiratory distress, speaking in full sentences.\nVitals: See above. Peak flow: [X L/min] ([X]% predicted).\nLungs: [CTA/expiratory wheeze bilaterally]. No accessory muscle use.\nSkin: [No rash/eczema noted].',
+    assessment: '1. Asthma (J45.X) — [intermittent/mild persistent/moderate persistent/severe persistent].\n2. Asthma control: [well-controlled/not well-controlled/very poorly controlled].',
+    plan: '1. [Step up/maintain/step down] therapy per GINA guidelines.\n2. Inhaler technique reviewed and corrected as needed.\n3. Asthma action plan updated and provided.\n4. Identify and minimize triggers.\n5. Spirometry: [within past 12 months/order now].\n6. Allergy evaluation/immunotherapy: [considered/deferred].\n7. Return in [1–6] months.',
+  });
+
+  saveNoteTemplate({ name: 'Depression / Anxiety Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Mental health follow-up.',
+    hpi: 'Patient presents for follow-up of [depression/anxiety/both]. Current PHQ-9 score: [X/27] ([severity]). Current GAD-7 score: [X/21]. Reports [improvement/stability/worsening] in mood, energy, and sleep since last visit. Medication adherence: [good/poor]. Therapy participation: [individual/group/none].',
+    ros: 'Psychiatric: [Depressed mood, anhedonia, sleep disturbance, appetite changes, fatigue, concentration difficulty — as applicable]. No psychosis, mania, or suicidal ideation.\nSleep: [Insomnia/hypersomnia, describe].\nConstitutional: No weight change.',
+    physicalExam: 'General: Alert, cooperative, mood appears [euthymic/dysthymic/anxious].\nAffect: [congruent/flat/restricted/labile].\nSpeech: Normal rate, rhythm, and volume.\nThought process: Linear and goal-directed.\nThought content: No SI/HI/AVH. No delusions.\nCognition: Alert and oriented x3. Memory grossly intact.',
+    assessment: '1. [Major Depressive Disorder (F32.X)/Generalized Anxiety Disorder (F41.1)] — [in remission/mild/moderate/severe].\n2. PHQ-9: [X], GAD-7: [X].',
+    plan: '1. Continue/adjust [antidepressant/anxiolytic] — [dose/timing change].\n2. Safety plan reviewed. Patient denies SI/HI.\n3. Referral to therapy: [in place/placed today/declined].\n4. Sleep hygiene counseling provided.\n5. Limit alcohol and caffeine.\n6. Return in [4–8] weeks. Contact office or 988 Lifeline if crisis.',
+  });
+
+  saveNoteTemplate({ name: 'Upper Respiratory Infection', visitType: 'Urgent Care', isBuiltIn: true,
+    chiefComplaint: 'Upper respiratory infection symptoms.',
+    hpi: 'Patient presents with [X]-day history of upper respiratory symptoms including [sore throat/rhinorrhea/nasal congestion/cough/malaise/low-grade fever]. Denies high fever, shortness of breath, rash, ear pain, or neck stiffness. No known sick contacts. No recent travel.',
+    ros: 'Constitutional: [Low-grade fever, malaise, fatigue].\nHEENT: [Sore throat, rhinorrhea, nasal congestion, ear pain].\nPulmonary: [Cough — productive/non-productive]. No dyspnea or hemoptysis.\nGI: No nausea, vomiting, or diarrhea.',
+    physicalExam: 'General: Alert, mild distress.\nVitals: See above. Temp [X]°F.\nHEENT: [Mild pharyngeal erythema/tonsillar exudate/no exudate]. TMs: [clear bilaterally/dull]. Nares: [erythematous, clear/mucopurulent discharge]. No sinus tenderness.\nNeck: Supple, [no/mild anterior cervical] LAD.\nLungs: CTA bilaterally, no wheeze.',
+    assessment: '1. Viral upper respiratory infection (J06.9) — most likely etiology.\n2. [Strep pharyngitis ruled out by rapid test — negative/Strep rapid test positive].',
+    plan: '1. Supportive care: rest, hydration, saline nasal rinse.\n2. Symptomatic relief: [acetaminophen/ibuprofen, decongestant, antihistamine, cough suppressant] as appropriate.\n3. [Antibiotics not indicated for viral URI / Amoxicillin prescribed for confirmed strep].\n4. Return precautions: ER for dyspnea, worsening fever >5 days, neck stiffness, or rash.\n5. Follow-up with PCP if no improvement in [5–7] days.',
+  });
+
+  saveNoteTemplate({ name: 'Urinary Tract Infection', visitType: 'Urgent Care', isBuiltIn: true,
+    chiefComplaint: 'Urinary symptoms.',
+    hpi: 'Patient presents with [X]-day history of [dysuria/urinary frequency/urgency/hematuria/suprapubic pain]. [No/reports] fever, flank pain, nausea, or vomiting. Last menstrual period: [date/N/A]. [Not/possibly] pregnant. No indwelling catheter. No recent urologic procedures.',
+    ros: 'GU: [Dysuria, frequency, urgency, hematuria, suprapubic discomfort]. No vaginal/penile discharge.\nConstitutional: [No/low-grade] fever or chills.\nGI: No nausea, vomiting, or diarrhea.',
+    physicalExam: 'General: Alert, in mild discomfort.\nVitals: See above. Afebrile/Temp [X]°F.\nAbdomen: Soft, [suprapubic tenderness/no tenderness]. No CVA tenderness.\nGU: [External genitalia — normal/discharge noted].',
+    assessment: '1. Uncomplicated urinary tract infection (N39.0) — [cystitis].\n2. UA: [WBCs, bacteria, nitrites, leukocyte esterase results].\n[3. Urine culture sent.]',
+    plan: '1. [Nitrofurantoin 100mg ER BID x5d / Trimethoprim-sulfamethoxazole DS BID x3d / Fosfomycin 3g x1 dose] — based on local resistance patterns and allergy history.\n2. Increase fluid intake.\n3. Phenazopyridine PRN dysuria relief x2 days (urine will turn orange).\n4. Culture results: follow up in [2–3] days; adjust antibiotic if needed.\n5. Return for fever, flank pain, or worsening symptoms (concern for pyelonephritis).',
+  });
+
+  saveNoteTemplate({ name: 'Low Back Pain', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Low back pain.',
+    hpi: 'Patient presents with [acute/subacute/chronic] low back pain x [duration]. Onset: [gradual/sudden after lifting/twisting/no inciting event]. Pain is [X/10], described as [aching/sharp/burning/radiating]. Radiation: [none/into buttock/down [R/L] leg to knee/below knee]. Associated symptoms: [paresthesias/weakness/bladder/bowel changes]. Prior episodes: [yes/no]. Prior treatment: [PT/chiropractic/injections]. No red flag symptoms.',
+    ros: 'Musculoskeletal: Pain as described. No joint swelling.\nNeuro: [No/reports] lower extremity weakness, numbness, or tingling. [No/reports] saddle anesthesia.\nConstitutional: No fever, chills, or unintentional weight loss.\nGU: No bladder or bowel dysfunction.',
+    physicalExam: 'General: Ambulatory, mildly antalgic gait.\nSpine: [Paraspinal muscle tenderness at L[X]. No midline bony tenderness. Limited lumbar flexion/extension due to pain].\nNeurological: Lower extremity strength 5/5. Sensation intact. DTRs 2+ and symmetric. Straight leg raise: [negative/positive at [X]° reproducing radicular pain].\nGait: [Normal/antalgic].',
+    assessment: '1. [Acute/Chronic] low back pain [without/with] radiculopathy (M54.5[X]).\n2. [No red flag features. Imaging not indicated at this time.]',
+    plan: '1. NSAIDs: [ibuprofen 400–600mg TID with food] or [naproxen 500mg BID] x [5–10] days.\n2. Topical diclofenac or lidocaine patch PRN.\n3. Muscle relaxant: [cyclobenzaprine 5mg TID PRN] x [5–7] days — counsel re: drowsiness.\n4. Heat therapy, activity as tolerated. Avoid prolonged bed rest.\n5. Physical therapy referral.\n6. Imaging (MRI lumbar): [not indicated/ordered — [indication]].\n7. Return or ER if bladder/bowel dysfunction, saddle anesthesia, or progressive weakness.',
+  });
+
+  saveNoteTemplate({ name: 'Chest Pain Evaluation', visitType: 'Urgent Care', isBuiltIn: true,
+    chiefComplaint: 'Chest pain evaluation.',
+    hpi: 'Patient presents with [acute/subacute] chest pain x [duration]. Character: [sharp/pressure/tightness/burning/pleuritic]. Location: [substernal/left-sided/right-sided/diffuse]. Radiation: [none/to left arm/jaw/back/shoulder]. Onset: [exertional/at rest/positional/after meals]. Severity: [X/10]. Associated symptoms: [dyspnea/diaphoresis/nausea/palpitations/fever/cough]. Alleviating factors: [rest/antacids/position/nothing]. TIMI Risk Score: [X/7].',
+    ros: 'CV: [Chest pain as above. No prior MI or stents. No palpitations.]\nPulmonary: [No/reports] dyspnea, cough, or hemoptysis.\nGI: [No/reports] heartburn, regurgitation, or dysphagia.\nMusculoskeletal: [No/reports] chest wall tenderness or recent trauma.\nConstitutional: [No/reports] fever or recent immobility (DVT/PE risk).',
+    physicalExam: 'General: [Appears comfortable/in discomfort]. Diaphoretic: [no/yes].\nVitals: See above. Bilateral arm BP: R [X/Y], L [X/Y].\nCV: RRR, no murmurs/rubs/gallops. No JVD.\nLungs: CTA bilaterally. No friction rub.\nAbdomen: Soft, NT/ND. No epigastric tenderness.\nChest wall: [No/tenderness with palpation reproducing pain].\nExtremities: No DVT signs. No edema.',
+    assessment: '1. Chest pain, [likely musculoskeletal/GI/cardiac etiology] — workup in progress.\n2. ACS risk: [low/intermediate/high].\n3. EKG: [NSR without ischemic changes/LBBB/ST changes].\n4. Initial troponin: [pending/negative/elevated at X].',
+    plan: '1. [Discharge with follow-up/Transfer to ED for further evaluation] based on risk stratification.\n2. EKG performed and reviewed.\n3. Serial troponins: [ordered/pending].\n4. Chest X-ray: [normal/results pending].\n5. [Aspirin 325mg given if ACS suspected].\n6. Cardiology consultation: [placed/not indicated].\n7. Strict return precautions: ER immediately for recurrent or worsening chest pain, dyspnea, or syncope.',
+  });
+
+  saveNoteTemplate({ name: 'Headache / Migraine', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Headache evaluation.',
+    hpi: 'Patient presents with [recurring/new onset] headaches. Frequency: [X/month]. Duration: [X hours/days]. Character: [throbbing/pressure/stabbing]. Location: [bilateral/unilateral — R/L frontotemporal/occipital]. Severity: [X/10] at peak. Associated symptoms: [nausea/vomiting/photophobia/phonophobia/aura — describe]. Aggravating factors: [stress/menses/sleep changes/foods/weather]. Relieving factors: [OTC analgesics/rest/dark/quiet room]. Prior treatment: [medications tried, response].',
+    ros: 'Neuro: [Headache as described]. No focal weakness, numbness, or vision changes.\nHEENT: No eye pain or jaw claudication.\nConstitutional: No fever, weight loss, or neck stiffness.\nPsychiatric: [Stress, anxiety, depression — contributing factors].',
+    physicalExam: 'General: Alert, in [mild/no] distress.\nVitals: See above.\nHEENT: No sinus tenderness. No temporal artery tenderness.\nNeck: Supple, no meningismus.\nFunduscopic: [Discs sharp, no papilledema].\nNeuro: CN II–XII intact. Motor 5/5. Sensory intact. Coordination normal. Gait normal.',
+    assessment: '1. [Migraine without aura (G43.909) / Tension-type headache (G44.209) / Cluster headache].\n2. Analgesic overuse: [present — counsel on medication overuse headache / absent].',
+    plan: '1. Acute treatment: [sumatriptan 50–100mg at onset; ibuprofen 600mg; ketorolac 15–30mg IM if severe].\n2. Preventive therapy: [topiramate/amitriptyline/propranolol/valproate — if ≥4 migraines/month].\n3. Headache diary — record frequency, triggers, severity.\n4. Lifestyle: regular sleep schedule, hydration, limit caffeine and alcohol, manage stress.\n5. Limit analgesics to ≤2 days/week to prevent medication overuse headache.\n6. Neurology referral: [not needed/placed for refractory migraines].\n7. MRI brain: [not indicated/ordered — indication: [x]].\n8. Return in [4–8] weeks to reassess frequency and preventive response.',
+  });
+
+  saveNoteTemplate({ name: 'Hypothyroidism Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Hypothyroidism follow-up.',
+    hpi: 'Patient presents for hypothyroidism management. Last TSH: [X] on [date]. Reports [good/poor] medication adherence. Symptoms: [fatigue/weight gain/cold intolerance/constipation/dry skin/hair loss/depression — present/absent]. Taking levothyroxine [dose] [X] minutes before breakfast.',
+    ros: 'Constitutional: [Fatigue, weight gain, cold intolerance — as applicable].\nGI: [Constipation].\nDerm: [Dry skin, hair loss].\nPsychiatric: [Mood changes, cognitive slowing].\nCV: No palpitations, chest pain.',
+    physicalExam: 'General: Well-appearing, no acute distress.\nVitals: See above.\nNeck: Thyroid [not palpable/enlarged — describe]. No nodules.\nSkin: [Dry/normal].\nHair: [Normal/brittle/thinning].\nReflexes: [Normal/delayed relaxation phase].\nEdema: [None/periorbital/pretibial myxedema].',
+    assessment: '1. Hypothyroidism (E03.9) — [on appropriate dose/undertreated/overtreated].\n2. Most recent TSH: [X] (goal 0.5–4.0 mIU/L; [in range/below/above]).',
+    plan: '1. [Continue/adjust levothyroxine] — [dose].\n2. Take on empty stomach 30–60 min before breakfast; avoid calcium, iron within 4 hours.\n3. Repeat TSH in [6–8 weeks after dose change / 6–12 months if stable].\n4. Annual TSH monitoring when stable.\n5. Patient education: symptoms of over/undertreatment reviewed.\n6. Return in [3–6] months.',
+  });
+
+  saveNoteTemplate({ name: 'Hyperlipidemia Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Hyperlipidemia follow-up.',
+    hpi: 'Patient presents for lipid management follow-up. Most recent fasting lipid panel: TC [X], LDL [X], HDL [X], TG [X] on [date]. On statin therapy: [medication/dose] since [date]. Adherence: [good/poor]. Reports [no/muscle aches, CK checked]. ASCVD 10-year risk: [X]%.',
+    ros: 'Musculoskeletal: [No/muscle pain, weakness, or tenderness].\nConstitutional: No fatigue.\nGI: No GI intolerance with current statin.',
+    physicalExam: 'General: Well-appearing.\nVitals: See above.\nCV: RRR, no murmurs.\nXanthomas/xanthelasma: [absent/present — describe].\nExtremities: Pulses 2+ bilaterally. No peripheral arterial findings.',
+    assessment: '1. Hyperlipidemia (E78.5) — LDL [at goal/above goal].\n2. ASCVD risk category: [low/<5% / intermediate/5–20% / high/>20%].\n3. LDL goal: [<100 / <70 / <55 mg/dL] based on risk.',
+    plan: '1. [Continue/increase/change statin] to [high/moderate/low] intensity.\n2. Lifestyle: Mediterranean diet, limit saturated fat and trans fat, increase soluble fiber, exercise 150 min/week.\n3. Add ezetimibe if LDL not at goal on maximum tolerated statin.\n4. PCSK9 inhibitor: [considered/ordered for very high risk patients].\n5. Repeat fasting lipid panel in [6–12] weeks after medication change; otherwise annually.\n6. AST/ALT and CK: [not routinely needed/check if symptomatic].',
+  });
+
+  saveNoteTemplate({ name: 'Medication Refill', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Medication refill.',
+    hpi: 'Patient presents for medication refill visit for [list medications]. Reports stable symptoms and [good/adequate/poor] control on current regimen. No new adverse effects. Adherence: [good/occasionally missed doses]. Last office visit: [date]. Labs reviewed: [results].',
+    ros: 'System-specific review based on conditions being treated — no significant new complaints.',
+    physicalExam: 'Vitals: See above.\nGeneral: Alert, no acute distress.\n[Targeted examination based on condition — BP check, heart and lung auscultation, etc.]',
+    assessment: '1. [Condition 1] — stable on current regimen.\n2. [Condition 2] — stable.',
+    plan: '1. Refill [medication/dose/quantity/#30–90 days supply].\n2. [Address any lab or monitoring requirements before next refill].\n3. Prior authorization submitted: [yes/no/pending].\n4. Patient instructed to continue current doses and contact office for any side effects.\n5. Follow-up in [3–6] months or as needed.',
+  });
+
+  saveNoteTemplate({ name: 'Telehealth Visit', visitType: 'Telehealth', isBuiltIn: true,
+    chiefComplaint: 'Telehealth visit — [chief complaint].',
+    hpi: 'Patient seen via [video/telephone] telehealth visit for [chief complaint]. Patient [alone/with caregiver] at [home/work/other location]. Verbal consent for telehealth visit obtained. [Describe history of present illness as applicable].',
+    ros: '[System-specific review based on chief complaint].\nAll reviewed systems otherwise negative.',
+    physicalExam: 'Visit conducted via [video — limited physical exam / telephone — no physical exam possible].\nPatient appears [well/in mild distress] on video.\n[Limited observations: general appearance, speech, movement].\nVitals: Patient-reported — BP [X/Y], HR [X], SpO2 [X]%, Temp [X]°F [by home equipment].',
+    assessment: '1. [Diagnosis/diagnoses].\n2. Telehealth visit deemed [appropriate/adequate] for this presentation.',
+    plan: '1. [Treatment plan].\n2. Prescriptions sent electronically to [pharmacy].\n3. Orders placed: [labs/imaging].\n4. Patient instructed to seek in-person care if symptoms worsen or cannot be managed remotely.\n5. Follow-up: [in-person in X weeks / repeat telehealth in X weeks].',
+  });
+
+  saveNoteTemplate({ name: 'Inpatient H&P', visitType: 'Inpatient', isBuiltIn: true,
+    chiefComplaint: 'Inpatient admission — [reason for admission].',
+    hpi: 'Patient is a [age]-year-old [sex] with past medical history significant for [PMH] who presents with [chief complaint] x [duration]. [Detailed HPI including onset, character, severity, associated symptoms, aggravating/relieving factors, pertinent positives and negatives, and events leading to admission]. Patient [was/was not] in usual state of health prior to this illness.',
+    ros: 'Constitutional: [Fever, chills, diaphoresis, weight loss].\nCV: [Chest pain, palpitations, edema].\nPulmonary: [Dyspnea, cough, hemoptysis].\nGI: [Nausea, vomiting, diarrhea, abdominal pain, melena, hematochezia].\nGU: [Dysuria, hematuria, decreased urine output].\nMusculoskeletal: [Arthralgias, myalgias].\nNeuro: [Headache, confusion, focal weakness, numbness].\nPsychiatric: [Orientation, mood, cooperation].',
+    physicalExam: 'General: [Appearance, level of distress, alert and oriented x3].\nVitals: T [X]°F, HR [X], BP [X/Y], RR [X], SpO2 [X]% on [RA/O2 amount].\nHEENT: [Findings].\nNeck: [Supple, JVD, LAD].\nCV: [RRR/irregular, murmurs, peripheral pulses].\nLungs: [CTA/findings].\nAbdomen: [Soft/tender/distended, bowel sounds, organomegaly].\nExtremities: [Edema, clubbing, cyanosis, skin changes].\nSkin: [Rash, jaundice, turgor].\nNeuro: [Mental status, CN, motor, sensation, reflexes, gait].',
+    assessment: '1. [Primary admitting diagnosis].\n2. [Secondary diagnoses].\n3. [Active problem list].',
+    plan: '1. [Workup: labs, imaging, cultures, EKG, other diagnostics].\n2. [IV access, monitoring, telemetry if indicated].\n3. [Medications: IV fluids, antibiotics, analgesics, home medications].\n4. [Consultations ordered: specify].\n5. [Diet: NPO/clear/regular/specific restrictions].\n6. [Activity: bedrest/ambulate TID/fall precautions].\n7. [DVT prophylaxis: LMWH/SQH/SCDs/hold — reasoning].\n8. [Disposition plan: goal for discharge — [criteria]].',
+  });
+
+  saveNoteTemplate({ name: 'Inpatient Progress Note', visitType: 'Inpatient', isBuiltIn: true,
+    chiefComplaint: 'Inpatient daily progress note — hospital day [X].',
+    hpi: 'Patient is a [age]-year-old [sex] admitted [date] for [admission diagnosis], now on hospital day [X]. Subjective: [Patient reports/overnight events/nursing notes reviewed — patient resting comfortably/had fever/desaturation/pain episode]. Review of intake/output: [X mL in, X mL out].',
+    ros: '[Targeted review of systems relevant to active problems — e.g., Pulmonary: dyspnea trending better/worse. GI: tolerating diet/NPO. GU: urine output adequate/oliguria].',
+    physicalExam: 'Vitals: T [X]°F (Tmax [X]°F), HR [X], BP [X/Y], RR [X], SpO2 [X]% on [RA/O2].\nGeneral: Alert, [oriented x3/confused], appears [comfortable/ill].\nCV: [RRR/irregular]. No new murmurs.\nLungs: [CTA/bibasilar crackles/wheeze].\nAbdomen: [Soft/tender].\nExtremities: [No edema/edema unchanged/improved].\nLines/Drains: [PIV/PICC/Foley/surgical drain — site appearance].',
+    assessment: '1. [Primary diagnosis] — [improving/stable/worsening].\n2. [Active problems — update each].',
+    plan: '1. [Continue/adjust medications].\n2. [Labs: BMP, CBC, cultures — results reviewed, pending].\n3. [Imaging reviewed: findings].\n4. [Consultations: updated recs from [specialty]].\n5. [Anticipated discharge: [date/criteria — tolerating PO/afebrile 24h/ambulating/arrangements]].',
+  });
+
+  saveNoteTemplate({ name: 'Discharge Summary', visitType: 'Inpatient', isBuiltIn: true,
+    chiefComplaint: 'Inpatient discharge summary.',
+    hpi: 'Patient is a [age]-year-old [sex] admitted on [date] and discharged on [date] (length of stay: [X] days) for [primary diagnosis].\n\nAdmitting Diagnosis: [diagnosis].\nDischarge Diagnosis: [diagnosis].\n\nHospital Course: [Concise narrative of key events, treatments, procedures, and response to therapy during admission].',
+    ros: 'Discharge Condition: [Stable/improved/fair]. Mental status: [Alert and oriented]. Ambulatory status: [Ambulating independently/with assistance/non-ambulatory].',
+    physicalExam: 'Discharge Vitals: T [X]°F, HR [X], BP [X/Y], RR [X], SpO2 [X]% on [RA/O2 at home].\nWeight at discharge: [X kg/lbs] (admission weight: [X]).\nExam: [Brief relevant findings at discharge].',
+    assessment: '1. [Primary discharge diagnosis].\n2. [Secondary diagnoses managed during admission].\n3. [Pending results at discharge — follow up with PCP].',
+    plan: 'Discharge Medications: [Reconciled medication list — highlight changes: NEW, CHANGED, DISCONTINUED].\n\nDischarge Instructions:\n1. Diet: [specific diet restrictions].\n2. Activity: [restrictions/return to normal activity].\n3. Wound care: [specific instructions if applicable].\n4. Signs to return to ER: [fever >101°F, chest pain, dyspnea, wound changes, etc.].\n\nFollow-up Appointments:\n1. PCP: in [5–7] days — Dr. [name], [phone].\n2. [Specialist]: in [X] weeks — Dr. [name].\n\nPending Labs/Studies: [list — results to be communicated by PCP].\n\nPatient/caregiver verbalized understanding of instructions. Discharge instructions provided in writing.',
+  });
+
+  saveNoteTemplate({ name: 'Consult Note', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Consultation for [specialty] regarding [reason for referral].',
+    hpi: 'Consultation requested by Dr. [referring provider] for evaluation of [reason for consult]. Patient is a [age]-year-old [sex] with PMH significant for [PMH]. [Detailed relevant HPI including onset, prior evaluations, treatments tried, and current status].\n\nReason for Referral: [Specific question(s) to be answered by consultant].',
+    ros: '[Focused review of systems pertinent to the consult question and specialty].\nAll other reviewed systems negative.',
+    physicalExam: 'General: [Appearance, level of distress].\nVitals: See above.\n[Detailed specialty-specific physical examination relevant to reason for consult].',
+    assessment: 'I have evaluated this [age]-year-old [sex] at the request of Dr. [referring provider] for [reason].\n\n1. [Primary finding/diagnosis].\n2. [Additional relevant findings].\n3. [Differential diagnosis if applicable].',
+    plan: '1. [Recommendations — numbered, clear, actionable].\n2. [Diagnostic workup recommended].\n3. [Treatment recommendations].\n4. [Medication changes].\n5. [Further specialty follow-up: will follow/return PRN/follow-up in X weeks].\n\nThank you for this interesting consultation. We will continue to follow as needed.',
+  });
+
+  saveNoteTemplate({ name: 'Chronic Kidney Disease Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'CKD follow-up.',
+    hpi: 'Patient presents for CKD management follow-up. Most recent creatinine: [X] mg/dL, eGFR: [X] mL/min/1.73m² ([stage]) on [date]. Trend: [stable/declining]. Etiology: [DM/HTN/glomerulonephritis/unknown]. Reports [no/edema/dyspnea/fatigue/decreased urine output]. Adherence to renal diet and medications: [good/poor].',
+    ros: 'GU: [Decreased urine output, foamy urine, hematuria — as applicable]. No dysuria.\nCV: [Dyspnea, edema, chest pain].\nConstitutional: [Fatigue, poor appetite, nausea — uremic symptoms].\nNeuro: [Confusion, restless legs].',
+    physicalExam: 'General: Alert, no acute distress.\nVitals: See above. BP [controlled/elevated at X/Y].\nCV: RRR, no rub.\nLungs: [CTA/crackles].\nAbdomen: No bruit. No peritoneal signs.\nExtremities: [No/pitting] edema [grade X, bilateral LE].\nSkin: [Normal/pallor/uremic frost — rare late finding].',
+    assessment: '1. CKD Stage [1–5] (N18.X), eGFR [X] — [stable/progressive].\n2. Etiology: [DM nephropathy/HTN nephrosclerosis/other].\n3. Complications: [Anemia/hyperkalemia/metabolic acidosis/hyperphosphatemia — as present].',
+    plan: '1. BP target <130/80: [optimize ACE-I or ARB — first-line nephroprotection].\n2. Glycemic control if diabetic: HbA1c goal <7–8%.\n3. Protein restriction: 0.6–0.8g/kg/day.\n4. Low-potassium, low-phosphorus diet counseling.\n5. Avoid NSAIDs and nephrotoxic agents.\n6. Labs in [3] months: BMP, CBC, urine microalbumin/creatinine.\n7. Nephrology referral: [placed/in place — eGFR <30 threshold].\n8. Vaccinations: Hepatitis B series if not immune (for future HD access).\n9. Anemia management: [ferritin/iron, ESA therapy if applicable].',
+  });
+
+  saveNoteTemplate({ name: 'Obesity / Weight Management', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Weight management visit.',
+    hpi: 'Patient presents for obesity management. Current weight: [X lbs/kg], BMI: [X]. Baseline weight: [X] on [date]. Dietary history reviewed: [describe typical diet]. Physical activity: [X minutes/week]. Prior weight loss attempts: [list]. Weight loss goals: [X lbs over X months]. Comorbidities related to weight: [HTN/DM2/GERD/OSA/osteoarthritis/NASH].',
+    ros: 'Constitutional: Reports [fatigue, low energy].\nPulmonary: [Dyspnea on exertion, snoring/witnessed apnea].\nGI: [Reflux, constipation].\nMusculoskeletal: [Joint pain limiting exercise].\nPsychiatric: [Emotional eating, depression, anxiety contributing to weight].',
+    physicalExam: 'Vitals: See above. Height [X], Weight [X], BMI [X].\nGeneral: BMI Class [I/II/III]. [Cushingoid features absent/present].\nNeck: [No acanthosis nigricans / acanthosis nigricans noted].\nAbdomen: Waist circumference [X cm].\nSkin: [Striae, intertrigo in skin folds].',
+    assessment: '1. Obesity, Class [I/II/III] (E66.01) — BMI [X].\n2. [Associated comorbidities].',
+    plan: '1. Goal: 5–10% body weight reduction over 6 months (realistic, evidence-based).\n2. Dietary plan: [500–750 kcal/day deficit, Mediterranean/low-carb/structured program].\n3. Physical activity: increase to 150–300 min/week moderate intensity.\n4. Behavioral support: [referral to registered dietitian, structured weight management program].\n5. Pharmacotherapy: [consider if BMI ≥30 or ≥27 with comorbidity — options: orlistat, phentermine, naltrexone/bupropion, semaglutide, tirzepatide].\n6. Bariatric surgery referral: [considered if BMI ≥40 or ≥35 with comorbidity, after 6-month medical program].\n7. OSA screening: [STOP-BANG score — sleep study ordered if indicated].\n8. Follow-up in [4–8] weeks to reassess and provide ongoing support.',
+  });
+
+  saveNoteTemplate({ name: 'Rheumatology Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Rheumatology follow-up for [RA/lupus/gout/other].',
+    hpi: 'Patient presents for follow-up of [condition]. Disease activity: [remission/low/moderate/high]. Joint symptoms: [morning stiffness x [X] minutes, swollen/tender joints — specify]. Functional status: [mRS/HAQ score]. Recent flares: [none/X in past 3 months]. Adherence to DMARDs/biologics: [good/poor]. Side effects: [none/[describe]].',
+    ros: 'Musculoskeletal: [Joint pain, swelling, stiffness, reduced ROM — specify joints].\nConstitutional: [Fatigue, fever, weight loss].\nDerm: [Rash — malar/photosensitive/nodules].\nRenal: [Hematuria, foamy urine — lupus nephritis monitoring].\nPulmonary: [Pleuritis, dyspnea — serositis].\nOphthalmologic: [Eye redness, pain, photophobia — uveitis/dry eye].',
+    physicalExam: 'General: Alert, no acute distress.\nJoints: [Tender joints: [X]. Swollen joints: [X]. Active synovitis: [present/absent].\nSkin: [Rash/nodules/tophi description or absent].\nEyes: [Red/injected or normal].\nLungs: [CTA or crackles].',
+    assessment: '1. [RA (M05.X)/SLE (M32.X)/Gout (M10.X)/Other] — disease activity [low/moderate/high/remission].\n2. DAS28/SLEDAI/other score: [X].',
+    plan: '1. [Continue/adjust DMARD/biologic regimen].\n2. Labs for drug monitoring: CBC, CMP, ESR, CRP, [anti-dsDNA, complement if SLE].\n3. Uric acid target <6 mg/dL if gout — [allopurinol/febuxostat dose].\n4. Hydroxychloroquine: annual ophthalmology exam ordered.\n5. Vaccinations: live vaccines avoided while on immunosuppression; pneumococcal and annual flu up to date.\n6. Osteoporosis prevention if on chronic steroids: calcium, vitamin D, bisphosphonate.\n7. Return in [3] months.',
+  });
+
+  saveNoteTemplate({ name: 'Neurology Follow-up', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Neurology follow-up for [condition].',
+    hpi: 'Patient presents for follow-up of [Parkinson disease/MS/epilepsy/neuropathy/other]. [Condition-specific history: seizure frequency, PD motor scores, MS relapse history, neuropathy symptoms]. Current medications: [list]. Side effects: [none/[describe]]. Functional status: [working/ADLs independent/requiring assistance].',
+    ros: 'Neuro: [Tremor, gait difficulty, weakness, numbness, tingling, vision changes, speech difficulty, cognitive changes, seizures].\nConstitutional: No fever or weight loss.\nPsychiatric: [Mood, cognition, sleep].',
+    physicalExam: 'Mental Status: Alert and oriented x3. Memory grossly intact. Language fluent.\nCranial Nerves: CN II–XII intact.\nMotor: Strength 5/5 all extremities. [Tremor/rigidity/bradykinesia — describe if present].\nSensory: [Intact / Decreased — distribution].\nReflexes: [2+ symmetric / Hyperreflexia / Areflexia].\nCoordination: Finger-nose-finger [intact/dysmetric]. Heel-shin [intact/ataxic].\nGait: [Normal/antalgic/shuffling/broad-based/unsteady].',
+    assessment: '1. [Neurological condition] — [stable/improving/progressing].\n2. [Most recent imaging/lab result].',
+    plan: '1. [Continue/adjust medications].\n2. [MRI/EEG/nerve conduction study — if indicated].\n3. Physical therapy/occupational therapy/speech therapy: [referral placed/ongoing].\n4. [Condition-specific monitoring — seizure diary, DBS programming, MS infusion schedule].\n5. Return in [3–6] months.',
+  });
+
+  saveNoteTemplate({ name: 'Skin Lesion / Dermatology', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Skin lesion evaluation.',
+    hpi: 'Patient presents for evaluation of [X] skin lesion(s). Location: [describe]. Duration: [X months/years]. Changes: [growing/bleeding/color change/itching/painful]. History of prior skin cancers: [none/BCC/SCC/melanoma]. Sun exposure history: [moderate/heavy — tanning beds: yes/no]. Family history of melanoma: [yes/no].',
+    ros: 'Skin: [Lesion as described. No other new lesions reported].\nConstitutional: No fever, night sweats, or weight loss (lymphoma screen).\nLymph nodes: No noted swelling.',
+    physicalExam: 'Skin — Primary Lesion:\nType: [macule/papule/plaque/nodule/vesicle/pustule/ulcer].\nSize: [X × Y mm].\nShape: [round/oval/irregular].\nBorder: [well-defined/ill-defined/irregular].\nColor: [tan/brown/pink/red/variegated — specify].\nSurface: [smooth/scaly/crusted/ulcerated].\nLocation: [anatomic site].\n\nDermatoscopy: [pearly/pigmented network/vascular pattern/other].\nRegional lymph nodes: [No palpable LAD].',
+    assessment: '1. [Benign seborrheic keratosis / Actinic keratosis / Basal cell carcinoma / Squamous cell carcinoma / Melanoma / Dysplastic nevus / Other] — clinical impression.\n2. [Additional lesions — as applicable].',
+    plan: '1. [No intervention/shave biopsy/punch biopsy/excision] — [lesion description].\n2. Pathology sent to [lab]. Results expected in [X–X] business days.\n3. [Cryotherapy/topical 5-FU/imiquimod] for [actinic keratoses].\n4. Sun protection counseling: SPF 30+ broad-spectrum daily, UV-protective clothing, avoid tanning beds.\n5. Full-body skin check recommended [annually/every 6 months for high-risk].\n6. Return to discuss biopsy results.',
+  });
+
+  saveNoteTemplate({ name: 'Osteoporosis Management', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Osteoporosis management.',
+    hpi: 'Patient presents for osteoporosis management. Most recent DEXA: T-score [spine: X, hip: X, femoral neck: X] on [date]. FRAX 10-year fracture risk: major osteoporotic [X]%, hip [X]%. [No/prior fracture history — describe]. On bisphosphonate/other therapy x [X] years. Calcium [X mg/day, dietary + supplement] and vitamin D [X IU/day]. Fall risk: [low/moderate/high].',
+    ros: 'Musculoskeletal: [Back pain, height loss, kyphosis].\nConstitutional: No fever or weight loss.\nGI: [GI tolerance of bisphosphonate].\nOral: [Dental hygiene, recent dental procedures — osteonecrosis of jaw risk].',
+    physicalExam: 'Vitals: Weight [X kg/lbs].\nPosture: [Kyphosis noted/absent].\nHeight: [X cm] (prior: [X] — [no change/X cm loss]).\nMobility: [Gets up from chair without arm use: yes/no]. Gait [steady/unsteady].',
+    assessment: '1. [Osteoporosis (M81.0) / Osteopenia (Z87.39)] — T-score [X].\n2. High fracture risk based on FRAX.\n3. [Prior fragility fracture: yes/no].',
+    plan: '1. Calcium: 1000–1200 mg/day total (dietary preferred + supplement if needed).\n2. Vitamin D: 800–2000 IU/day; recheck 25-OH vitamin D in 3 months if deficient.\n3. [Continue/initiate bisphosphonate: alendronate 70mg weekly / risedronate 35mg weekly].\n4. Bisphosphonate holiday: [consider after 5 years oral / 3 years IV if low risk].\n5. [Denosumab/teriparatide/romosozumab — for severe or refractory cases].\n6. Fall prevention: balance exercises, home safety evaluation, review medications causing orthostasis.\n7. Repeat DEXA in [2] years.\n8. Dental exam before starting/continuing denosumab.',
+  });
+
+  saveNoteTemplate({ name: 'Substance Use / Alcohol Disorder', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Substance use disorder follow-up.',
+    hpi: 'Patient presents for follow-up of [alcohol use disorder/opioid use disorder/other]. Sobriety/abstinence: [X days/months/years]. AUDIT-C score: [X/12] or DAST-10 score: [X/10]. Last use: [date/never since treatment]. Currently on [MAT: buprenorphine/naltrexone/acamprosate/methadone]. Therapy/AA/NA participation: [active/lapsed]. Triggers and stressors: [social/occupational/family].',
+    ros: 'Psychiatric: [Cravings, mood, anxiety, sleep — as applicable]. No active SI/HI.\nGI: [Nausea, GI discomfort].\nConstitutional: [Fatigue, appetite changes].',
+    physicalExam: 'General: Alert and cooperative. Appears [well/withdrawn/diaphoretic].\nVitals: See above.\nSkin: [No track marks/track marks noted at [site]].\nAbdomen: [Liver size — hepatomegaly if applicable].\nNeuro: [No tremor/asterixis noted].',
+    assessment: '1. [Alcohol Use Disorder (F10.XX) / Opioid Use Disorder (F11.XX)] — [in remission/active].\n2. MAT adherence: [good/poor].',
+    plan: '1. Continue [buprenorphine/naltrexone/acamprosate] — prescription provided.\n2. UDS ordered: [results reviewed — negative/positive for [substance]].\n3. Counseling reinforced: [individual/group therapy, AA/NA].\n4. Naloxone kit: prescribed/patient has active kit — rescue technique reviewed.\n5. Labs: LFTs, CBC, hepatitis B/C screen if not done.\n6. Safe storage of medications discussed.\n7. Safety planning for relapse: contact sponsor, call office, use crisis line (988).\n8. Return in [2–4] weeks.',
+  });
+
+  saveNoteTemplate({ name: 'Prenatal Visit', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Prenatal care visit — [X] weeks gestation.',
+    hpi: 'Patient is a [age]-year-old G[X]P[X] female at [X] weeks gestation by [LMP/ultrasound dating]. EDC: [date]. Prenatal labs and first trimester screen reviewed. Reports [good fetal movement/no fetal movement concerns]. [No/reports] vaginal bleeding, contractions, leakage of fluid, or dysuria. Prenatal vitamins with folic acid: [adherent]. Nausea/vomiting: [resolved/persistent — severity].',
+    ros: 'OB: [Fetal movement, contractions, vaginal bleeding or discharge, leakage of fluid].\nGU: No dysuria or hematuria.\nConstitutional: [Fatigue, nausea — trimester appropriate or not].\nCV: No chest pain or palpitations. [Leg swelling — physiologic vs. preeclampsia screen].',
+    physicalExam: 'Vitals: See above.\nWeight: [X] (total gain: [X lbs] over [X weeks]).\nFundal height: [X cm] (matches/[X] cm discrepancy from dates).\nFetal heart tones: [X bpm by Doppler].\nPresentation: [cephalic/breech/transverse] at [X] weeks.\nEdema: [none/lower extremity — pitting/non-pitting].\nCervical exam (if indicated): [dilated Xcm, effaced X%, station [X]].',
+    assessment: '1. Intrauterine pregnancy at [X] weeks, [appropriate/large/small] for gestational age.\n2. [Trimester-specific complications or findings — if applicable].',
+    plan: '1. Routine labs ordered: [GBS at 35–37 weeks / GDM screen at 24–28 weeks / anatomy scan at 18–22 weeks].\n2. Folic acid 400–800 mcg daily through 12 weeks; continue prenatal vitamin.\n3. Counseling: activity, diet, listeria avoidance, no alcohol/tobacco/recreational drugs.\n4. [Tdap vaccine at 27–36 weeks / flu vaccine offered].\n5. Kick counts starting at 28 weeks.\n6. Return in [2–4] weeks for next prenatal visit.',
+  });
+
+  saveNoteTemplate({ name: 'Pediatric Well Visit', visitType: 'Outpatient', isBuiltIn: true,
+    chiefComplaint: 'Pediatric well child visit — [age].',
+    hpi: 'Patient is a [age]-year-old [boy/girl/child] presenting for routine well child visit. Parent/guardian present: [yes/no]. Child has been [healthy/had the following interval illnesses: X]. Development: [meeting milestones — see below / concern for delay in [X]].',
+    ros: 'Constitutional: No fever, weight changes.\nNutrition: [Breastfed/formula/table food/no concerns].\nSleep: [X hours/night, [no/yes] concerns].\nBehavior/Development: [As described below].\nSafety: [Helmet use, car seat, firearms secured, smoke alarms].',
+    physicalExam: 'Vitals: Height [X cm] ([X]%ile), Weight [X kg] ([X]%ile), BMI [X] ([X]%ile), HC [if <3 years: X cm ([X]%ile)].\nGeneral: Alert, active, well-nourished, well-developed, no acute distress.\nHEENT: Normocephalic, fontanelles closed/open-flat. Red reflex bilateral. TMs clear. Pharynx benign.\nNeck: Supple, no LAD.\nCV: RRR, no murmurs.\nLungs: CTA bilaterally.\nAbdomen: Soft, NT/ND, no organomegaly.\nGU: [Tanner stage X / genitalia normal / testes descended bilaterally].\nMusculoskeletal: Normal tone and strength. Hips [Ortolani/Barlow negative in infants].\nSkin: No rashes.\nNeuro: Age-appropriate reflexes and tone.',
+    assessment: '1. [Age]-year-old — healthy and developing [appropriately / with the following concerns: X].\n2. Growth: [within normal limits / [above/below] curve — monitoring].',
+    plan: '1. Immunizations administered today: [list vaccines, lots, sites].\n2. Labs: [lead/iron/lipid/TB screening — per AAP schedule].\n3. Vision and hearing screen: [passed/referred].\n4. Developmental screening tool (M-CHAT/ASQ): [normal/concerns — referral].\n5. Anticipatory guidance: [age-specific safety, nutrition, screen time, sleep, dental, discipline].\n6. Next well visit: [next age-based interval].\n7. Contact office for fever, illness, or concerns.',
+  });
+
   /* ---- Panel Provider Assignments ---- */
   assignPanel(pat1.id, [prov1.id]);
   assignPanel(pat2.id, [prov1.id]);

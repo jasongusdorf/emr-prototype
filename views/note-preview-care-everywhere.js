@@ -24,13 +24,18 @@ function renderNotePreviewPane(patientId, container) {
     const note = getNoteByEncounter(enc.id);
     if (!note) return;
     const prov = getProvider(enc.providerId);
-    noteItems.push({ enc: enc, note: note, prov: prov });
+    noteItems.push({ enc: enc, note: note, prov: prov, pinned: !!note.pinned });
   });
 
-  // Sort newest first
-  noteItems.sort(function(a, b) {
-    return new Date(b.enc.dateTime) - new Date(a.enc.dateTime);
-  });
+  // Sort: pinned first, then newest first
+  function sortNoteItems() {
+    noteItems.sort(function(a, b) {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.enc.dateTime) - new Date(a.enc.dateTime);
+    });
+  }
+  sortNoteItems();
 
   // --- Wrapper ---
   const wrapper = document.createElement('div');
@@ -39,6 +44,18 @@ function renderNotePreviewPane(patientId, container) {
   // === LEFT PANEL ===
   const leftPanel = document.createElement('div');
   leftPanel.className = 'note-list-panel';
+
+  // Status summary bar
+  const statusBar = document.createElement('div');
+  statusBar.className = 'notes-status-summary';
+  function updateStatusBar() {
+    var total = noteItems.length;
+    var signed = noteItems.filter(function(i) { return i.note.signed; }).length;
+    var unsigned = total - signed;
+    statusBar.textContent = total + ' note' + (total !== 1 ? 's' : '') + ' \u2014 ' + signed + ' signed, ' + unsigned + ' unsigned';
+  }
+  updateStatusBar();
+  leftPanel.appendChild(statusBar);
 
   // Filter bar
   const filterBar = document.createElement('div');
@@ -79,6 +96,14 @@ function renderNotePreviewPane(patientId, container) {
   dateTo.title = 'To date';
   filterBar.appendChild(dateTo);
 
+  // Text search input
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'form-control';
+  searchInput.placeholder = 'Search notes...';
+  searchInput.style.flex = '1 1 100%';
+  filterBar.appendChild(searchInput);
+
   leftPanel.appendChild(filterBar);
 
   // Note list container
@@ -110,25 +135,59 @@ function renderNotePreviewPane(patientId, container) {
     return label.indexOf(f) !== -1;
   }
 
+  function _getAllNoteText(item) {
+    var parts = [];
+    var n = item.note;
+    if (n.noteBody) parts.push(n.noteBody);
+    if (n.chiefComplaint) parts.push(n.chiefComplaint);
+    if (n.hpi) parts.push(n.hpi);
+    if (n.ros) parts.push(n.ros);
+    if (n.physicalExam) parts.push(n.physicalExam);
+    if (n.assessment) parts.push(n.assessment);
+    if (n.plan) parts.push(n.plan);
+    if (n.addenda) {
+      n.addenda.forEach(function(a) { if (a.text) parts.push(a.text); if (a.author) parts.push(a.author); });
+    }
+    if (item.prov) parts.push(item.prov.firstName + ' ' + item.prov.lastName);
+    if (item.enc.visitType) parts.push(item.enc.visitType);
+    if (item.enc.visitSubtype) parts.push(item.enc.visitSubtype);
+    return parts.join(' ').toLowerCase();
+  }
+
+  function _matchesTextSearch(item, query) {
+    if (!query) return true;
+    return _getAllNoteText(item).indexOf(query.toLowerCase()) !== -1;
+  }
+
+  function _highlightText(text, query) {
+    if (!query || !text) return esc(text || '');
+    var escaped = esc(text);
+    var escapedQuery = esc(query);
+    var regex = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    return escaped.replace(regex, '<mark>$1</mark>');
+  }
+
   function renderNoteList() {
     noteListContainer.innerHTML = '';
     var typeFilter = typeSelect.value;
     var provFilter = provSelect.value;
     var fromDate = dateFrom.value ? new Date(dateFrom.value + 'T00:00:00') : null;
     var toDate = dateTo.value ? new Date(dateTo.value + 'T23:59:59') : null;
+    var textQuery = searchInput.value.trim();
 
     var filtered = noteItems.filter(function(item) {
       if (!_matchesTypeFilter(item.enc, typeFilter)) return false;
       if (provFilter && (!item.prov || item.prov.id !== provFilter)) return false;
       if (fromDate && new Date(item.enc.dateTime) < fromDate) return false;
       if (toDate && new Date(item.enc.dateTime) > toDate) return false;
+      if (!_matchesTextSearch(item, textQuery)) return false;
       return true;
     });
 
     if (filtered.length === 0) {
       var emptyEl = document.createElement('div');
       emptyEl.style.cssText = 'padding:24px;text-align:center;color:var(--text-muted);font-size:13px;';
-      emptyEl.textContent = 'No notes match the current filters.';
+      emptyEl.textContent = textQuery ? 'No notes match "' + textQuery + '".' : 'No notes match the current filters.';
       noteListContainer.appendChild(emptyEl);
       return;
     }
@@ -150,6 +209,20 @@ function renderNotePreviewPane(patientId, container) {
       typeBadge.className = 'badge badge-' + (item.enc.visitType || 'other').toLowerCase().replace(/\s+/g, '-');
       typeBadge.textContent = _noteTypeLabel(item.enc);
 
+      // Pin button
+      var pinBtn = document.createElement('button');
+      pinBtn.className = 'note-pin-btn' + (item.pinned ? ' pinned' : '');
+      pinBtn.innerHTML = item.pinned ? '&#9733;' : '&#9734;';
+      pinBtn.title = item.pinned ? 'Unpin note' : 'Pin note';
+      pinBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        item.pinned = !item.pinned;
+        item.note.pinned = item.pinned;
+        saveNote({ encounterId: item.enc.id, pinned: item.pinned });
+        sortNoteItems();
+        renderNoteList();
+      });
+
       var authorEl = document.createElement('div');
       authorEl.className = 'note-list-item-author';
       authorEl.textContent = item.prov
@@ -164,6 +237,7 @@ function renderNotePreviewPane(patientId, container) {
       metaRow.className = 'note-list-item-meta';
       metaRow.appendChild(dateEl);
       metaRow.appendChild(typeBadge);
+      metaRow.appendChild(pinBtn);
 
       row.appendChild(metaRow);
       row.appendChild(authorEl);
@@ -243,6 +317,30 @@ function renderNotePreviewPane(patientId, container) {
       _printNote(enc, note, prov);
     }));
 
+    actionBar.appendChild(makeBtn('Copy Note', 'btn btn-secondary btn-sm', function() {
+      var copyParts = [];
+      var copyFields = [
+        { key: 'chiefComplaint', label: 'Chief Complaint' },
+        { key: 'hpi', label: 'HPI' },
+        { key: 'ros', label: 'ROS' },
+        { key: 'physicalExam', label: 'Physical Examination' },
+        { key: 'assessment', label: 'Assessment' },
+        { key: 'plan', label: 'Plan' },
+      ];
+      copyFields.forEach(function(f) {
+        if (note[f.key]) copyParts.push(f.label + ':\n' + note[f.key]);
+      });
+      if (copyParts.length === 0 && note.noteBody) copyParts.push(note.noteBody);
+      var copyText = copyParts.join('\n\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(copyText).then(function() {
+          showToast('Note copied to clipboard', 'success');
+        });
+      } else {
+        showToast('Clipboard not available', 'error');
+      }
+    }));
+
     if (note.signed) {
       actionBar.appendChild(makeBtn('Add Addendum', 'btn btn-secondary btn-sm', function() {
         _openAddendumFromPreview(enc, note, prov);
@@ -255,6 +353,7 @@ function renderNotePreviewPane(patientId, container) {
     // --- Body ---
     var body = document.createElement('div');
     body.className = 'note-preview-body';
+    var textQuery = searchInput.value.trim();
 
     var sections = [];
     if (note.chiefComplaint) sections.push({ label: 'Chief Complaint', text: note.chiefComplaint });
@@ -284,7 +383,7 @@ function renderNotePreviewPane(patientId, container) {
         var secBody = document.createElement('div');
         secBody.className = 'note-preview-section-body';
         secBody.style.whiteSpace = 'pre-wrap';
-        secBody.textContent = s.text;
+        secBody.innerHTML = _highlightText(s.text, textQuery);
 
         sec.appendChild(secLabel);
         sec.appendChild(secBody);
@@ -320,7 +419,7 @@ function renderNotePreviewPane(patientId, container) {
           (a.author ? ' &mdash; ' + esc(a.author) : '') +
           (a.date ? ' &mdash; ' + esc(a.date) : '') +
           '</div>' +
-          '<div class="note-preview-section-body" style="white-space:pre-wrap;">' + esc(a.text || '') + '</div>';
+          '<div class="note-preview-section-body" style="white-space:pre-wrap;">' + _highlightText(a.text || '', textQuery) + '</div>';
         addendaWrap.appendChild(addEl);
       });
       body.appendChild(addendaWrap);
@@ -434,6 +533,20 @@ function renderNotePreviewPane(patientId, container) {
   provSelect.addEventListener('change', renderNoteList);
   dateFrom.addEventListener('change', renderNoteList);
   dateTo.addEventListener('change', renderNoteList);
+
+  // Text search with debounce
+  var _searchDebounce = null;
+  searchInput.addEventListener('input', function() {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(function() {
+      renderNoteList();
+      // Re-render preview if one is selected, to update highlighting
+      if (selectedEncId) {
+        var selectedItem = noteItems.find(function(i) { return i.enc.id === selectedEncId; });
+        if (selectedItem) renderNotePreview(selectedItem);
+      }
+    }, 200);
+  });
 }
 
 

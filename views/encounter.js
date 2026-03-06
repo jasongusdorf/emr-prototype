@@ -3,6 +3,133 @@
    ============================================================ */
 
 let _autosaveTimers = {};
+let _encSmartPhraseTextareas = [];
+
+const NOTE_SECTIONS = [
+  { key: 'chiefComplaint', label: 'Chief Complaint' },
+  { key: 'hpi',            label: 'History of Present Illness' },
+  { key: 'ros',            label: 'Review of Systems' },
+  { key: 'physicalExam',   label: 'Physical Examination' },
+  { key: 'assessment',     label: 'Assessment' },
+  { key: 'plan',           label: 'Plan' },
+];
+
+function _getEditorMode() {
+  try { return localStorage.getItem('emr_note_editor_mode') || 'freeform'; } catch(e) { return 'freeform'; }
+}
+function _setEditorMode(mode) {
+  try { localStorage.setItem('emr_note_editor_mode', mode); } catch(e) {}
+}
+
+function _parseFreeformToSections(text) {
+  const result = {};
+  NOTE_SECTIONS.forEach(s => { result[s.key] = ''; });
+  if (!text) return result;
+
+  // Try to parse section headers like "Chief Complaint:\n..."
+  const lines = text.split('\n');
+  let currentKey = null;
+  const labelMap = {};
+  NOTE_SECTIONS.forEach(s => {
+    labelMap[s.label.toLowerCase()] = s.key;
+    // Also match short forms
+  });
+  labelMap['hpi'] = 'hpi';
+  labelMap['ros'] = 'ros';
+  labelMap['pe'] = 'physicalExam';
+  labelMap['physical exam'] = 'physicalExam';
+  labelMap['a&p'] = 'assessment';
+  labelMap['assessment & plan'] = 'assessment';
+  labelMap['cc'] = 'chiefComplaint';
+
+  const sectionBuf = {};
+  NOTE_SECTIONS.forEach(s => { sectionBuf[s.key] = []; });
+  let unmatchedLines = [];
+
+  lines.forEach(line => {
+    const headerMatch = line.match(/^([A-Za-z &\/]+):\s*$/);
+    if (headerMatch) {
+      const candidate = headerMatch[1].trim().toLowerCase();
+      if (labelMap[candidate]) {
+        currentKey = labelMap[candidate];
+        return;
+      }
+    }
+    if (currentKey) {
+      sectionBuf[currentKey].push(line);
+    } else {
+      unmatchedLines.push(line);
+    }
+  });
+
+  let hasSections = false;
+  NOTE_SECTIONS.forEach(s => {
+    result[s.key] = sectionBuf[s.key].join('\n').trim();
+    if (result[s.key]) hasSections = true;
+  });
+
+  // If nothing matched sections, put everything in noteBody fallback
+  if (!hasSections && unmatchedLines.length > 0) {
+    return null; // signal: could not parse
+  }
+
+  // If there were unmatched lines at the top, prepend to chiefComplaint
+  if (unmatchedLines.length > 0 && unmatchedLines.join('').trim()) {
+    result.chiefComplaint = (unmatchedLines.join('\n').trim() + '\n' + result.chiefComplaint).trim();
+  }
+
+  return result;
+}
+
+function _sectionsToFreeform(textareas) {
+  const parts = [];
+  NOTE_SECTIONS.forEach(s => {
+    const val = textareas[s.key] ? textareas[s.key].value.trim() : '';
+    if (val) {
+      parts.push(s.label + ':\n' + val);
+    }
+  });
+  return parts.join('\n\n');
+}
+
+function calcNoteQuality(textareas) {
+  let score = 0;
+  const sectionKeys = ['chiefComplaint', 'hpi', 'ros', 'physicalExam', 'assessment', 'plan'];
+  let filledCount = 0;
+
+  // In freeform mode, just check noteBody
+  if (textareas['noteBody'] && !textareas['chiefComplaint']) {
+    const text = textareas['noteBody'].value.trim();
+    if (!text) return 0;
+    const words = text.split(/\s+/).length;
+    if (words >= 10) return 40;
+    if (words >= 50) return 60;
+    if (words >= 100) return 80;
+    return Math.min(100, Math.round(words / 1.5));
+  }
+
+  sectionKeys.forEach(key => {
+    const ta = textareas[key];
+    if (ta && ta.value && ta.value.trim().length > 0) {
+      filledCount++;
+      score += 17;
+    }
+  });
+
+  // Bonus: HPI > 50 words
+  if (textareas['hpi'] && textareas['hpi'].value) {
+    const words = textareas['hpi'].value.trim().split(/\s+/).length;
+    if (words > 50) score += 5;
+  }
+
+  // Bonus: Assessment has diagnosis-like pattern
+  if (textareas['assessment'] && textareas['assessment'].value) {
+    const val = textareas['assessment'].value;
+    if (/\d\./.test(val) || /diagnosis|dx|icd/i.test(val)) score += 5;
+  }
+
+  return Math.min(100, score);
+}
 
 function _startAutosave(encounterId, saveFn) {
   _stopAutosave(encounterId);
@@ -23,6 +150,11 @@ function renderEncounter(encounterId) {
   if (typeof registerCleanup === 'function') {
     registerCleanup(function() {
       Object.keys(_autosaveTimers).forEach(function(k) { _stopAutosave(k); });
+      // Destroy SmartPhrase listeners for all textareas
+      if (typeof _encSmartPhraseTextareas !== 'undefined') {
+        _encSmartPhraseTextareas.forEach(function(ta) { destroySmartPhraseListener(ta); });
+        _encSmartPhraseTextareas = [];
+      }
     });
   }
 
@@ -124,13 +256,41 @@ function renderEncounter(encounterId) {
   headerRight.style.alignItems = 'center';
 
   const autosaveEl = document.createElement('span');
-  autosaveEl.className = 'autosave-indicator';
+  autosaveEl.className = 'autosave-indicator idle';
   autosaveEl.id = 'autosave-indicator';
-  if (!isSigned) autosaveEl.textContent = 'Edits autosave';
+  if (!isSigned) {
+    autosaveEl.innerHTML = '<span class="autosave-dot"></span> All changes saved';
+  }
   headerRight.appendChild(autosaveEl);
 
   if (!isSigned) {
-    const templateBtn = makeEncBtn('Use Template', 'btn btn-secondary btn-sm', () => openTemplatePickerModal(note, encounterId));
+    const modeToggle = makeEncBtn(
+      _getEditorMode() === 'sections' ? 'Freeform' : 'Sections',
+      'btn btn-outline btn-sm note-mode-toggle',
+      function() {
+        const currentMode = _getEditorMode();
+        if (currentMode === 'freeform') {
+          // Convert freeform to sections
+          const freeVal = textareas['noteBody'] ? textareas['noteBody'].value : '';
+          const parsed = _parseFreeformToSections(freeVal);
+          if (parsed) {
+            NOTE_SECTIONS.forEach(s => { note[s.key] = parsed[s.key]; });
+            note.noteBody = freeVal; // keep backup
+          }
+          _setEditorMode('sections');
+        } else {
+          // Convert sections to freeform
+          const combined = _sectionsToFreeform(textareas);
+          note.noteBody = combined;
+          _setEditorMode('freeform');
+        }
+        saveNote({ ...readNoteFields(textareas), encounterId });
+        renderEncounter(encounterId);
+      }
+    );
+    headerRight.appendChild(modeToggle);
+
+    const templateBtn = makeEncBtn('Use Template', 'btn btn-secondary btn-sm', () => openTemplatePickerModal(note, encounterId, textareas));
     headerRight.appendChild(templateBtn);
   }
 
@@ -153,19 +313,11 @@ function renderEncounter(encounterId) {
     noteBody.appendChild(banner);
   }
 
-  // Migrate old structured notes into freeform noteBody
+  // Build display text from noteBody or structured fields
   let noteBodyText = note.noteBody || '';
   if (!noteBodyText) {
-    const oldFields = [
-      { key: 'chiefComplaint', label: 'Chief Complaint' },
-      { key: 'hpi',            label: 'History of Present Illness' },
-      { key: 'ros',            label: 'Review of Systems' },
-      { key: 'physicalExam',   label: 'Physical Examination' },
-      { key: 'assessment',     label: 'Assessment' },
-      { key: 'plan',           label: 'Plan' },
-    ];
     const parts = [];
-    oldFields.forEach(f => {
+    NOTE_SECTIONS.forEach(f => {
       if (note[f.key]) {
         parts.push(f.label + ':\n' + note[f.key]);
       }
@@ -174,32 +326,121 @@ function renderEncounter(encounterId) {
   }
 
   const textareas = {};
+  _encSmartPhraseTextareas = [];
 
   if (isSigned) {
+    // Read-only display for signed notes
     const section = document.createElement('div');
     section.className = 'note-section';
-    const readDiv = document.createElement('div');
-    readDiv.className = 'note-readonly';
-    readDiv.style.whiteSpace = 'pre-wrap';
-    if (noteBodyText) {
+
+    // Show structured sections if available
+    const hasSections = NOTE_SECTIONS.some(s => note[s.key] && note[s.key].trim());
+    if (hasSections) {
+      NOTE_SECTIONS.forEach(s => {
+        if (note[s.key] && note[s.key].trim()) {
+          const secDiv = document.createElement('div');
+          secDiv.className = 'note-preview-section';
+          const secLabel = document.createElement('div');
+          secLabel.className = 'note-preview-section-label';
+          secLabel.textContent = s.label;
+          const secBody = document.createElement('div');
+          secBody.className = 'note-preview-section-body';
+          secBody.style.whiteSpace = 'pre-wrap';
+          secBody.textContent = note[s.key];
+          secDiv.appendChild(secLabel);
+          secDiv.appendChild(secBody);
+          section.appendChild(secDiv);
+        }
+      });
+    } else if (noteBodyText) {
+      const readDiv = document.createElement('div');
+      readDiv.className = 'note-readonly';
+      readDiv.style.whiteSpace = 'pre-wrap';
       readDiv.textContent = noteBodyText;
+      section.appendChild(readDiv);
     } else {
+      const readDiv = document.createElement('div');
+      readDiv.className = 'note-readonly note-readonly-empty';
       readDiv.textContent = '(not documented)';
-      readDiv.classList.add('note-readonly-empty');
+      section.appendChild(readDiv);
     }
-    section.appendChild(readDiv);
     noteBody.appendChild(section);
   } else {
-    const section = document.createElement('div');
-    section.className = 'note-section';
-    const ta = document.createElement('textarea');
-    ta.className = 'note-textarea freeform';
-    ta.placeholder = 'Clinical note…';
-    ta.value = noteBodyText;
-    ta.id = 'note-noteBody';
-    textareas['noteBody'] = ta;
-    section.appendChild(ta);
-    noteBody.appendChild(section);
+    const editorMode = _getEditorMode();
+
+    if (editorMode === 'sections') {
+      // Section-aware editor with collapsible sections
+      const sectionContainer = document.createElement('div');
+      sectionContainer.className = 'note-section-container';
+
+      NOTE_SECTIONS.forEach(s => {
+        const secWrap = document.createElement('div');
+        secWrap.className = 'note-section-wrap';
+
+        const header = document.createElement('div');
+        header.className = 'note-section-header';
+        header.innerHTML = '<span class="note-section-chevron">&#9660;</span> ' + esc(s.label);
+        header.addEventListener('click', () => {
+          secWrap.classList.toggle('collapsed');
+          header.querySelector('.note-section-chevron').innerHTML = secWrap.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+        });
+
+        const ta = document.createElement('textarea');
+        ta.className = 'note-section-textarea';
+        ta.id = 'note-' + s.key;
+        ta.placeholder = s.label + '…';
+        ta.value = note[s.key] || '';
+        textareas[s.key] = ta;
+
+        // Wire SmartPhrases
+        initSmartPhraseListener(ta);
+        _encSmartPhraseTextareas.push(ta);
+
+        secWrap.appendChild(header);
+        secWrap.appendChild(ta);
+        sectionContainer.appendChild(secWrap);
+      });
+
+      noteBody.appendChild(sectionContainer);
+    } else {
+      // Freeform single textarea
+      const section = document.createElement('div');
+      section.className = 'note-section';
+      const ta = document.createElement('textarea');
+      ta.className = 'note-textarea freeform';
+      ta.placeholder = 'Clinical note…';
+      ta.value = noteBodyText;
+      ta.id = 'note-noteBody';
+      textareas['noteBody'] = ta;
+
+      // Wire SmartPhrases
+      initSmartPhraseListener(ta);
+      _encSmartPhraseTextareas.push(ta);
+
+      section.appendChild(ta);
+      noteBody.appendChild(section);
+    }
+
+    // Quality indicator
+    const qualityWrap = document.createElement('div');
+    qualityWrap.className = 'note-quality-wrap';
+    qualityWrap.innerHTML =
+      '<div class="note-quality-bar"><div class="note-quality-fill" id="note-quality-fill"></div></div>' +
+      '<span class="note-quality-label" id="note-quality-label"></span>';
+    noteBody.appendChild(qualityWrap);
+
+    function updateQualityIndicator() {
+      const score = calcNoteQuality(textareas);
+      const fill = document.getElementById('note-quality-fill');
+      const label = document.getElementById('note-quality-label');
+      if (fill) {
+        fill.style.width = score + '%';
+        fill.className = 'note-quality-fill' + (score >= 70 ? ' good' : score >= 40 ? ' fair' : ' low');
+      }
+      if (label) label.textContent = 'Documentation: ' + score + '%';
+    }
+    updateQualityIndicator();
+    Object.values(textareas).forEach(ta => ta.addEventListener('input', updateQualityIndicator));
   }
 
   noteCard.appendChild(noteBody);
@@ -260,7 +501,18 @@ function renderEncounter(encounterId) {
     const signBtn = makeEncBtn('Sign Note', 'btn btn-success', () => {
       if (!canSignNotes()) { showToast('Only attending physicians can sign notes.', 'error'); return; }
       if (!getProviders().length) { showToast('Add a provider first.', 'error'); return; }
-      openSignModal();
+      const quality = calcNoteQuality(textareas);
+      if (quality < 40) {
+        confirmAction({
+          title: 'Incomplete Documentation',
+          message: 'Several sections appear to be empty (documentation: ' + quality + '%). Sign anyway?',
+          confirmLabel: 'Sign Anyway',
+          danger: false,
+          onConfirm: openSignModal,
+        });
+      } else {
+        openSignModal();
+      }
     });
     if (!canSignNotes()) {
       signBtn.disabled = true;
@@ -276,23 +528,47 @@ function renderEncounter(encounterId) {
 
     // Autosave (scoped to encounterId)
     let _autosaveDebounce = null;
+    let _lastSavedTime = null;
+    let _autosaveAgoTimer = null;
+
+    function _updateAutosaveText() {
+      const ind = document.getElementById('autosave-indicator');
+      if (!ind || !_lastSavedTime) return;
+      const ago = Math.round((Date.now() - _lastSavedTime) / 1000);
+      if (ago < 10) {
+        ind.innerHTML = '<span class="autosave-dot"></span> Saved just now';
+      } else if (ago < 60) {
+        ind.innerHTML = '<span class="autosave-dot"></span> Saved ' + ago + 's ago';
+      } else {
+        ind.innerHTML = '<span class="autosave-dot"></span> Saved ' + Math.round(ago / 60) + 'm ago';
+      }
+    }
+
     function triggerAutosave() {
       clearTimeout(_autosaveDebounce);
       const ind = document.getElementById('autosave-indicator');
-      if (ind) { ind.className = 'autosave-indicator saving'; ind.textContent = 'Saving…'; }
+      if (ind) { ind.className = 'autosave-indicator editing'; ind.innerHTML = '<span class="autosave-dot"></span> Editing...'; }
       _autosaveDebounce = setTimeout(() => {
+        if (ind) { ind.className = 'autosave-indicator saving'; ind.innerHTML = '<span class="autosave-dot"></span> Saving...'; }
         saveNote({ ...readNoteFields(textareas), encounterId });
         const mod = document.getElementById('last-modified');
         if (mod) mod.textContent = 'Last saved: ' + formatDateTime(new Date().toISOString());
+        _lastSavedTime = Date.now();
         if (ind) {
-          ind.className = 'autosave-indicator saved'; ind.textContent = '✓ Saved';
-          setTimeout(() => { if (ind) { ind.className = 'autosave-indicator'; ind.textContent = ''; } }, 2000);
+          ind.className = 'autosave-indicator idle';
+          ind.innerHTML = '<span class="autosave-dot"></span> Saved just now';
         }
+        clearInterval(_autosaveAgoTimer);
+        _autosaveAgoTimer = setInterval(_updateAutosaveText, 10000);
         _autosaveDebounce = null;
       }, 1000);
     }
 
     Object.values(textareas).forEach(ta => ta.addEventListener('input', triggerAutosave));
+
+    if (typeof registerCleanup === 'function') {
+      registerCleanup(function() { clearInterval(_autosaveAgoTimer); });
+    }
 
   } else {
     app.appendChild(noteCard);
@@ -611,9 +887,17 @@ function renderAddendumItem(ad) {
    Helpers
    ============================================================ */
 function readNoteFields(textareas) {
-  return {
-    noteBody: textareas['noteBody']?.value || '',
-  };
+  const result = {};
+  if (textareas['noteBody']) {
+    result.noteBody = textareas['noteBody'].value || '';
+  } else {
+    // Section mode — save individual fields AND a combined noteBody
+    NOTE_SECTIONS.forEach(s => {
+      result[s.key] = textareas[s.key] ? textareas[s.key].value || '' : '';
+    });
+    result.noteBody = _sectionsToFreeform(textareas);
+  }
+  return result;
 }
 
 function calcBMI(weightLbs, heightIn) {
@@ -640,8 +924,9 @@ function makeEncBtn(text, className, onclick) {
 /* ============================================================
    Note Template Picker
    ============================================================ */
-function openTemplatePickerModal(note, encounterId) {
+function openTemplatePickerModal(note, encounterId, textareas) {
   const templates = getNoteTemplates();
+  const editorMode = _getEditorMode();
 
   const bodyEl = document.createElement('div');
 
@@ -666,27 +951,59 @@ function openTemplatePickerModal(note, encounterId) {
       type.className = 'template-card-type';
       type.textContent = tmpl.visitType || 'General';
 
+      // Template preview snippet
+      const preview = document.createElement('div');
+      preview.className = 'template-card-preview';
+      const previewParts = [];
+      ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'].forEach(f => {
+        if (tmpl[f]) previewParts.push(tmpl[f]);
+      });
+      const previewText = previewParts.join(' | ');
+      preview.textContent = previewText.length > 100 ? previewText.substring(0, 100) + '...' : previewText;
+
       card.appendChild(name);
       card.appendChild(type);
+      card.appendChild(preview);
 
       card.addEventListener('click', () => {
         const applyTemplate = () => {
-          const fields = ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'];
-          fields.forEach(f => {
-            const ta = document.getElementById('note-' + f);
-            if (ta && tmpl[f]) {
-              ta.value = tmpl[f];
-              ta.dispatchEvent(new Event('input'));
+          if (editorMode === 'sections') {
+            // Section mode: write to individual textareas
+            const fields = ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'];
+            fields.forEach(f => {
+              const ta = document.getElementById('note-' + f);
+              if (ta && tmpl[f]) {
+                ta.value = tmpl[f];
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            });
+          } else {
+            // Freeform mode: concatenate template into single textarea
+            const parts = [];
+            NOTE_SECTIONS.forEach(s => {
+              if (tmpl[s.key]) parts.push(s.label + ':\n' + tmpl[s.key]);
+            });
+            const ta = document.getElementById('note-noteBody');
+            if (ta) {
+              ta.value = parts.join('\n\n');
+              ta.dispatchEvent(new Event('input', { bubbles: true }));
             }
-          });
+          }
           closeModal();
           showToast('Template applied: ' + tmpl.name, 'success');
         };
 
-        const hasContent = ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'].some(f => {
-          const ta = document.getElementById('note-' + f);
-          return ta && ta.value.trim().length > 0;
-        });
+        // Check if there's existing content
+        let hasContent = false;
+        if (editorMode === 'sections') {
+          hasContent = ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'].some(f => {
+            const ta = document.getElementById('note-' + f);
+            return ta && ta.value.trim().length > 0;
+          });
+        } else {
+          const ta = document.getElementById('note-noteBody');
+          hasContent = ta && ta.value.trim().length > 0;
+        }
 
         if (hasContent) {
           closeModal();
@@ -708,14 +1025,14 @@ function openTemplatePickerModal(note, encounterId) {
     bodyEl.appendChild(grid);
   }
 
-  const backdrop = document.getElementById('modal-backdrop');
-  const modal    = document.getElementById('modal');
-  document.getElementById('modal-title').textContent = 'Choose Note Template';
+  openModal({
+    title: 'Choose Note Template',
+    bodyHTML: '',
+    footerHTML: '<button class="btn btn-secondary" id="tmpl-cancel">Cancel</button>',
+    size: 'lg',
+  });
   document.getElementById('modal-body').innerHTML = '';
   document.getElementById('modal-body').appendChild(bodyEl);
-  document.getElementById('modal-footer').innerHTML = '<button class="btn btn-secondary" id="tmpl-cancel">Cancel</button>';
-  modal.className = 'modal modal-lg';
-  backdrop.classList.remove('hidden');
   document.getElementById('tmpl-cancel').addEventListener('click', closeModal);
 }
 
