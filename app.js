@@ -1451,6 +1451,7 @@ async function init() {
   try {
   await seedIfEmpty();
   seedExtraPatients();
+  _seedBuiltInTemplates();
   } catch (err) {
     console.error('Seed error:', err);
     // Continue — seed may partially work or data may already exist
