@@ -88,7 +88,7 @@ let _ordersEncounterId = null;
 let _currentPatientId = null;
 
 function renderOrders(encounterId) {
-  clearTimeout(autosaveTimer);  // clear encounter autosave if navigating from encounter view
+  if (typeof _stopAllAutosaves === 'function') _stopAllAutosaves();  // clear encounter autosave if navigating from encounter view
   _ordersEncounterId = encounterId;
   _selectedType      = 'Medication';
   _selectedPriority  = 'Routine';

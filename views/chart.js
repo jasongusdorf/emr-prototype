@@ -80,7 +80,7 @@ const PROFILE_SECTIONS = [
    MAIN ENTRY
    ============================================================ */
 function renderChart(patientId) {
-  clearTimeout(autosaveTimer);
+  if (typeof _stopAllAutosaves === 'function') _stopAllAutosaves();
 
   if (!canViewChart()) {
     const app = document.getElementById('app');
