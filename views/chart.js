@@ -618,11 +618,22 @@ function buildOverviewContent(app, patient, patientId) {
   // Results category
   wrap('results', buildResultsSection(patientId));
 
-  // Notes category — split-view with inline preview
+  // Notes category — split-view with inline preview + inline note writer
   const notesHeader = document.createElement('div');
   notesHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
   const notesNewBtn = makeBtn('+ New Note', 'btn btn-primary btn-sm', function() {
-    openNewNoteForPatient(patientId);
+    const openEncs = getEncountersByPatient(patientId).filter(function(e) { return e.status === 'Open'; });
+    if (openEncs.length === 0) {
+      openModal({
+        title: 'No Open Encounters',
+        bodyHTML: '<p style="color:var(--text-secondary);line-height:1.6">There are no open encounters for this patient. Create an encounter first, then add a note.</p>',
+        footerHTML: '<button class="btn btn-secondary" id="nn-close">Close</button><button class="btn btn-primary" id="nn-create">Create Encounter</button>',
+      });
+      document.getElementById('nn-close').addEventListener('click', closeModal);
+      document.getElementById('nn-create').addEventListener('click', function() { closeModal(); openNewEncounterModal(patientId); });
+      return;
+    }
+    renderInlineNoteWriter(patientId, notesContainer);
   });
   notesHeader.appendChild(notesNewBtn);
   wrap('notes', notesHeader);
@@ -4029,6 +4040,184 @@ function _openNoteWriterPanel(patientId) {
   if (typeof _showRightPanelNoteWriter === 'function') {
     _showRightPanelNoteWriter(patientId);
   }
+}
+
+/* ============================================================
+   INLINE NOTE WRITER — rendered inside the Notes tab container
+   Same functionality as the right-panel note writer.
+   ============================================================ */
+function renderInlineNoteWriter(patientId, container) {
+  var openEncs = loadAll(KEYS.encounters).filter(function(e) {
+    return e.patientId === patientId && e.status === 'Open';
+  });
+  var noteTypes = ['Progress Note', 'H&P', 'Consult Note', 'Procedure Note', 'Discharge Summary', 'Phone Note', 'Addendum'];
+
+  var wrap = document.createElement('div');
+  wrap.className = 'inw-wrap';
+
+  // Toolbar
+  var toolbar = document.createElement('div');
+  toolbar.className = 'nw-toolbar inw-toolbar';
+  toolbar.innerHTML =
+    '<button class="nw-toolbar-btn" id="inw-back" title="Back to notes">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' +
+      ' Back' +
+    '</button>' +
+    '<select class="nw-toolbar-select" id="inw-note-type">' +
+      noteTypes.map(function(t) { return '<option>' + esc(t) + '</option>'; }).join('') +
+    '</select>' +
+    '<button class="nw-toolbar-btn" id="inw-template" title="Insert template">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>' +
+      ' Template' +
+    '</button>' +
+    '<button class="nw-toolbar-btn" id="inw-phrases" title="Dot phrase reference">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+      ' .phrases' +
+    '</button>';
+  wrap.appendChild(toolbar);
+
+  // Encounter context bar
+  var encBar = document.createElement('div');
+  encBar.className = 'nw-encounter-bar';
+  if (openEncs.length === 0) {
+    encBar.innerHTML =
+      '<label class="nw-encounter-label">Visit Type</label>' +
+      '<select class="nw-toolbar-select" id="inw-visit-type">' +
+      '<option>Office Visit</option><option>Follow-Up</option><option>New Patient</option>' +
+      '<option>Telehealth</option><option>Urgent Care</option></select>';
+  } else {
+    encBar.innerHTML =
+      '<span class="nw-encounter-label">' + esc(openEncs[0].visitType || 'Visit') + '</span>' +
+      '<span class="nw-encounter-date">' + formatDateTime(openEncs[0].dateTime) + '</span>';
+  }
+  wrap.appendChild(encBar);
+
+  // Writing surface
+  var surface = document.createElement('div');
+  surface.className = 'nw-doc-surface inw-doc-surface';
+  var textarea = document.createElement('textarea');
+  textarea.className = 'nw-doc-textarea inw-textarea';
+  textarea.id = 'inw-body';
+  textarea.placeholder = 'Start typing your note...\n\nTip: Type a dot phrase like .hpi, .ros, .pe, .vitals, .meds, .allergies, .problems to auto-insert content.\n\nOr click Template to load a full note template.';
+  surface.appendChild(textarea);
+  wrap.appendChild(surface);
+
+  // Status bar
+  var statusBar = document.createElement('div');
+  statusBar.className = 'nw-status-bar';
+  statusBar.innerHTML = '<span class="nw-status-text" id="inw-status">Draft</span><span class="nw-word-count" id="inw-wc">0 words</span>';
+  wrap.appendChild(statusBar);
+
+  // Action buttons
+  var actions = document.createElement('div');
+  actions.className = 'nw-actions';
+  actions.innerHTML =
+    '<button class="btn btn-primary btn-sm" id="inw-save" style="flex:1">Save Draft</button>' +
+    '<button class="btn btn-sm nw-sign-btn" id="inw-sign" style="flex:1">Save & Sign</button>';
+  wrap.appendChild(actions);
+
+  container.innerHTML = '';
+  container.appendChild(wrap);
+
+  // Wire smart phrase dropdown
+  if (typeof initSmartPhraseListener === 'function') initSmartPhraseListener(textarea);
+
+  // Dot phrase auto-expand
+  var _expanding = false;
+  textarea.addEventListener('input', function() {
+    if (_expanding) return;
+    var pos = textarea.selectionStart;
+    var text = textarea.value.substring(0, pos);
+    var match = text.match(/(\.\w+)([\s])$/);
+    if (!match) return;
+    var abbr = match[1];
+    var trailing = match[2];
+    var dotIdx = text.length - match[0].length;
+    if (dotIdx > 0 && !/\s/.test(text[dotIdx - 1])) return;
+    var allPhrases = typeof getSmartPhrases === 'function' ? getSmartPhrases() : [];
+    var phrase = null;
+    for (var i = 0; i < allPhrases.length; i++) {
+      if (allPhrases[i].abbreviation.toLowerCase() === abbr.toLowerCase()) { phrase = allPhrases[i]; break; }
+    }
+    if (!phrase) return;
+    var expanded = typeof expandSmartPhrase === 'function' ? expandSmartPhrase(phrase.abbreviation, patientId) : phrase.content;
+    if (expanded === null) expanded = phrase.content;
+    _expanding = true;
+    var before = textarea.value.substring(0, dotIdx);
+    var after = textarea.value.substring(pos);
+    textarea.value = before + expanded + trailing + after;
+    var newPos = before.length + expanded.length + trailing.length;
+    textarea.selectionStart = newPos;
+    textarea.selectionEnd = newPos;
+    _expanding = false;
+    textarea.dispatchEvent(new Event('_wc'));
+  });
+
+  // Word count
+  function _updateWC() {
+    var words = textarea.value.trim() ? textarea.value.trim().split(/\s+/).length : 0;
+    var wcEl = document.getElementById('inw-wc');
+    if (wcEl) wcEl.textContent = words + ' word' + (words !== 1 ? 's' : '');
+  }
+  textarea.addEventListener('input', _updateWC);
+  textarea.addEventListener('_wc', _updateWC);
+
+  // Back button
+  document.getElementById('inw-back').addEventListener('click', function() {
+    renderNotePreviewPane(patientId, container);
+  });
+
+  // Template button
+  document.getElementById('inw-template').addEventListener('click', function() {
+    if (typeof _openRightPanelTemplatePicker === 'function') _openRightPanelTemplatePicker(textarea, patientId);
+  });
+
+  // Dot phrase reference
+  document.getElementById('inw-phrases').addEventListener('click', function() {
+    if (typeof _openDotPhraseReference === 'function') _openDotPhraseReference();
+  });
+
+  // Save handler
+  function _saveNote(andSign) {
+    var user = getSessionUser();
+    var encId;
+    if (openEncs.length > 0) {
+      encId = openEncs[0].id;
+    } else {
+      var visitTypeEl = document.getElementById('inw-visit-type');
+      var newEnc = saveEncounter({
+        patientId: patientId,
+        providerId: user ? user.id : '',
+        visitType: visitTypeEl ? visitTypeEl.value : 'Office Visit',
+        status: 'Open',
+        dateTime: new Date().toISOString(),
+      });
+      if (!newEnc || newEnc.error) { showToast('Failed to create encounter', 'error'); return; }
+      encId = newEnc.id;
+      openEncs.push(newEnc);
+    }
+    var rawText = (textarea.value || '').trim();
+    if (!rawText) { showToast('Note is empty', 'warning'); return; }
+    var noteType = document.getElementById('inw-note-type').value;
+    var parsed = typeof _parseFreeformToSections === 'function' ? _parseFreeformToSections(rawText) : null;
+    var noteData = {
+      encounterId: encId, patientId: patientId, type: noteType, noteBody: rawText,
+      hpi: parsed ? (parsed.hpi || '') : '', ros: parsed ? (parsed.ros || '') : '',
+      physicalExam: parsed ? (parsed.physicalExam || '') : '', assessment: parsed ? (parsed.assessment || '') : '',
+      plan: parsed ? (parsed.plan || '') : '', chiefComplaint: parsed ? (parsed.chiefComplaint || '') : '',
+      authorId: user ? user.id : '', dateTime: new Date().toISOString(),
+    };
+    if (andSign) { noteData.signed = true; noteData.signedBy = user ? user.id : ''; noteData.signedAt = new Date().toISOString(); }
+    var result = saveNote(noteData);
+    if (result && result.error) { showToast('Error saving note: ' + (result.errors || []).join(', '), 'error'); return; }
+    showToast(andSign ? 'Note saved & signed' : 'Note saved as draft', 'success');
+    renderNotePreviewPane(patientId, container);
+  }
+
+  document.getElementById('inw-save').addEventListener('click', function() { _saveNote(false); });
+  document.getElementById('inw-sign').addEventListener('click', function() { _saveNote(true); });
+
+  textarea.focus();
 }
 
 function openNewEncounterModal(patientId, prefillType) {

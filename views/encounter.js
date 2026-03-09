@@ -191,6 +191,37 @@ function renderEncounter(encounterId) {
   // Patient identity banner
   if (patient) app.appendChild(buildPatientBanner(patient.id));
 
+  /* ---------- Chart Tab Bar ---------- */
+  if (patient) {
+    const chartTabs = [
+      { key: 'profile',       label: 'Profile',       href: '#chart/' + patient.id },
+      { key: 'notes',         label: 'Notes',         href: null },
+      { key: 'medications',   label: 'Medications',   href: '#chart/' + patient.id },
+      { key: 'results',       label: 'Results',       href: '#chart/' + patient.id },
+      { key: 'orders',        label: 'Orders',        href: '#orders/' + encounterId },
+      { key: 'communication', label: 'Communication', href: '#chart/' + patient.id },
+    ];
+    const encTabBar = document.createElement('div');
+    encTabBar.className = 'chart-subtab-bar enc-chart-tabs';
+    chartTabs.forEach(function(tab) {
+      const btn = document.createElement('button');
+      btn.className = 'chart-subtab' + (tab.key === 'notes' ? ' active' : '');
+      btn.setAttribute('data-omr-color', tab.key === 'communication' ? 'notes' : tab.key);
+      btn.textContent = tab.label;
+      btn.addEventListener('click', function() {
+        if (tab.href) {
+          if (tab.key !== 'orders') {
+            // Set the subtab so chart opens on the right section
+            if (typeof _currentOverviewSubTab !== 'undefined') _currentOverviewSubTab = tab.key;
+          }
+          navigate(tab.href);
+        }
+      });
+      encTabBar.appendChild(btn);
+    });
+    app.appendChild(encTabBar);
+  }
+
   /* ---------- Context bar ---------- */
   const ctxBar = document.createElement('div');
   ctxBar.className = 'encounter-context-bar';

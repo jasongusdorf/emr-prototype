@@ -8850,3 +8850,44 @@ body.dark-mode .oq-actions-top {
 .card-header { padding:12px 16px; background:var(--bg-card,#f8f9fa); border-bottom:1px solid var(--border,#eee); font-weight:600; }
 .card-body { padding:16px; }
 .card-title { margin:0 0 8px; }
+
+/* ---------- Inline Note Writer (Notes tab) ---------- */
+.inw-wrap {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--border, #ddd);
+  border-radius: var(--radius, 8px);
+  overflow: hidden;
+  box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,.08));
+}
+.inw-toolbar {
+  border-radius: 0;
+  border-bottom: 1px solid var(--border, #ddd);
+}
+.inw-doc-surface {
+  flex: 1;
+  min-height: 400px;
+}
+.inw-textarea {
+  width: 100%;
+  min-height: 400px;
+  padding: 24px 32px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 15px;
+  line-height: 1.8;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: #fafafa;
+  box-sizing: border-box;
+}
+.inw-textarea:focus {
+  background: #fff;
+}
+
+/* ---------- Encounter page chart tab bar ---------- */
+.enc-chart-tabs {
+  margin: 8px 20px 0;
+  border-bottom: 2px solid var(--border, #ddd);
+}
