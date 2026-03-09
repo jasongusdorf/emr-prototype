@@ -8525,3 +8525,328 @@ body.dark-mode .oq-actions-top {
   font-style: italic;
   margin-top: 4px;
 }
+
+/* ============================================================
+   NEW MODULE STYLES — All 7 Feature Categories
+   ============================================================ */
+
+/* ---------- Order Sets ---------- */
+.os-filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+.os-cat-btn { padding:6px 14px; border:1px solid var(--border,#ddd); border-radius:20px; background:#fff; cursor:pointer; font-size:13px; transition:all .15s; }
+.os-cat-btn:hover, .os-cat-btn.active { background:var(--primary,#2563eb); color:#fff; border-color:var(--primary,#2563eb); }
+.os-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+.os-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; box-shadow:var(--shadow,0 1px 3px rgba(0,0,0,.08)); transition:box-shadow .15s; }
+.os-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.12); }
+.os-card h4 { margin:0 0 6px; }
+.os-card-meta { font-size:12px; color:var(--text-secondary,#666); margin-bottom:8px; }
+.os-item-list { list-style:none; padding:0; margin:8px 0; font-size:13px; }
+.os-item-list li { padding:3px 0; border-bottom:1px solid var(--border,#eee); }
+.os-item-list li:last-child { border-bottom:none; }
+
+/* ---------- CDS Alerts ---------- */
+.cds-summary-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
+.cds-summary-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; text-align:center; }
+.cds-summary-label { font-size:12px; color:var(--text-secondary,#666); text-transform:uppercase; }
+.cds-summary-value { font-size:28px; font-weight:700; margin-top:4px; }
+.cds-summary-critical { color:#dc3545; }
+.cds-summary-unack { color:#ffc107; }
+.cds-summary-today { color:var(--primary,#2563eb); }
+.cds-summary-total { color:var(--text-primary,#1a1a2e); }
+.cds-section-title { font-size:14px; font-weight:600; padding:8px 0; border-bottom:2px solid var(--border,#ddd); margin:16px 0 8px; }
+.cds-critical-section { border-left:3px solid #dc3545; padding-left:12px; margin-bottom:16px; }
+.cds-critical-title { color:#dc3545; font-weight:600; margin-bottom:8px; }
+.cds-warning-section { border-left:3px solid #ffc107; padding-left:12px; margin-bottom:16px; }
+.cds-warning-title { color:#856404; font-weight:600; margin-bottom:8px; }
+.cds-alert-item { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:12px; margin-bottom:8px; display:flex; align-items:flex-start; gap:10px; }
+.cds-alert-critical { border-left:3px solid #dc3545; }
+.cds-alert-warning { border-left:3px solid #ffc107; }
+.cds-alert-icon { font-size:18px; flex-shrink:0; }
+.cds-alert-content { flex:1; }
+.cds-alert-msg { font-weight:500; margin-bottom:4px; }
+.cds-alert-type-badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:500; background:#e9ecef; }
+.cds-status-pending { color:#856404; }
+.cds-status-ack { color:#155724; }
+.cds-table { width:100%; border-collapse:collapse; }
+.cds-table th, .cds-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.cds-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.cds-sev-critical { color:#dc3545; font-weight:600; }
+.cds-sev-warning { color:#856404; }
+.cds-breakdown-row { display:flex; gap:12px; margin:12px 0; }
+.cds-breakdown-item { flex:1; background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:10px; text-align:center; }
+.cds-breakdown-label { font-size:12px; color:var(--text-secondary,#666); }
+.cds-breakdown-count { font-size:20px; font-weight:700; }
+.cds-alerts-modal { max-height:400px; overflow-y:auto; }
+.cds-msg-cell { max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cds-proceed-btn { margin-top:12px; }
+.cds-alert-section { margin-bottom:12px; }
+
+/* ---------- E-Prescribe ---------- */
+.erx-filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+.erx-pharm-item { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:12px; margin-bottom:8px; cursor:pointer; }
+.erx-pharm-item:hover { border-color:var(--primary,#2563eb); }
+.erx-pharm-preferred { border-left:3px solid var(--success,#28a745); }
+.erx-suggest-item { padding:8px 12px; border-bottom:1px solid var(--border,#eee); cursor:pointer; font-size:13px; }
+.erx-suggest-item:hover { background:var(--bg-card,#f0f7ff); }
+
+/* ---------- Check-In ---------- */
+.check-in-content { padding:24px; max-width:1000px; margin:0 auto; }
+
+/* ---------- Surveys ---------- */
+.chart-survey-type { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; background:#e9ecef; }
+.chart-survey-assign { margin-top:8px; }
+
+/* ---------- Charge Capture ---------- */
+.cc-tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border,#ddd); margin-bottom:20px; }
+.cc-tab { padding:10px 20px; cursor:pointer; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--text-secondary,#666); }
+.cc-tab-active, .cc-tab.active { color:var(--primary,#2563eb); border-bottom-color:var(--primary,#2563eb); }
+.cc-cpt-search, .cc-patient-search { width:100%; padding:8px 12px; border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); font-size:14px; }
+.cc-cpt-results, .cc-patient-results { max-height:200px; overflow-y:auto; border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); margin-top:4px; }
+.cc-cpt-detail { padding:8px; border-bottom:1px solid var(--border,#eee); cursor:pointer; font-size:13px; }
+.cc-cpt-detail:hover { background:var(--bg-card,#f0f7ff); }
+.cc-cpt-code { font-weight:600; margin-right:8px; }
+.cc-fee, .cc-icd10, .cc-modifier, .cc-units, .cc-patient-id, .cc-encounter-select { padding:6px 8px; border:1px solid var(--border,#ddd); border-radius:4px; font-size:13px; }
+.cc-save-charge { margin-top:12px; }
+.cc-charges-tbody tr:hover { background:var(--bg-card,#f8f9fa); }
+.cc-pagination { display:flex; justify-content:center; gap:4px; margin-top:12px; }
+
+/* ---------- Coding Assist ---------- */
+.coding-assist-section { margin-bottom:16px; }
+
+/* ---------- Claim Scrub ---------- */
+.scrub-result-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; margin-bottom:12px; }
+.scrub-result-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.scrub-issues-list { list-style:none; padding:0; margin:0; }
+.scrub-issue-item { padding:8px; border-radius:4px; margin-bottom:4px; font-size:13px; display:flex; align-items:flex-start; gap:8px; }
+.scrub-issue-error { background:#f8d7da; color:#721c24; }
+.scrub-issue-warning { background:#fff3cd; color:#856404; }
+
+/* ---------- Denial Management ---------- */
+.denial-mgmt-tabs { display:flex; gap:0; border-bottom:2px solid var(--border,#ddd); margin-bottom:20px; }
+
+/* ---------- Patient Billing ---------- */
+.billing-summary-bar { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
+.billing-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+.billing-toolbar-search { flex:1; min-width:200px; padding:8px 12px; border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); }
+.billing-table { width:100%; border-collapse:collapse; }
+.billing-table th, .billing-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.billing-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.billing-row-clickable { cursor:pointer; }
+.billing-row-clickable:hover { background:var(--bg-card,#f8f9fa); }
+.billing-detail-header { margin-bottom:16px; }
+.billing-detail-section { margin-bottom:12px; }
+.billing-actions-cell { white-space:nowrap; }
+.billing-badge-draft { background:#e9ecef; color:#383d41; padding:2px 8px; border-radius:10px; font-size:11px; }
+.billing-badge-submitted { background:#cce5ff; color:#004085; padding:2px 8px; border-radius:10px; font-size:11px; }
+.billing-badge-accepted { background:#d4edda; color:#155724; padding:2px 8px; border-radius:10px; font-size:11px; }
+.billing-badge-paid { background:#d4edda; color:#155724; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+.billing-badge-denied { background:#f8d7da; color:#721c24; padding:2px 8px; border-radius:10px; font-size:11px; }
+.billing-badge-appealed { background:#fff3cd; color:#856404; padding:2px 8px; border-radius:10px; font-size:11px; }
+.billing-search-results { max-height:250px; overflow-y:auto; border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); }
+.billing-search-result-item { padding:8px 12px; border-bottom:1px solid var(--border,#eee); cursor:pointer; font-size:13px; }
+.billing-search-result-item:hover { background:var(--bg-card,#f0f7ff); }
+
+/* ---------- External Labs ---------- */
+.extlab-filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+.extlab-table { width:100%; border-collapse:collapse; }
+.extlab-table th, .extlab-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.extlab-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.extlab-match-row { display:flex; gap:8px; align-items:center; }
+.extlab-empty { text-align:center; padding:40px; color:var(--text-secondary,#666); }
+
+/* ---------- HIE ---------- */
+.hie-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.hie-record-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:12px; margin-bottom:8px; }
+.hie-consent-section { background:#f0f7ff; border:1px solid #b8daff; border-radius:var(--radius,8px); padding:16px; margin-bottom:16px; }
+
+/* ---------- CCD Exchange ---------- */
+.ccd-header-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.ccd-header-meta { font-size:13px; color:var(--text-secondary,#666); }
+.ccd-tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border,#ddd); margin-bottom:20px; }
+.ccd-tab { padding:10px 20px; cursor:pointer; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--text-secondary,#666); }
+.ccd-tab.active { color:var(--primary,#2563eb); border-bottom-color:var(--primary,#2563eb); }
+.ccd-toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.ccd-content { max-width:1000px; margin:0 auto; }
+.ccd-document { background:#fff; border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:24px; margin-bottom:16px; }
+.ccd-header { text-align:center; margin-bottom:16px; border-bottom:2px solid var(--primary,#2563eb); padding-bottom:12px; }
+.ccd-section { margin-bottom:16px; }
+.ccd-section-title { font-size:14px; font-weight:600; color:var(--primary,#2563eb); border-bottom:1px solid var(--border,#eee); padding-bottom:4px; margin-bottom:8px; }
+.ccd-table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+.ccd-table th, .ccd-table td { padding:6px 8px; border:1px solid var(--border,#eee); font-size:12px; text-align:left; }
+.ccd-table th { background:var(--bg-card,#f8f9fa); font-weight:600; }
+.ccd-table-sm th, .ccd-table-sm td { padding:4px 6px; font-size:11px; }
+.ccd-demo-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px; }
+.ccd-footer { text-align:center; font-size:11px; color:var(--text-secondary,#666); margin-top:16px; }
+.ccd-preview-wrapper { border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; max-height:500px; overflow-y:auto; }
+.ccd-history-list { display:flex; flex-direction:column; gap:8px; }
+.ccd-history-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:12px; display:flex; justify-content:space-between; align-items:center; }
+.ccd-history-info { flex:1; }
+.ccd-type-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+.ccd-empty { text-align:center; padding:40px; color:var(--text-secondary,#666); }
+.ccd-empty-note { font-size:13px; margin-top:8px; }
+.ccd-import-textarea { width:100%; min-height:150px; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); }
+.ccd-import-parsed { margin-top:12px; }
+.ccd-import-preview { max-height:300px; overflow-y:auto; }
+.ccd-import-section { margin-bottom:8px; }
+.ccd-import-section-card { background:var(--bg-card,#f8f9fa); border:1px solid var(--border,#ddd); border-radius:4px; padding:8px; }
+.ccd-toc-form, .ccd-toc-patient, .ccd-toc-document, .ccd-toc-section, .ccd-toc-notes, .ccd-toc-meta { margin-bottom:12px; }
+
+/* ---------- PACS Viewer ---------- */
+.pacs-viewer { display:flex; flex-direction:column; height:calc(100vh - 120px); }
+.pacs-viewer-header { display:flex; justify-content:space-between; align-items:center; padding:8px 16px; background:var(--bg-card,#1a1a2e); border-bottom:1px solid var(--border,#333); }
+.pacs-filter-bar { display:flex; gap:8px; flex-wrap:wrap; padding:8px 16px; background:var(--bg-card,#f8f9fa); }
+.pacs-viewer-main { display:flex; flex:1; overflow:hidden; }
+.pacs-series-panel { width:160px; background:#1a1a2e; overflow-y:auto; border-right:1px solid #333; }
+.pacs-series-thumb { padding:8px; cursor:pointer; border-bottom:1px solid #333; text-align:center; }
+.pacs-series-thumb:hover { background:#2d2d4a; }
+.pacs-series-thumb.active { background:var(--primary,#2563eb); }
+.pacs-viewport { flex:1; background:#000; display:flex; align-items:center; justify-content:center; position:relative; }
+.pacs-canvas { max-width:100%; max-height:100%; }
+.pacs-overlay { position:absolute; color:#0f0; font-size:12px; font-family:monospace; text-shadow:0 0 4px #000; }
+.pacs-overlay-tl { top:8px; left:8px; }
+.pacs-overlay-tr { top:8px; right:8px; text-align:right; }
+.pacs-overlay-bl { bottom:8px; left:8px; }
+.pacs-overlay-br { bottom:8px; right:8px; text-align:right; }
+.pacs-toolbar { display:flex; gap:4px; padding:4px 8px; background:#111; }
+.pacs-tool-btn { padding:4px 10px; background:#333; color:#fff; border:1px solid #555; border-radius:4px; cursor:pointer; font-size:12px; }
+.pacs-tool-btn:hover, .pacs-tool-btn.active { background:var(--primary,#2563eb); border-color:var(--primary,#2563eb); }
+.pacs-report-panel { width:300px; background:var(--bg-card,#fff); border-left:1px solid var(--border,#ddd); padding:12px; overflow-y:auto; }
+.pacs-table { width:100%; border-collapse:collapse; }
+.pacs-table th, .pacs-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.pacs-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.pacs-slider { width:100%; margin:4px 0; }
+.pacs-slider-label { font-size:11px; color:var(--text-secondary,#999); }
+
+/* ---------- Device Integration ---------- */
+.devint-tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border,#ddd); margin-bottom:20px; }
+.devint-tab { padding:10px 20px; cursor:pointer; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--text-secondary,#666); }
+.devint-tab.active { color:var(--primary,#2563eb); border-bottom-color:var(--primary,#2563eb); }
+.devint-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+.devint-device-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; }
+.devint-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.devint-card-data { font-size:13px; margin-bottom:8px; }
+.devint-card-actions { display:flex; gap:4px; }
+.devint-waveform { height:60px; background:#111; border-radius:4px; overflow:hidden; }
+.devint-type-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+
+/* ---------- Quality Measures ---------- */
+.qm-container { padding:24px; max-width:1200px; margin:0 auto; }
+.qm-filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+.qm-filter-btn { padding:6px 14px; border:1px solid var(--border,#ddd); border-radius:20px; background:#fff; cursor:pointer; font-size:13px; }
+.qm-filter-btn:hover, .qm-filter-btn.active { background:var(--primary,#2563eb); color:#fff; border-color:var(--primary,#2563eb); }
+.qm-measures-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; margin-bottom:20px; }
+.qm-measure-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; cursor:pointer; transition:box-shadow .15s; }
+.qm-measure-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.12); }
+.qm-overall-score { font-size:32px; font-weight:700; margin:8px 0; }
+.qm-no-gaps { color:var(--success,#28a745); font-weight:500; }
+.qm-btn-outline { padding:4px 12px; border:1px solid var(--border,#ddd); border-radius:4px; background:#fff; cursor:pointer; font-size:12px; }
+.qm-btn-outline:hover { background:var(--bg-card,#f8f9fa); }
+.qm-drill-panel { margin-top:16px; background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; }
+.qm-drill-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.qm-drill-table { width:100%; border-collapse:collapse; }
+.qm-drill-table th, .qm-drill-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.qm-drill-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.qm-drill-action { padding:3px 10px; border:1px solid var(--primary,#2563eb); color:var(--primary,#2563eb); border-radius:4px; background:#fff; cursor:pointer; font-size:12px; }
+
+/* ---------- Registries ---------- */
+.reg-container { padding:24px; max-width:1200px; margin:0 auto; }
+.reg-overview { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; margin-bottom:20px; }
+.reg-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; cursor:pointer; transition:box-shadow .15s; }
+.reg-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.12); }
+.reg-detail { margin-top:16px; }
+.reg-detail-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.reg-table-wrap { overflow-x:auto; }
+.reg-table { width:100%; border-collapse:collapse; }
+.reg-table th, .reg-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.reg-table th { font-weight:600; background:var(--bg-card,#f8f9fa); cursor:pointer; }
+.reg-th-sortable:hover { background:#e9ecef; }
+.reg-name-cell { font-weight:500; cursor:pointer; color:var(--primary,#2563eb); }
+.reg-name-cell:hover { text-decoration:underline; }
+.reg-flag-cell { font-size:12px; }
+.reg-row-flagged { background:#fff8f0; }
+
+/* ---------- Risk Stratification ---------- */
+.risk-container { padding:24px; max-width:1200px; margin:0 auto; }
+.risk-overview { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; margin-bottom:20px; }
+.risk-overview-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; text-align:center; }
+.risk-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.risk-tabs { display:flex; gap:0; border-bottom:2px solid var(--border,#ddd); margin-bottom:16px; }
+.risk-tab { padding:10px 20px; cursor:pointer; font-weight:500; border-bottom:2px solid transparent; margin-bottom:-2px; color:var(--text-secondary,#666); }
+.risk-tab.active { color:var(--primary,#2563eb); border-bottom-color:var(--primary,#2563eb); }
+.risk-list-area { overflow-x:auto; }
+.risk-table { width:100%; border-collapse:collapse; }
+.risk-table th, .risk-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.risk-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.risk-row:hover { background:var(--bg-card,#f8f9fa); }
+.risk-cat-desc { font-size:12px; color:var(--text-secondary,#666); }
+
+/* ---------- Panel Management ---------- */
+.pm-container { padding:24px; max-width:1200px; margin:0 auto; }
+.pm-stats-section { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+.pm-outreach-section { margin-bottom:24px; }
+.pm-outreach-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.pm-outreach-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; cursor:pointer; transition:box-shadow .15s; }
+.pm-outreach-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.12); }
+.pm-detail-area { margin-top:16px; }
+.pm-detail-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.pm-table-wrap { overflow-x:auto; }
+.pm-table { width:100%; border-collapse:collapse; }
+.pm-table th, .pm-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.pm-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+
+/* ---------- Specialty Common ---------- */
+.specialty-record-card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); margin-bottom:12px; overflow:hidden; }
+.specialty-record-body { padding:12px 16px; }
+.specialty-record-footer { padding:8px 16px; background:var(--bg-card,#f8f9fa); border-top:1px solid var(--border,#eee); display:flex; justify-content:flex-end; gap:8px; }
+.specialty-progress-bar { height:8px; background:#e9ecef; border-radius:4px; overflow:hidden; margin:4px 0; }
+.specialty-progress-bar > div { height:100%; border-radius:4px; transition:width .3s; }
+.specialty-next-treatment { background:#f0f7ff; border:1px solid #b8daff; border-radius:var(--radius,8px); padding:12px; margin-bottom:12px; }
+.chemo-drug-row { display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border,#eee); }
+
+/* ---------- BPA Banner (Clinical Decision Support in Chart) ---------- */
+.bpa-banner { background:linear-gradient(135deg,#fff8e1,#fff3cd); border:1px solid #ffc107; border-radius:var(--radius,8px); margin-bottom:16px; overflow:hidden; }
+.bpa-banner-header { display:flex; justify-content:space-between; align-items:center; padding:10px 16px; border-bottom:1px solid rgba(255,193,7,.3); }
+.bpa-banner-icon { font-size:18px; margin-right:8px; }
+.bpa-banner-items { padding:8px 16px; }
+.bpa-item { display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,193,7,.15); }
+.bpa-item:last-child { border-bottom:none; }
+.bpa-item-icon { font-size:14px; flex-shrink:0; margin-top:2px; }
+.bpa-item-content { flex:1; }
+.bpa-item-msg { font-size:13px; font-weight:500; }
+.bpa-item-category { font-size:11px; color:var(--text-secondary,#666); }
+.bpa-item-critical { border-left:3px solid #dc3545; padding-left:8px; }
+.bpa-item-warning { border-left:3px solid #ffc107; padding-left:8px; }
+.bpa-dismiss-btn { padding:2px 8px; border:1px solid var(--border,#ddd); border-radius:4px; background:#fff; cursor:pointer; font-size:11px; }
+.bpa-dismiss-all { padding:4px 12px; border:1px solid var(--border,#ddd); border-radius:4px; background:#fff; cursor:pointer; font-size:12px; }
+
+/* ---------- Shared utility classes for new modules ---------- */
+.summary-stat { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); padding:16px; text-align:center; }
+.summary-stat h4 { margin:0; font-size:12px; color:var(--text-secondary,#666); text-transform:uppercase; }
+.summary-stat .stat-value { font-size:24px; font-weight:700; margin-top:4px; }
+.data-table { width:100%; border-collapse:collapse; }
+.data-table th, .data-table td { padding:8px 10px; border-bottom:1px solid var(--border,#eee); text-align:left; font-size:13px; }
+.data-table th { font-weight:600; background:var(--bg-card,#f8f9fa); }
+.data-table-compact th, .data-table-compact td { padding:4px 8px; font-size:12px; }
+.table-wrap { overflow-x:auto; }
+.pagination-bar { display:flex; justify-content:space-between; align-items:center; padding:8px 0; margin-top:12px; }
+.pagination-info { font-size:13px; color:var(--text-secondary,#666); }
+.form-row { display:flex; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+.form-row > * { flex:1; min-width:150px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+.badge-success { background:#d4edda; color:#155724; }
+.badge-warning { background:#fff3cd; color:#856404; }
+.badge-danger { background:#f8d7da; color:#721c24; }
+.badge-info { background:#cce5ff; color:#004085; }
+.badge-muted { background:#e9ecef; color:#6c757d; }
+.badge-routine { background:#e9ecef; color:#383d41; }
+.text-muted { color:var(--text-secondary,#666); }
+.btn-xs { padding:2px 8px; font-size:11px; }
+.btn-ghost { background:transparent; border:1px solid var(--border,#ddd); color:var(--text-primary,#1a1a2e); }
+.btn-ghost:hover { background:var(--bg-card,#f8f9fa); }
+.checkbox-group { display:flex; flex-wrap:wrap; gap:8px; }
+.checkbox-group label { display:flex; align-items:center; gap:4px; font-size:13px; cursor:pointer; }
+.chart-section { margin-bottom:20px; }
+.chart-section-header { font-size:14px; font-weight:600; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid var(--border,#eee); }
+.card { background:var(--bg-card,#fff); border:1px solid var(--border,#ddd); border-radius:var(--radius,8px); overflow:hidden; }
+.card-header { padding:12px 16px; background:var(--bg-card,#f8f9fa); border-bottom:1px solid var(--border,#eee); font-weight:600; }
+.card-body { padding:16px; }
+.card-title { margin:0 0 8px; }

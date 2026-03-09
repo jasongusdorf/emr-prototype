@@ -364,6 +364,133 @@ function route() {
         if (isAdmin()) renderAdmin();
         else navigate('#dashboard');
         break;
+      /* --- Clinical --- */
+      case 'order-sets':
+        if (typeof renderOrderSets === 'function') renderOrderSets();
+        else navigate('#dashboard');
+        break;
+      case 'cds':
+        if (typeof renderCDS === 'function') renderCDS();
+        else navigate('#dashboard');
+        break;
+      case 'e-prescribe':
+        if (typeof renderEPrescribe === 'function') renderEPrescribe();
+        else navigate('#dashboard');
+        break;
+      /* --- Nursing & Inpatient --- */
+      case 'mar':
+        if (typeof renderMAR === 'function') renderMAR();
+        else navigate('#dashboard');
+        break;
+      case 'nursing-assess':
+        if (typeof renderNursingAssess === 'function') renderNursingAssess();
+        else navigate('#dashboard');
+        break;
+      case 'care-plans':
+        if (typeof renderCarePlans === 'function') renderCarePlans();
+        else navigate('#dashboard');
+        break;
+      case 'io-tracking':
+        if (typeof renderIOTracking === 'function') renderIOTracking();
+        else navigate('#dashboard');
+        break;
+      case 'bed-board':
+        if (typeof renderBedBoard === 'function') renderBedBoard();
+        else navigate('#dashboard');
+        break;
+      /* --- Patient Engagement --- */
+      case 'check-in':
+        if (typeof renderCheckIn === 'function') renderCheckIn();
+        else navigate('#dashboard');
+        break;
+      case 'surveys':
+        if (typeof renderSurveys === 'function') renderSurveys();
+        else navigate('#dashboard');
+        break;
+      case 'appt-reminders':
+        if (typeof renderApptReminders === 'function') renderApptReminders();
+        else navigate('#dashboard');
+        break;
+      case 'refill-requests':
+        if (typeof renderRefillRequests === 'function') renderRefillRequests();
+        else navigate('#dashboard');
+        break;
+      case 'e-visits':
+        if (typeof renderEVisits === 'function') renderEVisits();
+        else navigate('#dashboard');
+        break;
+      /* --- Revenue Cycle --- */
+      case 'charge-capture':
+        if (typeof renderChargeCapture === 'function') renderChargeCapture();
+        else navigate('#dashboard');
+        break;
+      case 'denial-mgmt':
+        if (typeof renderDenialMgmt === 'function') renderDenialMgmt();
+        else navigate('#dashboard');
+        break;
+      case 'patient-billing':
+        if (typeof renderPatientBilling === 'function') renderPatientBilling();
+        else navigate('#dashboard');
+        break;
+      /* --- Interoperability --- */
+      case 'external-labs':
+        if (typeof renderExternalLabs === 'function') renderExternalLabs();
+        else navigate('#dashboard');
+        break;
+      case 'hie':
+        if (typeof renderHIE === 'function') renderHIE();
+        else navigate('#dashboard');
+        break;
+      case 'ccd-exchange':
+        if (typeof renderCCDExchange === 'function') renderCCDExchange();
+        else navigate('#dashboard');
+        break;
+      case 'pacs-viewer':
+        if (typeof renderPACSViewer === 'function') renderPACSViewer();
+        else navigate('#dashboard');
+        break;
+      case 'device-integration':
+        if (typeof renderDeviceIntegration === 'function') renderDeviceIntegration();
+        else navigate('#dashboard');
+        break;
+      /* --- Population Health --- */
+      case 'quality-measures':
+        if (typeof renderQualityMeasures === 'function') renderQualityMeasures();
+        else navigate('#dashboard');
+        break;
+      case 'registries':
+        if (typeof renderRegistries === 'function') renderRegistries();
+        else navigate('#dashboard');
+        break;
+      case 'risk-stratification':
+        if (typeof renderRiskStratification === 'function') renderRiskStratification();
+        else navigate('#dashboard');
+        break;
+      case 'panel-mgmt':
+        if (typeof renderPanelMgmt === 'function') renderPanelMgmt();
+        else navigate('#dashboard');
+        break;
+      /* --- Specialty --- */
+      case 'oncology':
+        if (param && typeof renderOncology === 'function') renderOncology(param);
+        else navigate('#dashboard');
+        break;
+      case 'obgyn':
+        if (param && typeof renderOBGYN === 'function') renderOBGYN(param);
+        else navigate('#dashboard');
+        break;
+      case 'behavioral-health':
+        if (typeof renderBehavioralHealth === 'function') renderBehavioralHealth();
+        else navigate('#dashboard');
+        break;
+      case 'pediatrics':
+        if (param && typeof renderPediatrics === 'function') renderPediatrics(param);
+        else navigate('#dashboard');
+        break;
+      case 'surgery':
+        if (param && typeof renderSurgery === 'function') renderSurgery(param);
+        else navigate('#dashboard');
+        break;
       default:
         navigate('#dashboard');
     }

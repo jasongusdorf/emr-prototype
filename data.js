@@ -64,6 +64,39 @@ const KEYS = {
   sharedHandoffs:     'emr_shared_handoffs',
   dischargeSummaries: 'emr_discharge_summaries',
   patientTabs:        'emr_patient_tabs',
+  orderSets:        'emr_order_sets',
+  cdsAlerts:        'emr_cds_alerts',
+  prescriptions:    'emr_prescriptions',
+  questionnaires:   'emr_questionnaires',
+  checkInRecords:   'emr_check_in_records',
+  surveyResults:    'emr_survey_results',
+  apptReminders:    'emr_appt_reminders',
+  reminderPrefs:    'emr_reminder_prefs',
+  refillRequests:   'emr_refill_requests',
+  evisits:          'emr_evisits',
+  charges:          'emr_charges',
+  denials:          'emr_denials',
+  appeals:          'emr_appeals',
+  payments:         'emr_payments',
+  externalLabResults: 'emr_external_lab_results',
+  hieRecords:       'emr_hie_records',
+  hieConsent:       'emr_hie_consent',
+  ccdHistory:       'emr_ccd_history',
+  pacsStudies:      'emr_pacs_studies',
+  deviceAssignments:'emr_device_assignments',
+  deviceAlarms:     'emr_device_alarms',
+  alertThresholds:  'emr_alert_thresholds',
+  marEntries:       'emr_mar_entries',
+  nursingAssessments:'emr_nursing_assessments',
+  carePlans:        'emr_care_plans',
+  ioRecords:        'emr_io_records',
+  chemoPlans:       'emr_chemo_plans',
+  prenatalVisits:   'emr_prenatal_visits',
+  safetyPlans:      'emr_safety_plans',
+  sessionNotes:     'emr_session_notes',
+  growthCharts:     'emr_growth_charts',
+  milestones:       'emr_milestones',
+  surgicalCases:    'emr_surgical_cases',
 };
 
 /* ---------- Data Versioning ---------- */
@@ -4037,3 +4070,133 @@ function seedExtraPatients() {
   saveImmunization({ patientId: s20.id, vaccine: 'Influenza (IIV4)', date: '2024-10-05', lot: 'FL24-M', manufacturer: 'GSK', site: 'L deltoid', givenBy: p1.id, nextDue: '2025-10-01', notes: '' });
   saveImmunization({ patientId: s20.id, vaccine: 'Meningococcal (MenACWY)', date: '2024-01-08', lot: 'MC24-MR', manufacturer: 'Sanofi', site: 'R deltoid', givenBy: p1.id, nextDue: '', notes: 'College student booster indication.' });
 }
+
+/* ---------- Order Sets CRUD ---------- */
+function getOrderSets() { return loadAll(KEYS.orderSets); }
+function getOrderSet(id) { return getOrderSets().find(function(o) { return o.id === id; }); }
+function saveCustomOrderSet(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.orderSets, true); var idx = all.findIndex(function(o) { return o.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.orderSets, all); return data; }
+function deleteCustomOrderSet(id) { softDeleteRecord(KEYS.orderSets, id); }
+
+/* ---------- CDS Alerts CRUD ---------- */
+function getCDSAlerts(patientId) { return loadAll(KEYS.cdsAlerts).filter(function(a) { return a.patientId === patientId; }); }
+function logCDSAlert(alert) { if (!alert.id) alert.id = generateId(); var all = loadAll(KEYS.cdsAlerts, true); all.push(alert); saveAll(KEYS.cdsAlerts, all); return alert; }
+function acknowledgeCDSAlert(alertId) { var all = loadAll(KEYS.cdsAlerts, true); var a = all.find(function(x) { return x.id === alertId; }); if (a) { a.acknowledged = true; a.acknowledgedAt = new Date().toISOString(); saveAll(KEYS.cdsAlerts, all); } }
+
+/* ---------- Prescriptions CRUD ---------- */
+function getPrescriptions(patientId) { return loadAll(KEYS.prescriptions).filter(function(p) { return !patientId || p.patientId === patientId; }); }
+function getPrescription(id) { return loadAll(KEYS.prescriptions).find(function(p) { return p.id === id; }); }
+function savePrescription(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.prescriptions, true); var idx = all.findIndex(function(p) { return p.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else { data.createdAt = data.createdAt || new Date().toISOString(); all.push(data); } saveAll(KEYS.prescriptions, all); return data; }
+function updatePrescriptionStatus(id, status) { var all = loadAll(KEYS.prescriptions, true); var p = all.find(function(x) { return x.id === id; }); if (p) { p.status = status; p.updatedAt = new Date().toISOString(); saveAll(KEYS.prescriptions, all); } }
+
+/* ---------- Check-In CRUD ---------- */
+function getCheckInRecords() { return loadAll(KEYS.checkInRecords); }
+function getCheckInRecord(id) { return getCheckInRecords().find(function(r) { return r.id === id; }); }
+function saveCheckInRecord(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.checkInRecords, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.checkInRecords, all); return data; }
+function getCheckInByAppointment(aptId) { return getCheckInRecords().find(function(r) { return r.appointmentId === aptId; }); }
+function getQuestionnaires() { return loadAll(KEYS.questionnaires); }
+function getQuestionnaire(id) { return getQuestionnaires().find(function(q) { return q.id === id; }); }
+function saveQuestionnaire(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.questionnaires, true); var idx = all.findIndex(function(q) { return q.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.questionnaires, all); return data; }
+function deleteQuestionnaire(id) { softDeleteRecord(KEYS.questionnaires, id); }
+
+/* ---------- Surveys CRUD ---------- */
+function getSurveyResults() { return loadAll(KEYS.surveyResults); }
+function getSurveyResult(id) { return getSurveyResults().find(function(r) { return r.id === id; }); }
+function saveSurveyResult(data) { if (!data.id) data.id = generateId(); data.completedAt = data.completedAt || new Date().toISOString(); var all = loadAll(KEYS.surveyResults, true); all.push(data); saveAll(KEYS.surveyResults, all); return data; }
+function getSurveysByPatient(patientId) { return getSurveyResults().filter(function(r) { return r.patientId === patientId; }); }
+
+/* ---------- Appointment Reminders CRUD ---------- */
+function getApptReminders() { return loadAll(KEYS.apptReminders); }
+function saveApptReminder(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.apptReminders, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.apptReminders, all); return data; }
+function getReminderPrefsByPatient(patientId) { return loadAll(KEYS.reminderPrefs).find(function(p) { return p.patientId === patientId; }); }
+function saveReminderPrefs(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.reminderPrefs, true); var idx = all.findIndex(function(p) { return p.patientId === data.patientId; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.reminderPrefs, all); return data; }
+function getApptRemindersByPatient(patientId) { return getApptReminders().filter(function(r) { return r.patientId === patientId; }); }
+
+/* ---------- Refill Requests CRUD ---------- */
+function getRefillRequests() { return loadAll(KEYS.refillRequests); }
+function getRefillRequest(id) { return getRefillRequests().find(function(r) { return r.id === id; }); }
+function saveRefillRequest(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.refillRequests, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.refillRequests, all); return data; }
+function getRefillsByPatient(patientId) { return getRefillRequests().filter(function(r) { return r.patientId === patientId; }); }
+
+/* ---------- E-Visits CRUD ---------- */
+function getEVisits() { return loadAll(KEYS.evisits); }
+function getEVisit(id) { return getEVisits().find(function(v) { return v.id === id; }); }
+function saveEVisit(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.evisits, true); var idx = all.findIndex(function(v) { return v.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.evisits, all); return data; }
+function getEVisitsByPatient(patientId) { return getEVisits().filter(function(v) { return v.patientId === patientId; }); }
+
+/* ---------- Charges CRUD ---------- */
+function getCharges() { return loadAll(KEYS.charges); }
+function getCharge(id) { return getCharges().find(function(c) { return c.id === id; }); }
+function saveCharge(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.charges, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.charges, all); return data; }
+function deleteCharge(id) { softDeleteRecord(KEYS.charges, id); }
+
+/* ---------- Denials & Appeals CRUD ---------- */
+function getDenials() { return loadAll(KEYS.denials); }
+function getDenial(id) { return getDenials().find(function(d) { return d.id === id; }); }
+function saveDenial(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.denials, true); var idx = all.findIndex(function(d) { return d.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.denials, all); return data; }
+function getAppeals() { return loadAll(KEYS.appeals); }
+function saveAppeal(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.appeals, true); var idx = all.findIndex(function(a) { return a.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.appeals, all); return data; }
+
+/* ---------- Patient Payments CRUD ---------- */
+function getPatientPayments() { return loadAll(KEYS.payments); }
+function savePatientPayment(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.payments, true); all.push(data); saveAll(KEYS.payments, all); return data; }
+
+/* ---------- External Labs CRUD ---------- */
+function getExternalLabResults() { return loadAll(KEYS.externalLabResults); }
+function getExternalLabResult(id) { return getExternalLabResults().find(function(r) { return r.id === id; }); }
+function saveExternalLabResult(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.externalLabResults, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.externalLabResults, all); return data; }
+
+/* ---------- HIE CRUD ---------- */
+function getHIERecords(patientId) { return loadAll(KEYS.hieRecords).filter(function(r) { return !patientId || r.patientId === patientId; }); }
+function saveHIERecord(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.hieRecords, true); all.push(data); saveAll(KEYS.hieRecords, all); return data; }
+function getHIEConsent(patientId) { return loadAll(KEYS.hieConsent).find(function(c) { return c.patientId === patientId; }); }
+function saveHIEConsent(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.hieConsent, true); var idx = all.findIndex(function(c) { return c.patientId === data.patientId; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.hieConsent, all); return data; }
+
+/* ---------- CCD History CRUD ---------- */
+function getCCDHistory(patientId) { return loadAll(KEYS.ccdHistory).filter(function(r) { return r.patientId === patientId; }); }
+function saveCCDRecord(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.ccdHistory, true); all.push(data); saveAll(KEYS.ccdHistory, all); return data; }
+
+/* ---------- PACS Studies CRUD ---------- */
+function getPACSStudies() { return loadAll(KEYS.pacsStudies); }
+function getPACSStudy(id) { return getPACSStudies().find(function(s) { return s.id === id; }); }
+function savePACSStudy(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.pacsStudies, true); var idx = all.findIndex(function(s) { return s.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.pacsStudies, all); return data; }
+
+/* ---------- Device Integration CRUD ---------- */
+function getDeviceAssignments() { return loadAll(KEYS.deviceAssignments); }
+function saveDeviceAssignment(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.deviceAssignments, true); var idx = all.findIndex(function(d) { return d.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.deviceAssignments, all); return data; }
+function removeDeviceAssignment(id) { softDeleteRecord(KEYS.deviceAssignments, id); }
+function getDeviceAlarms() { return loadAll(KEYS.deviceAlarms); }
+function saveDeviceAlarm(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.deviceAlarms, true); all.push(data); saveAll(KEYS.deviceAlarms, all); return data; }
+function getAlertThresholds(deviceId) { return loadAll(KEYS.alertThresholds).filter(function(t) { return t.deviceId === deviceId; }); }
+function saveAlertThreshold(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.alertThresholds, true); var idx = all.findIndex(function(t) { return t.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.alertThresholds, all); return data; }
+
+/* ---------- MAR CRUD ---------- */
+function getMAREntries(patientId) { return loadAll(KEYS.marEntries).filter(function(e) { return !patientId || e.patientId === patientId; }); }
+function saveMAREntry(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.marEntries, true); all.push(data); saveAll(KEYS.marEntries, all); return data; }
+
+/* ---------- Nursing Assessments CRUD ---------- */
+function getNursingAssessments(patientId) { return loadAll(KEYS.nursingAssessments).filter(function(a) { return !patientId || a.patientId === patientId; }); }
+function saveNursingAssessment(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.nursingAssessments, true); all.push(data); saveAll(KEYS.nursingAssessments, all); return data; }
+
+/* ---------- Care Plans CRUD ---------- */
+function getCarePlans(patientId) { return loadAll(KEYS.carePlans).filter(function(p) { return !patientId || p.patientId === patientId; }); }
+function saveCarePlan(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.carePlans, true); var idx = all.findIndex(function(p) { return p.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.carePlans, all); return data; }
+
+/* ---------- I/O Tracking CRUD ---------- */
+function getIORecords(patientId) { return loadAll(KEYS.ioRecords).filter(function(r) { return !patientId || r.patientId === patientId; }); }
+function saveIORecord(data) { if (!data.id) data.id = generateId(); data.recordedAt = data.recordedAt || new Date().toISOString(); var all = loadAll(KEYS.ioRecords, true); all.push(data); saveAll(KEYS.ioRecords, all); return data; }
+
+/* ---------- Specialty CRUD ---------- */
+function getChemoPlans(patientId) { return loadAll(KEYS.chemoPlans).filter(function(p) { return !patientId || p.patientId === patientId; }); }
+function saveChemoPlan(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.chemoPlans, true); var idx = all.findIndex(function(p) { return p.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.chemoPlans, all); return data; }
+
+function getPrenatalVisits(patientId) { return loadAll(KEYS.prenatalVisits).filter(function(v) { return !patientId || v.patientId === patientId; }); }
+function savePrenatalVisit(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.prenatalVisits, true); var idx = all.findIndex(function(v) { return v.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.prenatalVisits, all); return data; }
+
+function getSafetyPlans(patientId) { return loadAll(KEYS.safetyPlans).filter(function(p) { return !patientId || p.patientId === patientId; }); }
+function saveSafetyPlan(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.safetyPlans, true); var idx = all.findIndex(function(p) { return p.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.safetyPlans, all); return data; }
+
+function getSessionNotes(patientId) { return loadAll(KEYS.sessionNotes).filter(function(n) { return !patientId || n.patientId === patientId; }); }
+function saveSessionNote(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.sessionNotes, true); var idx = all.findIndex(function(n) { return n.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.sessionNotes, all); return data; }
+
+function getSurgicalCases(patientId) { return loadAll(KEYS.surgicalCases).filter(function(c) { return !patientId || c.patientId === patientId; }); }
+function saveSurgicalCase(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.surgicalCases, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.surgicalCases, all); return data; }
