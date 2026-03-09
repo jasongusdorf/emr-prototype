@@ -58,6 +58,9 @@ const OVERVIEW_SUBTABS = [
   { key: 'medications',   label: 'Medications',     color: 'medications' },
   { key: 'results',       label: 'Results',         color: 'results' },
   { key: 'orders',        label: 'Orders',          color: 'orders' },
+  { key: 'assessments',   label: 'Assessments',     color: 'notes' },
+  { key: 'care-plans',    label: 'Care Plans',      color: 'notes' },
+  { key: 'io',            label: 'I/O',             color: 'notes' },
   { key: 'communication', label: 'Communication',   color: 'notes' },
 ];
 
@@ -641,11 +644,26 @@ function buildOverviewContent(app, patient, patientId) {
   renderNotePreviewPane(patientId, notesContainer);
   wrap('notes', notesContainer);
 
-  // Orders category
-  wrap('orders', buildChartOrdersCard(patientId));
-  wrap('orders', buildReferralsCard(patientId));
-  wrap('orders', buildDocumentsCard(patientId));
-  wrap('orders', buildAuditLogCard(patientId));
+  // Orders category — tabbed: Active Orders | Order Sets | E-Prescribe
+  wrap('orders', buildOrdersSection(patientId));
+
+  // Assessments tab
+  const assessContainer = document.createElement('div');
+  assessContainer.id = 'section-assessments';
+  buildAssessmentsTabContent(patientId, assessContainer);
+  wrap('assessments', assessContainer);
+
+  // Care Plans tab
+  const carePlansContainer = document.createElement('div');
+  carePlansContainer.id = 'section-care-plans';
+  buildCarePlansTabContent(patientId, carePlansContainer);
+  wrap('care-plans', carePlansContainer);
+
+  // I/O tab
+  const ioContainer = document.createElement('div');
+  ioContainer.id = 'section-io';
+  buildIOTabContent(patientId, ioContainer);
+  wrap('io', ioContainer);
 
   // Communication category
   wrap('communication', buildCommunicationSection(patientId));
@@ -1504,6 +1522,7 @@ function buildMedicationsSection(patientId) {
     { key: 'outpatient', label: 'Outpatient Medications' },
     { key: 'inpatient',  label: 'Inpatient Medications' },
     { key: 'medrec',     label: 'Medication Reconciliation' },
+    { key: 'mar',        label: 'MAR' },
   ];
   tabs.forEach(t => {
     const btn = document.createElement('button');
@@ -1528,6 +1547,7 @@ function buildMedicationsSection(patientId) {
       case 'outpatient': content.appendChild(buildMedicationsCard(patientId, 'Outpatient')); break;
       case 'inpatient':  content.appendChild(buildMedicationsCard(patientId, 'Inpatient')); break;
       case 'medrec':     content.appendChild(buildMedRecTab(patientId)); break;
+      case 'mar':        buildMARTabContent(patientId, content); break;
     }
   }
   renderMedContent();
@@ -4010,6 +4030,538 @@ function openFamilyHistoryModal(patientId) {
     closeModal();
     showToast('Family history saved.', 'success');
     refreshChart(patientId);
+  });
+}
+
+/* ============================================================
+   ORDERS SECTION — tabbed: Active Orders | Order Sets | E-Prescribe
+   ============================================================ */
+function buildOrdersSection(patientId) {
+  const section = document.createElement('div');
+  section.className = 'results-section';
+  section.id = 'section-orders';
+
+  const bar = document.createElement('div');
+  bar.className = 'results-subtab-bar';
+  const ordTabs = [
+    { key: 'active',     label: 'Active Orders' },
+    { key: 'order-sets', label: 'Order Sets' },
+    { key: 'erx',        label: 'E-Prescribe' },
+  ];
+  let _ordSubTab = 'active';
+  const content = document.createElement('div');
+  section.appendChild(bar);
+  section.appendChild(content);
+
+  function renderOrdersContent() {
+    content.innerHTML = '';
+    if (_ordSubTab === 'active') {
+      content.appendChild(buildChartOrdersCard(patientId));
+      content.appendChild(buildReferralsCard(patientId));
+      content.appendChild(buildDocumentsCard(patientId));
+      content.appendChild(buildAuditLogCard(patientId));
+    } else if (_ordSubTab === 'order-sets') {
+      buildOrderSetsTabContent(patientId, content);
+    } else if (_ordSubTab === 'erx') {
+      buildERxTabContent(patientId, content);
+    }
+  }
+
+  ordTabs.forEach(function(t) {
+    const btn = document.createElement('button');
+    btn.className = 'results-subtab' + (_ordSubTab === t.key ? ' active' : '');
+    btn.textContent = t.label;
+    btn.addEventListener('click', function() {
+      _ordSubTab = t.key;
+      bar.querySelectorAll('.results-subtab').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      renderOrdersContent();
+    });
+    bar.appendChild(btn);
+  });
+
+  renderOrdersContent();
+  return section;
+}
+
+/* -------- Order Sets embedded in chart -------- */
+function buildOrderSetsTabContent(patientId, container) {
+  var BUILT_IN_SETS = typeof window._BUILT_IN_ORDER_SETS !== 'undefined' ? window._BUILT_IN_ORDER_SETS : [];
+  // Fallback: define inline if the order-sets.js variable isn't accessible
+  var sets = BUILT_IN_SETS.length ? BUILT_IN_SETS : [
+    { id: 'sepsis', name: 'Sepsis Bundle', category: 'Critical Care', items: ['Blood Cultures x2','Lactate Level','CBC/BMP','IV Fluids 30mL/kg','Broad-spectrum Antibiotics','O2 titrate SpO2 >94%'] },
+    { id: 'chest-pain', name: 'Chest Pain / ACS', category: 'Cardiology', items: ['12-Lead EKG','Troponin q3h x2','CBC/BMP/Coags','Aspirin 325mg PO','Heparin protocol','Cardiology consult'] },
+    { id: 'chf', name: 'CHF Exacerbation', category: 'Cardiology', items: ['BNP','CXR PA/Lateral','BMP/Mg','Daily weights','Fluid restriction 1.5L','Furosemide IV per protocol'] },
+    { id: 'pneumonia', name: 'Community Pneumonia', category: 'Pulmonary', items: ['CBC/BMP','Blood cultures','Sputum culture','CXR','Azithromycin + Ceftriaxone','O2 therapy'] },
+    { id: 'dm', name: 'Diabetes Management', category: 'Endocrine', items: ['BG AC/HS','HbA1c','BMP','Basal insulin','Sliding scale insulin','Dietitian consult'] },
+    { id: 'post-op', name: 'Post-Op Routine', category: 'Surgery', items: ['VS q4h','I&O','PCA or PO pain regimen','DVT prophylaxis','Diet advance as tolerated','PT/OT consult'] },
+  ];
+  var customSets = (typeof getOrderSets === 'function' ? getOrderSets() : []).filter(function(s) { return !s._deleted; });
+  var allSets = sets.concat(customSets);
+
+  var html = '<div style="padding:0 0 16px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+    '<span style="font-size:13px;color:var(--text-secondary,#666)">' + allSets.length + ' order sets available</span>' +
+    '<button class="btn btn-secondary btn-sm" id="os-new-custom">+ Custom Set</button>' +
+  '</div>';
+  html += '<div class="os-grid">';
+  allSets.forEach(function(s, idx) {
+    html += '<div class="os-card">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+        '<h4 style="margin:0 0 4px">' + esc(s.name) + '</h4>' +
+      '</div>' +
+      '<div class="os-card-meta">' + esc(s.category || '') + ' &bull; ' + (s.items || []).length + ' items</div>' +
+      '<ul class="os-item-list">' +
+        (s.items || []).slice(0,4).map(function(i) { return '<li>' + esc(typeof i === 'string' ? i : i.name || '') + '</li>'; }).join('') +
+        ((s.items || []).length > 4 ? '<li style="color:var(--text-secondary,#666);font-style:italic">+' + ((s.items||[]).length - 4) + ' more...</li>' : '') +
+      '</ul>' +
+      '<button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" data-osidx="' + idx + '">Place Order Set</button>' +
+    '</div>';
+  });
+  html += '</div></div>';
+  container.innerHTML = html;
+
+  container.querySelectorAll('[data-osidx]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var s = allSets[parseInt(this.getAttribute('data-osidx'))];
+      var openEncs = getEncountersByPatient(patientId).filter(function(e) { return e.status === 'Open'; });
+      if (!openEncs.length) { showToast('No open encounter — create one first', 'warning'); return; }
+      var encId = openEncs[0].id;
+      (s.items || []).forEach(function(item) {
+        var name = typeof item === 'string' ? item : item.name || '';
+        saveOrder({ encounterId: encId, patientId: patientId, type: 'General', detail: name, status: 'Pending', priority: 'Routine' });
+      });
+      showToast('Order set placed: ' + s.name, 'success');
+    });
+  });
+
+  var newBtn = document.getElementById('os-new-custom');
+  if (newBtn) newBtn.addEventListener('click', function() {
+    openModal({
+      title: 'Create Custom Order Set',
+      bodyHTML: '<div style="display:flex;flex-direction:column;gap:10px">' +
+        '<label>Name:<input id="osn-name" class="form-control" placeholder="e.g. My Admit Orders"></label>' +
+        '<label>Category:<input id="osn-cat" class="form-control" placeholder="e.g. General"></label>' +
+        '<label>Items (one per line):<textarea id="osn-items" class="form-control" rows="5" placeholder="CBC\nBMP\nChest X-ray"></textarea></label>' +
+      '</div>',
+      footerHTML: '<button class="btn btn-primary" id="osn-save">Save</button>',
+    });
+    document.getElementById('osn-save').addEventListener('click', function() {
+      var name = document.getElementById('osn-name').value.trim();
+      if (!name) { showToast('Name required', 'error'); return; }
+      var items = document.getElementById('osn-items').value.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+      if (typeof saveCustomOrderSet === 'function') saveCustomOrderSet({ name: name, category: document.getElementById('osn-cat').value, items: items });
+      closeAllModals(); showToast('Order set saved', 'success');
+      buildOrderSetsTabContent(patientId, container);
+    });
+  });
+}
+
+/* -------- E-Prescribe embedded in chart -------- */
+function buildERxTabContent(patientId, container) {
+  var patient = getPatient(patientId);
+  var rxList = (typeof getPrescriptions === 'function' ? getPrescriptions(patientId) : []);
+  var meds = getPatientMedications(patientId).filter(function(m) { return !m.setting || m.setting === 'Outpatient'; });
+
+  var html = '<div style="padding:0 0 16px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+    '<span style="font-size:13px;color:var(--text-secondary,#666)">Electronic prescribing for outpatient medications</span>' +
+    '<button class="btn btn-primary btn-sm" id="erx-new">+ New Prescription</button>' +
+  '</div>';
+
+  if (!rxList.length && !meds.length) {
+    html += '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No prescriptions on file for this patient.</p>';
+  } else {
+    html += '<table class="data-table"><thead><tr><th>Medication</th><th>Sig</th><th>Qty</th><th>Refills</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    rxList.forEach(function(rx) {
+      html += '<tr><td style="font-weight:500">' + esc(rx.drugName || rx.name || '') + '</td>' +
+        '<td>' + esc(rx.sig || rx.dose || '') + '</td>' +
+        '<td>' + esc(String(rx.quantity || '')) + '</td>' +
+        '<td>' + esc(String(rx.refills || '0')) + '</td>' +
+        '<td><span class="badge badge-' + (rx.status === 'Sent' ? 'success' : rx.status === 'Cancelled' ? 'danger' : 'info') + '">' + esc(rx.status || 'Draft') + '</span></td>' +
+        '<td>' + (rx.createdAt ? formatDateTime(rx.createdAt) : '') + '</td></tr>';
+    });
+    meds.filter(function(m) { return !rxList.find(function(r) { return r.medId === m.id; }); }).forEach(function(m) {
+      html += '<tr style="color:var(--text-secondary,#666)"><td>' + esc(m.name || m.drug || '') + '</td>' +
+        '<td>' + esc(m.dose || '') + ' ' + esc(m.route || '') + '</td><td>—</td><td>—</td>' +
+        '<td><span class="badge badge-muted">On File</span></td><td>—</td>' +
+        '<td><button class="btn btn-sm btn-secondary erx-prescribe-btn" data-mid="' + m.id + '" data-mname="' + esc(m.name || m.drug || '') + '" data-dose="' + esc(m.dose || '') + '">Prescribe</button></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+
+  function openRxModal(prefill) {
+    prefill = prefill || {};
+    openModal({
+      title: 'New Prescription',
+      bodyHTML: '<div style="display:flex;flex-direction:column;gap:10px">' +
+        '<label>Medication:<input id="erx-drug" class="form-control" value="' + esc(prefill.name || '') + '" placeholder="Drug name"></label>' +
+        '<label>Sig (directions):<input id="erx-sig" class="form-control" value="' + esc(prefill.dose || '') + '" placeholder="e.g. 1 tablet PO BID"></label>' +
+        '<label>Quantity:<input id="erx-qty" class="form-control" type="number" value="30" min="1"></label>' +
+        '<label>Refills:<input id="erx-ref" class="form-control" type="number" value="0" min="0"></label>' +
+        '<label>Pharmacy notes:<input id="erx-notes" class="form-control" placeholder="Optional"></label>' +
+      '</div>',
+      footerHTML: '<button class="btn btn-secondary" id="erx-save-draft">Save Draft</button><button class="btn btn-primary" id="erx-send">Send to Pharmacy</button>',
+    });
+    document.getElementById('erx-save-draft').addEventListener('click', function() { saveRx('Draft'); });
+    document.getElementById('erx-send').addEventListener('click', function() { saveRx('Sent'); });
+    function saveRx(status) {
+      var drug = document.getElementById('erx-drug').value.trim();
+      if (!drug) { showToast('Medication name required', 'error'); return; }
+      if (typeof savePrescription === 'function') savePrescription({ patientId: patientId, drugName: drug, sig: document.getElementById('erx-sig').value, quantity: document.getElementById('erx-qty').value, refills: document.getElementById('erx-ref').value, notes: document.getElementById('erx-notes').value, status: status, prescribedBy: getSessionUser() ? getSessionUser().id : '' });
+      closeAllModals(); showToast(status === 'Sent' ? 'Prescription sent to pharmacy' : 'Draft saved', 'success');
+      buildERxTabContent(patientId, container);
+    }
+  }
+
+  var newBtn = document.getElementById('erx-new');
+  if (newBtn) newBtn.addEventListener('click', function() { openRxModal(); });
+  container.querySelectorAll('.erx-prescribe-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { openRxModal({ name: this.getAttribute('data-mname'), dose: this.getAttribute('data-dose') }); });
+  });
+}
+
+/* ============================================================
+   MAR TAB — embedded in Medications section
+   ============================================================ */
+function buildMARTabContent(patientId, container) {
+  var meds = loadAll(KEYS.patientMeds).filter(function(m) { return m.patientId === patientId && m.status === 'Active'; });
+  var entries = (typeof getMAREntries === 'function') ? getMAREntries(patientId) : [];
+  var today = new Date().toISOString().slice(0, 10);
+
+  var MAR_FREQ_HOURS = { 'Daily': [8], 'BID': [8,20], 'TID': [8,14,20], 'QID': [8,12,16,20], 'Q4H': [0,4,8,12,16,20], 'Q6H': [0,6,12,18], 'Q8H': [0,8,16], 'Q12H': [8,20], 'QHS': [21], 'QAM': [8] };
+  var hours = [0,2,4,6,8,10,12,14,16,18,20,22];
+
+  if (!meds.length) {
+    container.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No active medications for this patient.</p>';
+    return;
+  }
+
+  var html = '<div style="margin-bottom:12px;display:flex;gap:16px;font-size:12px">' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#d4edda;display:inline-block"></span> Given</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#fff3cd;display:inline-block"></span> Held</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#f8d7da;display:inline-block"></span> Refused</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#e9ecef;display:inline-block"></span> Not Due</span>' +
+  '</div>';
+  html += '<div style="overflow-x:auto"><table class="mar-grid"><thead><tr><th style="text-align:left;min-width:180px">Medication</th><th>Freq</th>';
+  hours.forEach(function(h) { html += '<th>' + String(h).padStart(2,'0') + ':00</th>'; });
+  html += '</tr></thead><tbody>';
+
+  var scheduled = meds.filter(function(m) { return m.frequency !== 'PRN'; });
+  var prns = meds.filter(function(m) { return m.frequency === 'PRN'; });
+
+  scheduled.forEach(function(med) {
+    var freq = med.frequency || 'Daily';
+    var schedHours = MAR_FREQ_HOURS[freq] || [8];
+    html += '<tr><td style="font-weight:500;padding:6px 8px">' + esc(med.name || med.drug || '') + ' ' + esc(med.dose || '') + '</td><td style="text-align:center">' + esc(freq) + '</td>';
+    hours.forEach(function(h) {
+      var isDue = schedHours.indexOf(h) >= 0;
+      var entry = entries.find(function(e) { return e.medId === med.id && e.hour === h && e.date === today; });
+      var bg = ''; var label = '';
+      if (entry) { bg = entry.status === 'given' ? '#d4edda' : entry.status === 'held' ? '#fff3cd' : '#f8d7da'; label = entry.status === 'given' ? 'G' : entry.status === 'held' ? 'H' : 'R'; }
+      else if (isDue) { bg = '#e9ecef'; label = '—'; }
+      html += '<td style="text-align:center;background:' + bg + ';cursor:' + (isDue ? 'pointer' : 'default') + '" class="mar-cell-inline" data-med="' + med.id + '" data-hour="' + h + '" data-due="' + isDue + '">' + label + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  if (prns.length) {
+    html += '<h4 style="margin:16px 0 8px">PRN Medications</h4>';
+    html += '<table class="data-table"><thead><tr><th>Medication</th><th>Indication</th><th>Last Given</th><th></th></tr></thead><tbody>';
+    prns.forEach(function(med) {
+      var last = entries.filter(function(e) { return e.medId === med.id && e.status === 'given'; }).sort(function(a,b) { return b.recordedAt > a.recordedAt ? 1 : -1; })[0];
+      html += '<tr><td style="font-weight:500">' + esc(med.name || med.drug || '') + ' ' + esc(med.dose || '') + '</td>' +
+        '<td>' + esc(med.indication || 'As needed') + '</td>' +
+        '<td>' + (last ? formatDateTime(last.recordedAt) : 'Never') + '</td>' +
+        '<td><button class="btn btn-secondary btn-sm mar-prn-inline" data-med="' + med.id + '">Administer</button></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('.mar-cell-inline[data-due="true"]').forEach(function(cell) {
+    cell.addEventListener('click', function() {
+      var medId = this.getAttribute('data-med');
+      var hour = parseInt(this.getAttribute('data-hour'));
+      var med = meds.find(function(m) { return m.id === medId; });
+      openModal({
+        title: 'Record Administration — ' + esc(med ? (med.name || med.drug) : ''),
+        bodyHTML: '<label>Status:<select id="mar-inline-status" class="form-control"><option value="given">Given</option><option value="held">Held</option><option value="refused">Refused</option></select></label>' +
+          '<label style="margin-top:8px">Notes:<input id="mar-inline-notes" class="form-control" placeholder="Optional"></label>',
+        footerHTML: '<button class="btn btn-primary" id="mar-inline-save">Save</button>',
+      });
+      document.getElementById('mar-inline-save').addEventListener('click', function() {
+        if (typeof saveMAREntry === 'function') saveMAREntry({ patientId: patientId, medId: medId, hour: hour, date: today, status: document.getElementById('mar-inline-status').value, notes: document.getElementById('mar-inline-notes').value, recordedAt: new Date().toISOString(), nurse: getSessionUser() ? getSessionUser().id : '' });
+        closeAllModals(); showToast('Administration recorded', 'success');
+        buildMARTabContent(patientId, container);
+      });
+    });
+  });
+
+  container.querySelectorAll('.mar-prn-inline').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var medId = this.getAttribute('data-med');
+      var now = new Date();
+      if (typeof saveMAREntry === 'function') saveMAREntry({ patientId: patientId, medId: medId, hour: now.getHours(), date: today, status: 'given', recordedAt: now.toISOString(), nurse: getSessionUser() ? getSessionUser().id : '' });
+      showToast('PRN administered', 'success');
+      buildMARTabContent(patientId, container);
+    });
+  });
+}
+
+/* ============================================================
+   ASSESSMENTS TAB — embedded in chart
+   ============================================================ */
+function buildAssessmentsTabContent(patientId, container) {
+  var assessments = (typeof getNursingAssessments === 'function' ? getNursingAssessments(patientId) : []).sort(function(a,b) { return b.createdAt > a.createdAt ? 1 : -1; });
+
+  var SYSTEMS = [
+    { key: 'neuro', label: 'Neurological' }, { key: 'cardio', label: 'Cardiovascular' },
+    { key: 'resp', label: 'Respiratory' }, { key: 'gi', label: 'Gastrointestinal' },
+    { key: 'gu', label: 'Genitourinary' }, { key: 'msk', label: 'Musculoskeletal' },
+    { key: 'skin', label: 'Skin/Wound' }, { key: 'pain', label: 'Pain' }, { key: 'psycho', label: 'Psychosocial' }
+  ];
+
+  function renderHistory() {
+    var html = '<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">' +
+      '<span style="font-size:13px;color:var(--text-secondary,#666)">' + assessments.length + ' assessment' + (assessments.length !== 1 ? 's' : '') + ' on file</span>' +
+      '<button class="btn btn-primary btn-sm" id="assess-new-btn">+ New Assessment</button>' +
+    '</div>';
+    if (!assessments.length) {
+      html += '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No assessments recorded. Click "+ New Assessment" to start.</p>';
+    } else {
+      assessments.forEach(function(a) {
+        html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px 16px;margin-bottom:8px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center">' +
+            '<strong>' + esc(a.type || 'Assessment') + '</strong>' +
+            '<span style="font-size:12px;color:var(--text-secondary,#666)">' + formatDateTime(a.createdAt) + '</span>' +
+          '</div>' +
+          (a.score !== undefined ? '<div style="margin-top:4px">Score: <strong>' + a.score + '</strong></div>' : '') +
+          (a.notes ? '<div style="margin-top:4px;font-size:13px;color:var(--text-secondary,#666)">' + esc(a.notes) + '</div>' : '') +
+        '</div>';
+      });
+    }
+    container.innerHTML = html;
+    var newBtn = document.getElementById('assess-new-btn');
+    if (newBtn) newBtn.addEventListener('click', renderForm);
+  }
+
+  function renderForm() {
+    var html = '<button class="btn btn-secondary btn-sm" id="assess-back" style="margin-bottom:16px">Back</button>';
+    html += '<h4 style="margin:0 0 12px">Head-to-Toe Assessment</h4>';
+    SYSTEMS.forEach(function(sys) {
+      html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;margin-bottom:8px">' +
+        '<strong>' + sys.label + '</strong>' +
+        '<div style="margin-top:6px;display:flex;gap:12px">' +
+          '<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="assess-' + sys.key + '" value="normal" checked> Normal</label>' +
+          '<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="assess-' + sys.key + '" value="abnormal"> Abnormal</label>' +
+        '</div>' +
+        '<textarea class="form-control assess-notes" data-sys="' + sys.key + '" style="margin-top:6px;display:none;font-size:13px" placeholder="Document findings..."></textarea>' +
+      '</div>';
+    });
+    html += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn btn-primary" id="assess-save">Save Assessment</button></div>';
+    container.innerHTML = html;
+
+    container.querySelectorAll('input[type="radio"]').forEach(function(r) {
+      r.addEventListener('change', function() {
+        var sys = this.name.replace('assess-', '');
+        var ta = container.querySelector('.assess-notes[data-sys="' + sys + '"]');
+        if (ta) ta.style.display = this.value === 'abnormal' ? 'block' : 'none';
+      });
+    });
+
+    document.getElementById('assess-back').addEventListener('click', function() { renderHistory(); });
+    document.getElementById('assess-save').addEventListener('click', function() {
+      var findings = {};
+      SYSTEMS.forEach(function(sys) {
+        var val = container.querySelector('input[name="assess-' + sys.key + '"]:checked');
+        var ta = container.querySelector('.assess-notes[data-sys="' + sys.key + '"]');
+        findings[sys.key] = { status: val ? val.value : 'normal', notes: ta ? ta.value : '' };
+      });
+      if (typeof saveNursingAssessment === 'function') saveNursingAssessment({ patientId: patientId, type: 'Head-to-Toe', findings: findings, nurse: getSessionUser() ? getSessionUser().id : '' });
+      assessments.unshift({ type: 'Head-to-Toe', createdAt: new Date().toISOString(), findings: findings });
+      showToast('Assessment saved', 'success');
+      renderHistory();
+    });
+  }
+
+  renderHistory();
+}
+
+/* ============================================================
+   CARE PLANS TAB — embedded in chart
+   ============================================================ */
+function buildCarePlansTabContent(patientId, container) {
+  var CP_TEMPLATES = [
+    { name: 'Fall Prevention', diagnosis: 'Risk for Falls', goals: 'Patient will remain free from falls', interventions: ['Assess fall risk q shift','Keep bed in low position','Non-skid footwear','Call light within reach','Assist with ambulation'] },
+    { name: 'Pain Management', diagnosis: 'Acute/Chronic Pain', goals: 'Pain <= 4/10 within 1 hour of intervention', interventions: ['Assess pain q4h','Administer analgesics as ordered','Reposition for comfort','Teach relaxation techniques'] },
+    { name: 'Infection Control', diagnosis: 'Risk for Infection', goals: 'Patient remains free from infection', interventions: ['Monitor temp q4h','Assess IV/surgical site q shift','Hand hygiene','Administer antibiotics as ordered'] },
+    { name: 'Skin Integrity', diagnosis: 'Impaired Skin Integrity', goals: 'Wound shows signs of healing', interventions: ['Assess wound q shift','Reposition q2h','Keep skin clean and dry','Apply barrier cream'] },
+    { name: 'Discharge Planning', diagnosis: 'Readiness for Enhanced Self-Care', goals: 'Patient verbalizes understanding of discharge plan', interventions: ['Assess home environment','Teach medication management','Arrange follow-up','Provide written instructions'] },
+  ];
+
+  function render() {
+    var plans = (typeof getCarePlans === 'function' ? getCarePlans(patientId) : []);
+    var html = '<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">' +
+      '<span style="font-size:13px;color:var(--text-secondary,#666)">' + plans.length + ' care plan' + (plans.length !== 1 ? 's' : '') + '</span>' +
+      '<button class="btn btn-primary btn-sm" id="cp-new-btn">+ New Care Plan</button>' +
+    '</div>';
+
+    if (!plans.length) {
+      html += '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No care plans. Click "+ New Care Plan" to add one.</p>';
+    }
+    plans.forEach(function(plan) {
+      var statusBg = plan.status === 'Active' ? '#d4edda' : plan.status === 'On Hold' ? '#fff3cd' : '#e9ecef';
+      var statusColor = plan.status === 'Active' ? '#155724' : plan.status === 'On Hold' ? '#856404' : '#383d41';
+      html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:16px;margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">' +
+          '<strong>' + esc(plan.name || plan.diagnosis || '') + '</strong>' +
+          '<span style="padding:2px 10px;border-radius:10px;font-size:12px;background:' + statusBg + ';color:' + statusColor + '">' + esc(plan.status || 'Active') + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px;margin-bottom:4px"><span style="color:var(--text-secondary,#666)">Diagnosis:</span> ' + esc(plan.diagnosis || '') + '</div>' +
+        '<div style="font-size:13px;margin-bottom:6px"><span style="color:var(--text-secondary,#666)">Goal:</span> ' + esc(plan.goals || '') + '</div>' +
+        '<div style="font-size:13px">' + (plan.interventions || []).map(function(i) { return '<div style="padding:3px 0;border-bottom:1px solid var(--border,#eee)">' + esc(typeof i === 'string' ? i : i.text || '') + '</div>'; }).join('') + '</div>' +
+        '<div style="margin-top:8px;display:flex;gap:6px">' +
+          (plan.status === 'Active' ? '<button class="btn btn-secondary btn-sm cp-hold" data-id="' + plan.id + '">Hold</button>' : '') +
+          (plan.status === 'On Hold' ? '<button class="btn btn-secondary btn-sm cp-activate" data-id="' + plan.id + '">Reactivate</button>' : '') +
+          '<button class="btn btn-secondary btn-sm cp-resolve" data-id="' + plan.id + '">Resolve</button>' +
+        '</div>' +
+      '</div>';
+    });
+    container.innerHTML = html;
+
+    document.getElementById('cp-new-btn').addEventListener('click', function() { showPlanPicker(); });
+
+    container.querySelectorAll('.cp-hold,.cp-activate,.cp-resolve').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var plan = plans.find(function(p) { return p.id === btn.getAttribute('data-id'); });
+        if (!plan) return;
+        if (btn.classList.contains('cp-hold')) plan.status = 'On Hold';
+        else if (btn.classList.contains('cp-activate')) plan.status = 'Active';
+        else plan.status = 'Resolved';
+        if (typeof saveCarePlan === 'function') saveCarePlan(plan);
+        showToast('Care plan updated', 'success'); render();
+      });
+    });
+  }
+
+  function showPlanPicker() {
+    var body = '<p style="margin-bottom:12px;font-size:13px">Choose a template:</p><div class="os-grid">';
+    CP_TEMPLATES.forEach(function(t, i) {
+      body += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;cursor:pointer" class="cp-tpl-pick" data-i="' + i + '"><strong>' + esc(t.name) + '</strong><div style="font-size:12px;color:var(--text-secondary,#666);margin-top:4px">' + esc(t.diagnosis) + '</div></div>';
+    });
+    body += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;cursor:pointer" class="cp-tpl-pick" data-i="custom"><strong>Custom Plan</strong></div>';
+    body += '</div>';
+    openModal({ title: 'New Care Plan', bodyHTML: body, footerHTML: '' });
+    setTimeout(function() {
+      document.querySelectorAll('.cp-tpl-pick').forEach(function(card) {
+        card.addEventListener('click', function() {
+          var i = this.getAttribute('data-i');
+          var tpl = i === 'custom' ? { name: '', diagnosis: '', goals: '', interventions: [] } : CP_TEMPLATES[parseInt(i)];
+          closeAllModals();
+          showPlanForm(tpl);
+        });
+      });
+    }, 50);
+  }
+
+  function showPlanForm(tpl) {
+    openModal({
+      title: 'Care Plan',
+      bodyHTML: '<div style="display:flex;flex-direction:column;gap:10px">' +
+        '<label>Name:<input id="cp-n" class="form-control" value="' + esc(tpl.name || '') + '"></label>' +
+        '<label>Diagnosis:<input id="cp-d" class="form-control" value="' + esc(tpl.diagnosis || '') + '"></label>' +
+        '<label>Goal:<input id="cp-g" class="form-control" value="' + esc(tpl.goals || '') + '"></label>' +
+        '<label>Interventions (one per line):<textarea id="cp-i" class="form-control" rows="5">' + (tpl.interventions || []).join('\n') + '</textarea></label>' +
+      '</div>',
+      footerHTML: '<button class="btn btn-primary" id="cp-save">Save</button>',
+    });
+    document.getElementById('cp-save').addEventListener('click', function() {
+      var name = document.getElementById('cp-n').value.trim();
+      if (!name) { showToast('Name required', 'error'); return; }
+      var plan = { patientId: patientId, name: name, diagnosis: document.getElementById('cp-d').value, goals: document.getElementById('cp-g').value, interventions: document.getElementById('cp-i').value.split('\n').filter(function(l) { return l.trim(); }), status: 'Active' };
+      if (typeof saveCarePlan === 'function') saveCarePlan(plan);
+      closeAllModals(); showToast('Care plan saved', 'success'); render();
+    });
+  }
+
+  render();
+}
+
+/* ============================================================
+   I/O TAB — embedded in chart
+   ============================================================ */
+function buildIOTabContent(patientId, container) {
+  var records = (typeof getIORecords === 'function' ? getIORecords(patientId) : []);
+  var today = new Date().toISOString().slice(0, 10);
+  var todayRec = records.filter(function(r) { return (r.recordedAt || '').slice(0, 10) === today; });
+
+  var totalIn = 0, totalOut = 0;
+  todayRec.forEach(function(r) { if (r.direction === 'intake') totalIn += (r.amount || 0); else totalOut += (r.amount || 0); });
+  var net = totalIn - totalOut;
+
+  var INTAKE = ['PO (Oral)','IV Fluids','Blood Products','TPN','Tube Feeds'];
+  var OUTPUT = ['Urine','Stool','Emesis','NG Suction','Drain'];
+  var hours = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
+
+  var html = '';
+  if (Math.abs(net) > 500) {
+    html += '<div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:var(--radius,8px);padding:10px 16px;margin-bottom:12px;font-weight:500;color:#721c24">Significant fluid imbalance: Net ' + (net > 0 ? '+' : '') + net + ' mL over 24h</div>';
+  }
+
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">' +
+    '<div class="summary-stat"><h4>Total Intake</h4><div class="stat-value" style="color:#155724">' + totalIn + ' mL</div></div>' +
+    '<div class="summary-stat"><h4>Total Output</h4><div class="stat-value" style="color:#721c24">' + totalOut + ' mL</div></div>' +
+    '<div class="summary-stat"><h4>Net Balance</h4><div class="stat-value" style="color:' + (net >= 0 ? '#155724' : '#721c24') + '">' + (net > 0 ? '+' : '') + net + ' mL</div></div>' +
+  '</div>';
+
+  function buildTable(cats, direction) {
+    var out = '<h4 style="margin:0 0 8px">' + (direction === 'intake' ? 'Intake' : 'Output') + '</h4><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' +
+      '<th style="text-align:left;padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd);min-width:120px">Category</th>';
+    hours.forEach(function(h) { out += '<th style="padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd)">' + String(h).padStart(2,'0') + '</th>'; });
+    out += '<th style="padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd)">Total</th></tr></thead><tbody>';
+    cats.forEach(function(cat) {
+      var catTotal = 0;
+      out += '<tr><td style="padding:4px 6px;border:1px solid var(--border,#ddd);font-weight:500">' + esc(cat) + '</td>';
+      hours.forEach(function(h) {
+        var entry = todayRec.find(function(r) { return r.direction === direction && r.category === cat && r.hour === h; });
+        var amt = entry ? entry.amount : 0;
+        catTotal += amt;
+        out += '<td style="padding:2px 4px;border:1px solid var(--border,#ddd);text-align:center">' +
+          (amt ? '<span style="font-weight:500">' + amt + '</span>' : '<button style="font-size:10px;padding:1px 4px;border:1px solid var(--border,#ddd);background:#fff;border-radius:3px;cursor:pointer" class="io-add-btn" data-dir="' + direction + '" data-cat="' + esc(cat) + '" data-h="' + h + '">+</button>') +
+        '</td>';
+      });
+      out += '<td style="padding:4px 6px;border:1px solid var(--border,#ddd);text-align:center;font-weight:600">' + catTotal + '</td></tr>';
+    });
+    out += '</tbody></table></div>';
+    return out;
+  }
+
+  html += buildTable(INTAKE, 'intake') + '<div style="margin:12px 0"></div>' + buildTable(OUTPUT, 'output');
+  container.innerHTML = html;
+
+  container.querySelectorAll('.io-add-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var dir = this.getAttribute('data-dir');
+      var cat = this.getAttribute('data-cat');
+      var h = parseInt(this.getAttribute('data-h'));
+      openModal({
+        title: (dir === 'intake' ? 'Intake' : 'Output') + ' — ' + cat + ' (' + String(h).padStart(2,'0') + ':00)',
+        bodyHTML: '<label>Amount (mL):<input id="io-amt" type="number" class="form-control" min="1" step="10" placeholder="e.g. 250"></label>',
+        footerHTML: '<button class="btn btn-primary" id="io-save">Save</button>',
+      });
+      document.getElementById('io-save').addEventListener('click', function() {
+        var amt = parseInt(document.getElementById('io-amt').value) || 0;
+        if (amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
+        if (typeof saveIORecord === 'function') saveIORecord({ patientId: patientId, direction: dir, category: cat, hour: h, amount: amt, recordedAt: new Date().toISOString(), nurse: getSessionUser() ? getSessionUser().id : '' });
+        closeAllModals(); showToast('Recorded ' + amt + ' mL', 'success');
+        buildIOTabContent(patientId, container);
+      });
+    });
   });
 }
 

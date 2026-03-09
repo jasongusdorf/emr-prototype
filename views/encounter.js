@@ -199,6 +199,9 @@ function renderEncounter(encounterId) {
       { key: 'medications',   label: 'Medications',   href: '#chart/' + patient.id },
       { key: 'results',       label: 'Results',       href: '#chart/' + patient.id },
       { key: 'orders',        label: 'Orders',        href: '#orders/' + encounterId },
+      { key: 'assessments',   label: 'Assessments',   href: '#chart/' + patient.id },
+      { key: 'care-plans',    label: 'Care Plans',    href: '#chart/' + patient.id },
+      { key: 'io',            label: 'I/O',           href: '#chart/' + patient.id },
       { key: 'communication', label: 'Communication', href: '#chart/' + patient.id },
     ];
     const encTabBar = document.createElement('div');
