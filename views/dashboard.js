@@ -146,6 +146,64 @@ function renderDashboard() {
   });
   app.appendChild(summaryBar);
 
+  // ===== Inpatient Sign-In Card =====
+  if (isInpatient && currentUser) {
+    var signIn = typeof getInpatientSignIn === 'function' ? getInpatientSignIn(currentUser.id) : null;
+    var signInCard = document.createElement('div');
+    signInCard.className = 'card ip-signin-card';
+    signInCard.style.marginBottom = '16px';
+
+    if (!signIn) {
+      // Not signed in — show sign-in form
+      signInCard.innerHTML =
+        '<div class="ip-signin-content">' +
+          '<div class="ip-signin-icon">🏥</div>' +
+          '<div class="ip-signin-text">' +
+            '<div class="ip-signin-title">Sign In to Service</div>' +
+            '<div class="ip-signin-desc">Select your role to load your inpatient patient list.</div>' +
+          '</div>' +
+          '<div class="ip-signin-form">' +
+            '<select class="form-control form-control-sm" id="ip-role-select">' +
+            (typeof INPATIENT_ROLES !== 'undefined' ? INPATIENT_ROLES : ['Attending','Resident','Intern','NP','PA','Nurse']).map(function(r) {
+              return '<option value="' + r + '">' + r + '</option>';
+            }).join('') +
+            '</select>' +
+            '<button class="btn btn-primary btn-sm" id="ip-sign-in-btn">Sign In</button>' +
+          '</div>' +
+        '</div>';
+      app.appendChild(signInCard);
+
+      document.getElementById('ip-sign-in-btn').addEventListener('click', function() {
+        var role = document.getElementById('ip-role-select').value;
+        if (typeof saveInpatientSignIn === 'function') {
+          saveInpatientSignIn({ userId: currentUser.id, role: role });
+        }
+        if (typeof refreshInpatientSidebar === 'function') refreshInpatientSidebar();
+        showToast('Signed in as ' + role, 'success');
+        renderDashboard();
+      });
+    } else {
+      // Already signed in — show status with sign-out
+      signInCard.innerHTML =
+        '<div class="ip-signin-content ip-signed-in">' +
+          '<div class="ip-signin-icon">✅</div>' +
+          '<div class="ip-signin-text">' +
+            '<div class="ip-signin-title">Signed In</div>' +
+            '<div class="ip-signin-desc">Role: <strong>' + esc(signIn.role) + '</strong> · Since ' + formatDateTime(signIn.signedInAt) + '</div>' +
+          '</div>' +
+          '<button class="btn btn-secondary btn-sm" id="ip-sign-out-btn">Sign Out</button>' +
+        '</div>';
+      app.appendChild(signInCard);
+
+      document.getElementById('ip-sign-out-btn').addEventListener('click', function() {
+        if (typeof clearInpatientSignIn === 'function') clearInpatientSignIn(currentUser.id);
+        if (typeof refreshInpatientSidebar === 'function') refreshInpatientSidebar();
+        showToast('Signed out of service', 'success');
+        renderDashboard();
+      });
+    }
+  }
+
   // ===== Upcoming Appointments Card (outpatient only) =====
   if (!isInpatient) {
     const now = new Date();

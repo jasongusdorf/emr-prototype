@@ -291,7 +291,7 @@ function route() {
         renderRecents();
         break;
       case 'chart':
-        if (param) { trackRecentPatient(param); renderChart(param); }
+        if (param) { trackRecentPatient(param); openPatientTab(param); renderChart(param); }
         else navigate('#dashboard');
         break;
       case 'encounter':
@@ -1349,6 +1349,8 @@ function initAppAfterAuth() {
   if (typeof refreshSidebarLists === 'function') refreshSidebarLists();
   initRightPanel();
   initOrderQueue();
+  refreshInpatientSidebar();
+  renderPatientTabBar();
   startSessionTimer();
   updateSessionActivity();
   updateAdminBadge();
@@ -1736,6 +1738,45 @@ function refreshRightPanel() {
     }
     html += '</div>';
 
+    // --- Shared Handoff (inpatient only) ---
+    var isInpatientMode = typeof getEncounterMode === 'function' && getEncounterMode() === 'inpatient';
+    var hasInpatientEnc = openEncs.some(function(e) { return (e.visitType || '').toLowerCase() === 'inpatient'; });
+    if (isInpatientMode || hasInpatientEnc) {
+      var handoff = typeof getSharedHandoff === 'function' ? getSharedHandoff(patientId) : null;
+      var handoffFields = [
+        { key: 'summary', label: 'Summary' },
+        { key: 'severity', label: 'Severity', type: 'select', options: ['', 'Stable', 'Guarded', 'Serious', 'Critical'] },
+        { key: 'clinicalStatus', label: 'Clinical Status & Exam' },
+        { key: 'dispoPlanning', label: 'Dispo Planning' },
+        { key: 'actionItems', label: 'Action Items' },
+        { key: 'transitionalIssues', label: 'Transitional Issues' },
+      ];
+      html += '<div class="rp-section">';
+      html += '<div class="rp-section-title">Shared Handoff</div>';
+      handoffFields.forEach(function(f) {
+        var val = handoff ? (handoff[f.key] || '') : '';
+        html += '<div class="rp-handoff-field">';
+        html += '<label class="rp-handoff-label">' + esc(f.label) + '</label>';
+        if (f.type === 'select') {
+          html += '<select class="form-control form-control-sm rp-handoff-input" data-handoff-key="' + f.key + '">';
+          f.options.forEach(function(o) {
+            html += '<option value="' + esc(o) + '"' + (val === o ? ' selected' : '') + '>' + (o || '— Select —') + '</option>';
+          });
+          html += '</select>';
+        } else {
+          html += '<textarea class="form-control form-control-sm rp-handoff-input" data-handoff-key="' + f.key + '" rows="2" placeholder="' + esc(f.label) + '...">' + esc(val) + '</textarea>';
+        }
+        html += '</div>';
+      });
+      if (handoff && handoff.lastUpdatedBy) {
+        var updater = typeof getProvider === 'function' ? getProvider(handoff.lastUpdatedBy) : null;
+        var updaterName = updater ? updater.lastName + ', ' + updater.firstName : 'Unknown';
+        html += '<div class="rp-handoff-meta">Last updated by ' + esc(updaterName) + ' · ' + formatDateTime(handoff.lastUpdatedAt) + '</div>';
+      }
+      html += '<button class="btn btn-primary btn-sm" id="rp-handoff-save" style="width:100%;margin-top:6px;">Save Handoff</button>';
+      html += '</div>';
+    }
+
     // --- Navigate ---
     html += '<div class="rp-section">';
     html += '<div class="rp-section-title">Navigate</div>';
@@ -1837,6 +1878,21 @@ function _wireRightPanelEvents(patientId) {
           });
         });
       }, 200);
+    });
+  }
+
+  // Shared Handoff save
+  var handoffSave = document.getElementById('rp-handoff-save');
+  if (handoffSave && patientId) {
+    handoffSave.addEventListener('click', function() {
+      var data = {};
+      document.querySelectorAll('.rp-handoff-input').forEach(function(el) {
+        data[el.dataset.handoffKey] = el.value || '';
+      });
+      if (typeof saveSharedHandoff === 'function') {
+        saveSharedHandoff(patientId, data);
+        showToast('Handoff saved', 'success');
+      }
     });
   }
 }
@@ -2281,10 +2337,142 @@ function _showQuickOrderForm(type, patientId, encounterId) {
   });
 }
 
-// Refresh right panel on route changes
+/* ============================================================
+   Patient Tab Bar — multi-chart tabs (max 4)
+   ============================================================ */
+function openPatientTab(patientId) {
+  var tabs = typeof getPatientTabs === 'function' ? getPatientTabs() : [];
+  var existing = tabs.findIndex(function(t) { return t.patientId === patientId; });
+  // Mark all inactive
+  tabs.forEach(function(t) { t.active = false; });
+  if (existing >= 0) {
+    tabs[existing].active = true;
+  } else {
+    // Evict oldest if at max 4
+    if (tabs.length >= 4) tabs.shift();
+    var patient = typeof getPatient === 'function' ? getPatient(patientId) : null;
+    var name = patient ? (patient.lastName + ', ' + patient.firstName) : 'Patient';
+    tabs.push({ patientId: patientId, name: name, active: true });
+  }
+  if (typeof savePatientTabs === 'function') savePatientTabs(tabs);
+  renderPatientTabBar();
+}
+
+function closePatientTab(patientId) {
+  var tabs = typeof getPatientTabs === 'function' ? getPatientTabs() : [];
+  var idx = tabs.findIndex(function(t) { return t.patientId === patientId; });
+  if (idx < 0) return;
+  var wasActive = tabs[idx].active;
+  tabs.splice(idx, 1);
+  if (wasActive && tabs.length > 0) {
+    tabs[tabs.length - 1].active = true;
+    if (typeof savePatientTabs === 'function') savePatientTabs(tabs);
+    renderPatientTabBar();
+    navigate('#chart/' + tabs[tabs.length - 1].patientId);
+  } else {
+    if (typeof savePatientTabs === 'function') savePatientTabs(tabs);
+    renderPatientTabBar();
+    if (wasActive) navigate('#dashboard');
+  }
+}
+
+function renderPatientTabBar() {
+  var bar = document.getElementById('patient-tab-bar');
+  if (!bar) return;
+  var tabs = typeof getPatientTabs === 'function' ? getPatientTabs() : [];
+  if (tabs.length === 0) {
+    bar.classList.add('hidden');
+    bar.innerHTML = '';
+    return;
+  }
+  bar.classList.remove('hidden');
+  var html = '';
+  tabs.forEach(function(t) {
+    var cls = 'pt-tab' + (t.active ? ' pt-tab-active' : '');
+    html += '<div class="' + cls + '" data-patient-id="' + esc(t.patientId) + '">' +
+      '<span class="pt-tab-name">' + esc(t.name) + '</span>' +
+      '<button class="pt-tab-close" data-close-id="' + esc(t.patientId) + '" title="Close tab">&times;</button>' +
+    '</div>';
+  });
+  bar.innerHTML = html;
+
+  // Wire tab clicks
+  bar.querySelectorAll('.pt-tab').forEach(function(el) {
+    el.addEventListener('click', function(e) {
+      if (e.target.closest('.pt-tab-close')) return;
+      var pid = el.dataset.patientId;
+      navigate('#chart/' + pid);
+    });
+  });
+  bar.querySelectorAll('.pt-tab-close').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      closePatientTab(btn.dataset.closeId);
+    });
+  });
+}
+
+/* ============================================================
+   Inpatient Sidebar — signed-in patient list
+   ============================================================ */
+var INPATIENT_ROLES = ['Attending', 'Resident', 'Intern', 'NP', 'PA', 'Nurse'];
+
+function refreshInpatientSidebar() {
+  var container = document.getElementById('sidebar-inpatient-list');
+  if (!container) return;
+  var mode = typeof getEncounterMode === 'function' ? getEncounterMode() : 'outpatient';
+  if (mode !== 'inpatient') {
+    container.innerHTML = '';
+    return;
+  }
+  var user = getSessionUser();
+  if (!user) { container.innerHTML = ''; return; }
+  var signIn = typeof getInpatientSignIn === 'function' ? getInpatientSignIn(user.id) : null;
+  if (!signIn) {
+    container.innerHTML = '<div class="ip-sidebar-prompt">' +
+      '<span class="ip-sidebar-prompt-text">Sign in to load your patient list</span></div>';
+    return;
+  }
+
+  // Get inpatient patients
+  var patients = typeof getPatientsWithActiveInpatientEncounters === 'function'
+    ? getPatientsWithActiveInpatientEncounters() : [];
+  // Filter to patients where this provider is on the encounter
+  var myPatients = patients.filter(function(p) {
+    var encs = typeof getEncountersByPatient === 'function' ? getEncountersByPatient(p.id) : [];
+    return encs.some(function(e) {
+      return (e.visitType || '').toLowerCase() === 'inpatient' &&
+             e.status !== 'Signed' && e.status !== 'Cancelled' &&
+             e.providerId === user.id;
+    });
+  });
+  // If no provider-specific patients, show all inpatient patients (common in demo)
+  var displayPatients = myPatients.length > 0 ? myPatients : patients;
+
+  var html = '<div class="ip-sidebar-header">' +
+    '<span class="ip-sidebar-role-badge">' + esc(signIn.role || 'Provider') + '</span>' +
+    '<span class="ip-sidebar-count">' + displayPatients.length + ' pts</span>' +
+  '</div>';
+  html += '<div class="ip-sidebar-patients">';
+  displayPatients.sort(function(a, b) {
+    return (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName);
+  }).forEach(function(p) {
+    var isActive = typeof _currentChartPatientId !== 'undefined' && _currentChartPatientId === p.id;
+    html += '<a href="#chart/' + esc(p.id) + '" class="ip-sidebar-patient' + (isActive ? ' active' : '') + '">' +
+      '<span class="ip-sidebar-patient-name">' + esc(p.lastName) + ', ' + esc(p.firstName) + '</span>' +
+      '<span class="ip-sidebar-patient-mrn">' + esc(p.mrn || '') + '</span>' +
+    '</a>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// Refresh right panel and tabs on route changes
 var _origRoute = route;
 route = function() {
   _origRoute();
+  renderPatientTabBar();
+  refreshInpatientSidebar();
   if (_rightPanelOpen) {
     setTimeout(refreshRightPanel, 100);
   }

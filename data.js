@@ -59,7 +59,11 @@ const KEYS = {
   letters:         'emr_letters',
   letterTemplates: 'emr_letter_templates',
   reminders:       'emr_reminders',
-  slicerQueries:   'emr_slicer_queries',
+  slicerQueries:      'emr_slicer_queries',
+  inpatientSignIns:   'emr_inpatient_signins',
+  sharedHandoffs:     'emr_shared_handoffs',
+  dischargeSummaries: 'emr_discharge_summaries',
+  patientTabs:        'emr_patient_tabs',
 };
 
 /* ---------- Data Versioning ---------- */
@@ -2676,6 +2680,115 @@ function setPatientListMeta(listId, patientId, meta) {
   if (!list.patientMeta) list.patientMeta = {};
   list.patientMeta[patientId] = { ...(list.patientMeta[patientId] || {}), ...meta };
   return savePatientList(list);
+}
+
+/* ============================================================
+   Inpatient Sign-Ins (role-based service sign-in)
+   ============================================================ */
+function getInpatientSignIn(userId) {
+  return loadAll(KEYS.inpatientSignIns).find(function(s) { return s.userId === userId; }) || null;
+}
+
+function saveInpatientSignIn(data) {
+  var all = loadAll(KEYS.inpatientSignIns, true);
+  // Upsert by userId
+  var idx = all.findIndex(function(s) { return s.userId === data.userId; });
+  if (idx >= 0) {
+    all[idx] = Object.assign({}, all[idx], data, { signedInAt: new Date().toISOString() });
+  } else {
+    all.push(Object.assign({ id: generateId(), signedInAt: new Date().toISOString() }, data));
+  }
+  saveAll(KEYS.inpatientSignIns, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+function clearInpatientSignIn(userId) {
+  var all = loadAll(KEYS.inpatientSignIns, true);
+  var filtered = all.filter(function(s) { return s.userId !== userId; });
+  saveAll(KEYS.inpatientSignIns, filtered);
+}
+
+/* ============================================================
+   Shared Handoffs (per-patient structured handoff)
+   ============================================================ */
+function getSharedHandoff(patientId) {
+  return loadAll(KEYS.sharedHandoffs).find(function(h) { return h.patientId === patientId; }) || null;
+}
+
+function saveSharedHandoff(patientId, data) {
+  var all = loadAll(KEYS.sharedHandoffs, true);
+  var idx = all.findIndex(function(h) { return h.patientId === patientId; });
+  var now = new Date().toISOString();
+  var user = getSessionUser();
+  var record = Object.assign({
+    id: generateId(),
+    patientId: patientId,
+    summary: '',
+    severity: '',
+    clinicalStatus: '',
+    dispoPlanning: '',
+    actionItems: '',
+    transitionalIssues: '',
+    lastUpdatedBy: user ? user.id : '',
+    lastUpdatedAt: now,
+  }, data, { patientId: patientId, lastUpdatedBy: user ? user.id : '', lastUpdatedAt: now });
+  if (idx >= 0) {
+    all[idx] = Object.assign({}, all[idx], record);
+  } else {
+    all.push(record);
+  }
+  saveAll(KEYS.sharedHandoffs, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+/* ============================================================
+   Discharge Summaries (per-encounter)
+   ============================================================ */
+function getDischargeSummary(encounterId) {
+  return loadAll(KEYS.dischargeSummaries).find(function(d) { return d.encounterId === encounterId; }) || null;
+}
+
+function saveDischargeSummary(data) {
+  var all = loadAll(KEYS.dischargeSummaries, true);
+  var idx = all.findIndex(function(d) { return d.encounterId === data.encounterId; });
+  var now = new Date().toISOString();
+  var record = Object.assign({
+    id: generateId(),
+    encounterId: '',
+    patientId: '',
+    hospitalCourse: '',
+    dischargeDiagnoses: '',
+    dischargeCondition: '',
+    dischargeMedications: '',
+    followUpInstructions: '',
+    patientInstructions: '',
+    dietActivity: '',
+    dischargedBy: '',
+    dischargedAt: null,
+    status: 'Draft',
+    createdAt: now,
+  }, data, { lastModified: now });
+  if (idx >= 0) {
+    all[idx] = Object.assign({}, all[idx], record);
+  } else {
+    all.push(record);
+  }
+  saveAll(KEYS.dischargeSummaries, all);
+  return all[idx >= 0 ? idx : all.length - 1];
+}
+
+/* ============================================================
+   Patient Tabs (persisted open chart tabs)
+   ============================================================ */
+function getPatientTabs() {
+  try {
+    var raw = localStorage.getItem(KEYS.patientTabs);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function savePatientTabs(tabs) {
+  try { localStorage.setItem(KEYS.patientTabs, JSON.stringify(tabs)); } catch(e) {}
 }
 
 /* ============================================================

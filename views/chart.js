@@ -671,7 +671,7 @@ function buildOverviewContent(app, patient, patientId) {
    ENCOUNTER TAB CONTENT (Outpatient / Inpatient / Emergency)
    ============================================================ */
 function buildEncounterTabContent(container, patientId, visitType) {
-  // Sub-tab bar: Profile | Notes
+  // Sub-tab bar: Profile | Notes | Discharge (inpatient only)
   const subBar = document.createElement('div');
   subBar.className = 'chart-subtab-bar';
 
@@ -679,11 +679,15 @@ function buildEncounterTabContent(container, patientId, visitType) {
     { key: 'profile', label: 'Profile' },
     { key: 'notes',   label: 'Notes' },
   ];
+  // Add discharge tab for inpatient encounters
+  if (visitType === 'Inpatient') {
+    encSubTabs.push({ key: 'discharge', label: 'Discharge' });
+  }
 
   encSubTabs.forEach(({ key, label }) => {
     const btn = document.createElement('button');
     btn.className = 'chart-subtab' + (_currentEncSubTab === key ? ' active' : '');
-    btn.setAttribute('data-omr-color', key === 'profile' ? 'profile' : 'orders');
+    btn.setAttribute('data-omr-color', key === 'profile' ? 'profile' : key === 'discharge' ? 'medications' : 'orders');
     btn.textContent = label;
 
     // Badge count for notes
@@ -701,12 +705,13 @@ function buildEncounterTabContent(container, patientId, visitType) {
       _currentEncSubTab = key;
       subBar.querySelectorAll('.chart-subtab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      // Re-render content area
       const contentArea = document.getElementById('enc-tab-content');
       if (contentArea) {
         contentArea.innerHTML = '';
         if (key === 'profile') {
           _buildEncProfileContent(contentArea, patientId);
+        } else if (key === 'discharge') {
+          _buildDischargeContent(contentArea, patientId);
         } else {
           _buildEncNotesContent(contentArea, patientId, visitType);
         }
@@ -724,6 +729,8 @@ function buildEncounterTabContent(container, patientId, visitType) {
 
   if (_currentEncSubTab === 'profile') {
     _buildEncProfileContent(contentArea, patientId);
+  } else if (_currentEncSubTab === 'discharge' && visitType === 'Inpatient') {
+    _buildDischargeContent(contentArea, patientId);
   } else {
     _buildEncNotesContent(contentArea, patientId, visitType);
   }
@@ -823,6 +830,187 @@ function _buildEncNotesContent(container, patientId, visitType) {
   });
 
   container.appendChild(card);
+}
+
+/* ---------- Encounter tab → Discharge sub-tab ---------- */
+function _buildDischargeContent(container, patientId) {
+  // Find the most recent open inpatient encounter
+  const inpatientEncs = getEncountersByPatient(patientId)
+    .filter(e => (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Cancelled')
+    .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+
+  if (inpatientEncs.length === 0) {
+    container.appendChild(buildEmptyState('🏥', 'No inpatient encounters', 'Create an inpatient encounter to use discharge.'));
+    return;
+  }
+
+  const enc = inpatientEncs[0];
+  const encId = enc.id;
+  const existing = typeof getDischargeSummary === 'function' ? getDischargeSummary(encId) : null;
+  const isFinalized = existing && existing.status === 'Finalized';
+  const patient = getPatient(patientId);
+  const provider = getProvider(enc.providerId);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.margin = '20px';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  const title = document.createElement('span');
+  title.className = 'card-title';
+  title.textContent = 'Discharge Summary';
+  hdr.appendChild(title);
+  if (isFinalized) {
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-signed';
+    badge.style.marginLeft = '8px';
+    badge.textContent = 'Discharged';
+    hdr.appendChild(badge);
+  } else if (enc.status === 'Open') {
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-open';
+    badge.style.marginLeft = '8px';
+    badge.textContent = 'Active Admission';
+    hdr.appendChild(badge);
+  }
+  card.appendChild(hdr);
+
+  // Context
+  const ctx = document.createElement('div');
+  ctx.style.cssText = 'padding:12px 20px;background:var(--surface-2,#f8fafc);border-bottom:1px solid var(--border);font-size:12px;color:var(--text-secondary);display:flex;gap:16px;flex-wrap:wrap;';
+  ctx.innerHTML = '<span><strong>Patient:</strong> ' + esc(patient ? patient.lastName + ', ' + patient.firstName : '') + '</span>' +
+    '<span><strong>MRN:</strong> ' + esc(patient ? patient.mrn : '') + '</span>' +
+    '<span><strong>Admitted:</strong> ' + formatDateTime(enc.dateTime) + '</span>' +
+    '<span><strong>Provider:</strong> ' + esc(provider ? provider.lastName + ', ' + provider.firstName : '') + '</span>';
+  card.appendChild(ctx);
+
+  const body = document.createElement('div');
+  body.className = 'card-body';
+  body.style.padding = '20px';
+
+  const fields = [
+    { key: 'hospitalCourse', label: 'Hospital Course', rows: 4 },
+    { key: 'dischargeDiagnoses', label: 'Discharge Diagnoses', rows: 2 },
+    { key: 'dischargeCondition', label: 'Discharge Condition', type: 'select',
+      options: ['', 'Stable', 'Improved', 'Unchanged', 'Declined'] },
+    { key: 'dischargeMedications', label: 'Discharge Medications', rows: 3 },
+    { key: 'followUpInstructions', label: 'Follow-Up Instructions', rows: 2 },
+    { key: 'dietActivity', label: 'Diet & Activity', rows: 2 },
+    { key: 'patientInstructions', label: 'Patient Instructions / Education', rows: 3 },
+  ];
+
+  fields.forEach(f => {
+    const group = document.createElement('div');
+    group.className = 'form-group';
+    group.style.marginBottom = '14px';
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = f.label;
+    group.appendChild(label);
+
+    const val = existing ? (existing[f.key] || '') : '';
+    if (f.type === 'select') {
+      const sel = document.createElement('select');
+      sel.className = 'form-control';
+      sel.id = 'dc-' + f.key;
+      sel.disabled = isFinalized;
+      f.options.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o;
+        opt.textContent = o || '— Select —';
+        if (val === o) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      group.appendChild(sel);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.className = 'form-control';
+      ta.id = 'dc-' + f.key;
+      ta.rows = f.rows || 3;
+      ta.value = val;
+      ta.readOnly = isFinalized;
+      if (isFinalized) ta.style.background = 'var(--surface-2,#f8fafc)';
+      group.appendChild(ta);
+    }
+    body.appendChild(group);
+  });
+
+  // Actions
+  if (!isFinalized) {
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:10px;margin-top:16px;';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-secondary';
+    saveBtn.textContent = 'Save Draft';
+    saveBtn.addEventListener('click', () => {
+      _saveDischargeDraft(encId, patientId);
+    });
+
+    const finalizeBtn = document.createElement('button');
+    finalizeBtn.className = 'btn btn-primary';
+    finalizeBtn.style.cssText = 'background:#38a169;border-color:#38a169;';
+    finalizeBtn.textContent = 'Finalize & Discharge Patient';
+    finalizeBtn.addEventListener('click', () => {
+      if (typeof confirmAction === 'function') {
+        confirmAction({
+          title: 'Finalize Discharge?',
+          message: 'This will finalize the discharge summary and close the encounter. This action cannot be undone.',
+          confirmLabel: 'Discharge Patient',
+          danger: false,
+          onConfirm: () => {
+            _saveDischargeDraft(encId, patientId, true);
+            // Close encounter
+            saveEncounter({ id: encId, status: 'Signed', dischargedAt: new Date().toISOString() });
+            showToast('Patient discharged successfully', 'success');
+            refreshChart(patientId);
+          },
+        });
+      }
+    });
+
+    actions.appendChild(saveBtn);
+    actions.appendChild(finalizeBtn);
+    body.appendChild(actions);
+  } else {
+    // Show finalized info
+    const info = document.createElement('div');
+    info.style.cssText = 'margin-top:16px;padding:12px;background:var(--success-light,#f0fff4);border:1px solid var(--success,#38a169);border-radius:6px;font-size:13px;color:var(--success,#38a169);';
+    const discharger = existing.dischargedBy ? getProvider(existing.dischargedBy) : null;
+    info.innerHTML = '<strong>Discharged</strong> by ' +
+      esc(discharger ? discharger.lastName + ', ' + discharger.firstName : 'Unknown') +
+      ' on ' + formatDateTime(existing.dischargedAt);
+    body.appendChild(info);
+  }
+
+  card.appendChild(body);
+  container.appendChild(card);
+}
+
+function _saveDischargeDraft(encId, patientId, finalize) {
+  const user = getSessionUser();
+  const data = {
+    encounterId: encId,
+    patientId: patientId,
+    hospitalCourse: (document.getElementById('dc-hospitalCourse') || {}).value || '',
+    dischargeDiagnoses: (document.getElementById('dc-dischargeDiagnoses') || {}).value || '',
+    dischargeCondition: (document.getElementById('dc-dischargeCondition') || {}).value || '',
+    dischargeMedications: (document.getElementById('dc-dischargeMedications') || {}).value || '',
+    followUpInstructions: (document.getElementById('dc-followUpInstructions') || {}).value || '',
+    dietActivity: (document.getElementById('dc-dietActivity') || {}).value || '',
+    patientInstructions: (document.getElementById('dc-patientInstructions') || {}).value || '',
+  };
+  if (finalize) {
+    data.status = 'Finalized';
+    data.dischargedBy = user ? user.id : '';
+    data.dischargedAt = new Date().toISOString();
+  }
+  if (typeof saveDischargeSummary === 'function') {
+    saveDischargeSummary(data);
+    if (!finalize) showToast('Discharge draft saved', 'success');
+  }
 }
 
 /* ============================================================
