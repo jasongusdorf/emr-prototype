@@ -633,6 +633,28 @@ function renderTypeFields(container, type) {
           <option>Other</option>
         </select>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Frequency *</label>
+          <select class="form-control" id="lab-frequency">
+            <option value="Once">Once</option>
+            <option value="Daily">Daily</option>
+            <option value="Every Other Day">Every Other Day</option>
+            <option value="BIW">Twice Weekly</option>
+            <option value="Weekly">Weekly</option>
+            <option value="Biweekly">Every 2 Weeks</option>
+            <option value="Monthly">Monthly</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Urgency *</label>
+          <select class="form-control" id="lab-urgency">
+            <option value="Routine">Routine</option>
+            <option value="Urgent">Urgent</option>
+            <option value="STAT">STAT</option>
+          </select>
+        </div>
+      </div>
       <div class="form-group">
         <label class="form-label">Additional Tests (comma-separated)</label>
         <input class="form-control" id="lab-tests" placeholder="e.g. Na, K, Cl, CO2" />
@@ -820,6 +842,8 @@ function placeOrder(encounter, patient) {
       panel: labSearch,
       tests,
       specimen: document.getElementById('lab-specimen')?.value,
+      frequency: document.getElementById('lab-frequency')?.value || 'Once',
+      urgency: document.getElementById('lab-urgency')?.value || 'Routine',
       tubeColor: labEntry ? labEntry.tubeColor : '',
       cptCode: labEntry ? labEntry.cptCode : '',
       fasting: labEntry ? labEntry.fasting : false,
@@ -907,7 +931,8 @@ function placeOrder(encounter, patient) {
       notes,
       dateTime: new Date().toISOString(),
     });
-    showToast(type + ' order placed.', 'success');
+    showToast(type + ' order added to queue — awaiting signature', 'success');
+    if (typeof refreshOrderQueue === 'function') refreshOrderQueue(true);
     refreshOrderList();
     renderTypeFields(document.getElementById('type-fields'), type);
     const notesField = document.getElementById('ord-notes');
@@ -994,7 +1019,13 @@ function getOrderSubtext(order) {
       if (d.duration) parts.push(d.duration);
       return parts.join(', ') || '';
     }
-    case 'Lab':     return d.specimen ? 'Specimen: ' + d.specimen : '';
+    case 'Lab': {
+      const parts = [];
+      if (d.frequency && d.frequency !== 'Once') parts.push(d.frequency);
+      if (d.urgency && d.urgency !== 'Routine') parts.push(d.urgency);
+      if (d.specimen) parts.push(d.specimen);
+      return parts.join(' · ') || '';
+    }
     case 'Imaging': return d.indication || '';
     case 'Consult': return d.reason ? d.reason.slice(0, 60) + (d.reason.length > 60 ? '…' : '') : '';
     default:        return '';
@@ -1135,7 +1166,8 @@ function _continueAfterDupeCheck(encounter, patient, type, detail, priority, not
       type, priority, status: 'Pending', detail, notes,
       dateTime: new Date().toISOString(),
     });
-    showToast(type + ' order placed.', 'success');
+    showToast(type + ' order added to queue — awaiting signature', 'success');
+    if (typeof refreshOrderQueue === 'function') refreshOrderQueue(true);
     refreshOrderList();
     renderTypeFields(document.getElementById('type-fields'), type);
     const notesField = document.getElementById('ord-notes');

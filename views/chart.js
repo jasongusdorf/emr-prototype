@@ -135,13 +135,20 @@ function renderChart(patientId) {
     meta:    '',
     actions: `<a href="#patients" class="btn btn-secondary btn-sm no-print">← Patients</a>
               <button class="btn btn-secondary btn-sm no-print" id="chart-search-toggle">🔍 Search</button>
-              <button class="btn btn-secondary btn-sm no-print" id="btn-print-summary">🖨 Print Summary</button>
-              <button class="btn btn-primary btn-sm no-print" id="btn-new-encounter">+ New Encounter</button>`,
+              <button class="btn btn-secondary btn-sm no-print" id="btn-print-summary">🖨 Print Summary</button>`,
   });
   setActiveNav('dashboard');
 
   // Patient identity banner — in #chart-header-bars so it never scrolls
-  chartHeaderBars.appendChild(buildPatientBanner(patientId));
+  const banner = buildPatientBanner(patientId);
+  // Add New Encounter button above the patient name
+  const newEncBtn = document.createElement('button');
+  newEncBtn.className = 'btn btn-primary btn-sm no-print';
+  newEncBtn.id = 'btn-new-encounter';
+  newEncBtn.textContent = '+ New Encounter';
+  newEncBtn.style.marginRight = 'auto';
+  banner.insertBefore(newEncBtn, banner.firstChild);
+  chartHeaderBars.appendChild(banner);
 
   // Search panel (sticky at top, hidden by default)
   const searchPanel = buildSearchPanel(patientId);
@@ -3813,6 +3820,7 @@ function openFamilyHistoryModal(patientId) {
 function openNewNoteForPatient(patientId) {
   const openEncs = getEncountersByPatient(patientId).filter(e => e.status === 'Open');
   if (openEncs.length === 0) {
+    // No open encounter — offer to create one, then open note writer
     openModal({
       title: 'No Open Encounters',
       bodyHTML: '<p style="color:var(--text-secondary);line-height:1.6">There are no open encounters for this patient. Create an encounter first, then add a note.</p>',
@@ -3822,29 +3830,17 @@ function openNewNoteForPatient(patientId) {
     document.getElementById('nn-create').addEventListener('click', () => { closeModal(); openNewEncounterModal(patientId); });
     return;
   }
-  if (openEncs.length === 1) {
-    navigate('#encounter/' + openEncs[0].id);
-    return;
+  // Open the right panel note writer (Word-document style)
+  _openNoteWriterPanel(patientId);
+}
+
+function _openNoteWriterPanel(patientId) {
+  // Open right panel and show note writer
+  var panel = document.getElementById('right-panel');
+  if (panel) panel.classList.add('open');
+  if (typeof _showRightPanelNoteWriter === 'function') {
+    _showRightPanelNoteWriter(patientId);
   }
-  const opts = openEncs.map(e => {
-    const prov = getProvider(e.providerId);
-    const provName = prov ? prov.lastName + ', ' + prov.firstName : '[Removed]';
-    return `<option value="${esc(e.id)}">${esc(formatDateTime(e.dateTime))} — ${esc(e.visitType)} (${esc(provName)})</option>`;
-  }).join('');
-  openModal({
-    title: 'Select Encounter',
-    bodyHTML: `<div class="form-group">
-      <label class="form-label">Which encounter is this note for?</label>
-      <select class="form-control" id="nn-enc-pick">${opts}</select>
-    </div>`,
-    footerHTML: '<button class="btn btn-secondary" id="nn-cancel">Cancel</button><button class="btn btn-primary" id="nn-go">Open Note</button>',
-  });
-  document.getElementById('nn-cancel').addEventListener('click', closeModal);
-  document.getElementById('nn-go').addEventListener('click', () => {
-    const encId = document.getElementById('nn-enc-pick').value;
-    closeModal();
-    navigate('#encounter/' + encId);
-  });
 }
 
 function openNewEncounterModal(patientId, prefillType) {

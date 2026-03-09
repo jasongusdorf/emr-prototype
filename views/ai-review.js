@@ -18,7 +18,7 @@ const AI_SEV = {
 };
 
 /* ---------- Drug interaction database ---------- */
-const DRUG_INTERACTIONS = [
+var AI_DRUG_INTERACTIONS = [
   {
     id: 'warfarin-nsaid',
     drugs: [['warfarin', 'coumadin'], ['ibuprofen', 'naproxen', 'aspirin', 'nsaid', 'diclofenac', 'meloxicam', 'celecoxib', 'ketorolac', 'indomethacin']],
@@ -406,7 +406,7 @@ function _runDrugInteractions(activeMeds, patientId) {
 
   var medNames = activeMeds.map(function(m) { return (m.name || '').toLowerCase(); });
 
-  DRUG_INTERACTIONS.forEach(function(interaction) {
+  AI_DRUG_INTERACTIONS.forEach(function(interaction) {
     var group1 = interaction.drugs[0];
     var group2 = interaction.drugs[1];
 

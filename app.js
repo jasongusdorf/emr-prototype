@@ -1348,6 +1348,7 @@ function initAppAfterAuth() {
   if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
   if (typeof refreshSidebarLists === 'function') refreshSidebarLists();
   initRightPanel();
+  initOrderQueue();
   startSessionTimer();
   updateSessionActivity();
   updateAdminBadge();
@@ -1608,7 +1609,14 @@ function initRightPanel() {
       '</svg>' +
     '</button>' +
     '<div class="right-panel-content" id="right-panel-content">' +
-      '<div class="right-panel-header"><h3>Quick Actions</h3></div>' +
+      '<div class="right-panel-header">' +
+        '<h3>Quick Actions</h3>' +
+        '<button id="right-panel-close" class="right-panel-close" aria-label="Close panel" title="Close">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<polyline points="9 18 15 12 9 6"/>' +
+          '</svg>' +
+        '</button>' +
+      '</div>' +
       '<div id="right-panel-body"></div>' +
     '</div>';
   document.body.appendChild(panel);
@@ -1619,11 +1627,20 @@ function initRightPanel() {
     panel.classList.toggle('open', _rightPanelOpen);
     if (_rightPanelOpen) refreshRightPanel();
   });
+
+  var closeBtn = document.getElementById('right-panel-close');
+  closeBtn.addEventListener('click', function() {
+    _rightPanelOpen = false;
+    panel.classList.remove('open');
+  });
 }
 
 function refreshRightPanel() {
   const body = document.getElementById('right-panel-body');
   if (!body) return;
+
+  // Clear note writer mode
+  body.classList.remove('nw-active');
 
   // Determine patient context
   var patientId = typeof _currentChartPatientId !== 'undefined' ? _currentChartPatientId : null;
@@ -1751,15 +1768,11 @@ function refreshRightPanel() {
 }
 
 function _wireRightPanelEvents(patientId) {
-  // New Note
+  // New Note — open inline writing panel
   var newNoteBtn = document.getElementById('rp-new-note');
   if (newNoteBtn) {
     newNoteBtn.addEventListener('click', function() {
-      if (typeof openNewNoteForPatient === 'function') {
-        openNewNoteForPatient(patientId);
-      } else if (typeof openNewEncounterModal === 'function') {
-        openNewEncounterModal(patientId);
-      }
+      _showRightPanelNoteWriter(patientId);
     });
   }
 
@@ -1828,48 +1841,362 @@ function _wireRightPanelEvents(patientId) {
   }
 }
 
+function _showRightPanelNoteWriter(patientId) {
+  var body = document.getElementById('right-panel-body');
+  if (!body) return;
+
+  // Set note-writer mode class for CSS
+  body.classList.add('nw-active');
+
+  // Find or create an open encounter
+  var openEncs = loadAll(KEYS.encounters).filter(function(e) {
+    return e.patientId === patientId && e.status === 'Open';
+  });
+
+  var noteTypes = ['Progress Note', 'H&P', 'Consult Note', 'Procedure Note', 'Discharge Summary', 'Phone Note', 'Addendum'];
+
+  var html = '<div class="rp-note-writer">';
+
+  // Toolbar: back, note type, template, dot-phrase help
+  html += '<div class="nw-toolbar">' +
+    '<button class="nw-toolbar-btn" id="rp-note-back" title="Back">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>' +
+    '</button>' +
+    '<select class="nw-toolbar-select" id="rp-note-type" title="Note type">' +
+    noteTypes.map(function(t) { return '<option>' + esc(t) + '</option>'; }).join('') +
+    '</select>' +
+    '<button class="nw-toolbar-btn" id="rp-note-template" title="Insert template">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>' +
+      ' Template' +
+    '</button>' +
+    '<button class="nw-toolbar-btn" id="rp-note-phrases" title="Dot phrase reference">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+      ' .phrases' +
+    '</button>' +
+  '</div>';
+
+  // Encounter context or visit type picker
+  if (openEncs.length === 0) {
+    html += '<div class="nw-encounter-bar">' +
+      '<label class="nw-encounter-label">Visit Type</label>' +
+      '<select class="nw-toolbar-select" id="rp-note-visit-type">' +
+      '<option>Office Visit</option><option>Follow-Up</option><option>New Patient</option>' +
+      '<option>Telehealth</option><option>Urgent Care</option></select>' +
+    '</div>';
+  } else {
+    html += '<div class="nw-encounter-bar">' +
+      '<span class="nw-encounter-label">' + esc(openEncs[0].visitType || 'Visit') + '</span>' +
+      '<span class="nw-encounter-date">' + formatDateTime(openEncs[0].dateTime) + '</span>' +
+    '</div>';
+  }
+
+  // Word-document-like writing surface — single large textarea
+  html += '<div class="nw-doc-surface">' +
+    '<textarea class="nw-doc-textarea" id="rp-note-body" placeholder="Start typing your note...\n\nTip: Type a dot phrase like .hpi, .ros, .pe, .vitals, .meds, .allergies, .problems to auto-insert content.\n\nOr click Template to load a full note template."></textarea>' +
+  '</div>';
+
+  // Status bar
+  html += '<div class="nw-status-bar">' +
+    '<span class="nw-status-text" id="rp-note-status">Draft</span>' +
+    '<span class="nw-word-count" id="rp-note-wc">0 words</span>' +
+  '</div>';
+
+  // Action buttons
+  html += '<div class="nw-actions">' +
+    '<button class="btn btn-primary btn-sm" id="rp-note-save" style="flex:1;">Save Draft</button>' +
+    '<button class="btn btn-sm nw-sign-btn" id="rp-note-save-sign" style="flex:1;">Save & Sign</button>' +
+  '</div>';
+  html += '</div>';
+
+  body.innerHTML = html;
+
+  var docTextarea = document.getElementById('rp-note-body');
+
+  // Wire smart phrase dropdown (if available)
+  if (docTextarea && typeof initSmartPhraseListener === 'function') {
+    initSmartPhraseListener(docTextarea);
+  }
+
+  // Inline auto-expand: when user types ".phrase " (space/enter after a dot phrase),
+  // immediately replace with the expanded content — works independently of smart-phrases.js
+  if (docTextarea) {
+    var _expanding = false;
+    docTextarea.addEventListener('input', function() {
+      if (_expanding) return;
+      var pos = docTextarea.selectionStart;
+      var text = docTextarea.value.substring(0, pos);
+
+      // Look for ".word " or ".word\n" pattern right before cursor
+      var match = text.match(/(\.\w+)([\s])$/);
+      if (!match) return;
+      var abbr = match[1];
+      var trailing = match[2];
+      var dotIdx = text.length - match[0].length;
+      // Dot must be at start or after whitespace
+      if (dotIdx > 0 && !/\s/.test(text[dotIdx - 1])) return;
+
+      // Find matching phrase
+      var allPhrases = typeof getSmartPhrases === 'function' ? getSmartPhrases() : [];
+      var phrase = null;
+      for (var i = 0; i < allPhrases.length; i++) {
+        if (allPhrases[i].abbreviation.toLowerCase() === abbr.toLowerCase()) {
+          phrase = allPhrases[i];
+          break;
+        }
+      }
+      if (!phrase) return;
+
+      var expanded = typeof expandSmartPhrase === 'function'
+        ? expandSmartPhrase(phrase.abbreviation, patientId)
+        : phrase.content;
+      if (expanded === null) expanded = phrase.content;
+
+      _expanding = true;
+      var before = docTextarea.value.substring(0, dotIdx);
+      var after = docTextarea.value.substring(pos);
+      docTextarea.value = before + expanded + trailing + after;
+      var newPos = before.length + expanded.length + trailing.length;
+      docTextarea.selectionStart = newPos;
+      docTextarea.selectionEnd = newPos;
+      _expanding = false;
+
+      // Update word count
+      docTextarea.dispatchEvent(new Event('_wc'));
+    });
+  }
+
+  // Word count updater
+  if (docTextarea) {
+    function _updateWC() {
+      var text = docTextarea.value.trim();
+      var words = text ? text.split(/\s+/).length : 0;
+      var wcEl = document.getElementById('rp-note-wc');
+      if (wcEl) wcEl.textContent = words + ' word' + (words !== 1 ? 's' : '');
+    }
+    docTextarea.addEventListener('input', _updateWC);
+    docTextarea.addEventListener('_wc', _updateWC);
+  }
+
+  // Back button
+  document.getElementById('rp-note-back').addEventListener('click', function() {
+    refreshRightPanel();
+  });
+
+  // Template picker button
+  document.getElementById('rp-note-template').addEventListener('click', function() {
+    _openRightPanelTemplatePicker(docTextarea, patientId);
+  });
+
+  // Dot phrase reference button
+  document.getElementById('rp-note-phrases').addEventListener('click', function() {
+    _openDotPhraseReference();
+  });
+
+  // Save handler
+  function _saveNote(andSign) {
+    var user = getSessionUser();
+    var encId;
+
+    if (openEncs.length > 0) {
+      encId = openEncs[0].id;
+    } else {
+      var visitType = document.getElementById('rp-note-visit-type').value;
+      var newEnc = saveEncounter({
+        patientId: patientId,
+        providerId: user ? user.id : '',
+        visitType: visitType,
+        status: 'Open',
+        dateTime: new Date().toISOString(),
+      });
+      if (!newEnc || newEnc.error) {
+        showToast('Failed to create encounter', 'error');
+        return;
+      }
+      encId = newEnc.id;
+    }
+
+    // Parse freeform text into sections if possible
+    var rawText = (docTextarea.value || '').trim();
+    if (!rawText) {
+      showToast('Note is empty', 'warning');
+      return;
+    }
+
+    var noteType = document.getElementById('rp-note-type').value;
+    var parsed = typeof _parseFreeformToSections === 'function' ? _parseFreeformToSections(rawText) : null;
+    var noteData = {
+      encounterId: encId,
+      patientId: patientId,
+      type: noteType,
+      noteBody: rawText,
+      hpi: parsed ? (parsed.hpi || '') : '',
+      ros: parsed ? (parsed.ros || '') : '',
+      physicalExam: parsed ? (parsed.physicalExam || '') : '',
+      assessment: parsed ? (parsed.assessment || '') : '',
+      plan: parsed ? (parsed.plan || '') : '',
+      chiefComplaint: parsed ? (parsed.chiefComplaint || '') : '',
+      authorId: user ? user.id : '',
+      dateTime: new Date().toISOString(),
+    };
+
+    if (andSign) {
+      noteData.signed = true;
+      noteData.signedBy = user ? user.id : '';
+      noteData.signedAt = new Date().toISOString();
+    }
+
+    var result = saveNote(noteData);
+    if (result && result.error) {
+      showToast('Error saving note: ' + (result.errors || []).join(', '), 'error');
+      return;
+    }
+
+    showToast(andSign ? 'Note saved & signed' : 'Note saved as draft', 'success');
+    refreshRightPanel();
+  }
+
+  document.getElementById('rp-note-save').addEventListener('click', function() { _saveNote(false); });
+  document.getElementById('rp-note-save-sign').addEventListener('click', function() { _saveNote(true); });
+}
+
+/* ---------- Right Panel Template Picker ---------- */
+function _openRightPanelTemplatePicker(textarea, patientId) {
+  var templates = typeof getNoteTemplates === 'function' ? getNoteTemplates() : [];
+  if (templates.length === 0) {
+    showToast('No templates available', 'warning');
+    return;
+  }
+
+  var bodyEl = document.createElement('div');
+  var grid = document.createElement('div');
+  grid.className = 'template-grid';
+
+  templates.forEach(function(tmpl) {
+    var card = document.createElement('div');
+    card.className = 'template-card';
+
+    var name = document.createElement('div');
+    name.className = 'template-card-name';
+    name.textContent = tmpl.name;
+
+    var type = document.createElement('div');
+    type.className = 'template-card-type';
+    type.textContent = tmpl.visitType || 'General';
+
+    var preview = document.createElement('div');
+    preview.className = 'template-card-preview';
+    var previewParts = [];
+    ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'].forEach(function(f) {
+      if (tmpl[f]) previewParts.push(tmpl[f]);
+    });
+    var previewText = previewParts.join(' | ');
+    preview.textContent = previewText.length > 100 ? previewText.substring(0, 100) + '...' : previewText;
+
+    card.appendChild(name);
+    card.appendChild(type);
+    card.appendChild(preview);
+
+    card.addEventListener('click', function() {
+      // Build freeform text from template sections
+      var parts = [];
+      var sectionDefs = [
+        { key: 'chiefComplaint', label: 'Chief Complaint' },
+        { key: 'hpi', label: 'History of Present Illness' },
+        { key: 'ros', label: 'Review of Systems' },
+        { key: 'physicalExam', label: 'Physical Examination' },
+        { key: 'assessment', label: 'Assessment' },
+        { key: 'plan', label: 'Plan' },
+      ];
+      sectionDefs.forEach(function(s) {
+        if (tmpl[s.key]) parts.push(s.label + ':\n' + tmpl[s.key]);
+      });
+      var content = parts.join('\n\n');
+
+      if (textarea.value.trim()) {
+        closeModal();
+        if (typeof confirmAction === 'function') {
+          confirmAction({
+            title: 'Replace Note Content?',
+            message: 'This will replace the current note with the "' + tmpl.name + '" template.',
+            confirmLabel: 'Apply Template',
+            danger: false,
+            onConfirm: function() {
+              textarea.value = content;
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              showToast('Template applied: ' + tmpl.name, 'success');
+            },
+          });
+        }
+      } else {
+        textarea.value = content;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        closeModal();
+        showToast('Template applied: ' + tmpl.name, 'success');
+      }
+    });
+
+    grid.appendChild(card);
+  });
+
+  bodyEl.appendChild(grid);
+
+  openModal({
+    title: 'Choose Note Template',
+    bodyHTML: '',
+    footerHTML: '<button class="btn btn-secondary" id="tmpl-rp-cancel">Cancel</button>',
+    size: 'lg',
+  });
+  document.getElementById('modal-body').innerHTML = '';
+  document.getElementById('modal-body').appendChild(bodyEl);
+  document.getElementById('tmpl-rp-cancel').addEventListener('click', closeModal);
+}
+
+/* ---------- Dot Phrase Quick Reference ---------- */
+function _openDotPhraseReference() {
+  var phrases = typeof getSmartPhrases === 'function' ? getSmartPhrases() : [];
+  var html = '<div class="nw-phrase-ref">';
+  html += '<p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">Type these in the note editor to auto-insert content. Phrases starting with <strong>Auto</strong> pull live patient data.</p>';
+  html += '<table class="nw-phrase-table"><thead><tr><th>Phrase</th><th>Description</th><th>Type</th></tr></thead><tbody>';
+  phrases.forEach(function(p) {
+    html += '<tr>' +
+      '<td><code>' + esc(p.abbreviation) + '</code></td>' +
+      '<td>' + esc(p.title) + '</td>' +
+      '<td>' + (p.autoExpand ? '<span style="color:var(--accent-green);font-weight:600;">Auto</span>' : esc(p.category || '')) + '</td>' +
+    '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  openModal({
+    title: 'Dot Phrase Reference',
+    bodyHTML: html,
+    footerHTML: '<button class="btn btn-secondary" id="dp-ref-close">Close</button>',
+    size: 'lg',
+  });
+  document.getElementById('dp-ref-close').addEventListener('click', closeModal);
+}
+
 function _showQuickOrderForm(type, patientId, encounterId) {
   var form = document.getElementById('rp-quick-order-form');
   if (!form) return;
   form.classList.remove('hidden');
 
-  var html = '<div style="font-size:12px;font-weight:700;color:var(--accent-blue);margin-bottom:8px;">' + esc(type) + ' Order</div>';
+  // Header + type-specific fields container + priority/notes/buttons
+  form.innerHTML =
+    '<div style="font-size:12px;font-weight:700;color:var(--accent-blue);margin-bottom:8px;">' + esc(type) + ' Order</div>' +
+    '<div id="rp-type-fields"></div>' +
+    '<div class="form-group" style="margin-top:10px;"><label class="form-label">Priority</label>' +
+      '<select class="form-control" id="rp-ord-priority"><option>Routine</option><option>Urgent</option><option>STAT</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Notes</label>' +
+      '<input type="text" class="form-control" id="rp-ord-notes" placeholder="Clinical indication..." /></div>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-primary btn-sm" id="rp-ord-submit" style="flex:1;">Place Order</button>' +
+      '<button class="btn btn-secondary btn-sm" id="rp-ord-cancel">Cancel</button></div>';
 
-  if (type === 'Medication') {
-    html += '<div class="form-group"><label class="form-label">Medication</label>' +
-      '<input type="text" class="form-control" id="rp-ord-drug" placeholder="Drug name..." /></div>';
-    html += '<div class="form-row">' +
-      '<div class="form-group"><label class="form-label">Dose</label>' +
-      '<input type="text" class="form-control" id="rp-ord-dose" placeholder="e.g. 500mg" /></div>' +
-      '<div class="form-group"><label class="form-label">Route</label>' +
-      '<select class="form-control" id="rp-ord-route"><option>PO</option><option>IV</option><option>IM</option><option>SQ</option><option>Topical</option><option>Inhaled</option></select></div></div>';
-    html += '<div class="form-row">' +
-      '<div class="form-group"><label class="form-label">Frequency</label>' +
-      '<select class="form-control" id="rp-ord-freq"><option>Daily</option><option>BID</option><option>TID</option><option>QID</option><option>Q6H</option><option>Q8H</option><option>Q12H</option><option>PRN</option><option>Once</option></select></div>' +
-      '<div class="form-group"><label class="form-label">Duration</label>' +
-      '<input type="text" class="form-control" id="rp-ord-dur" placeholder="e.g. 7 days" /></div></div>';
-  } else if (type === 'Lab') {
-    html += '<div class="form-group"><label class="form-label">Lab Test / Panel</label>' +
-      '<input type="text" class="form-control" id="rp-ord-lab" placeholder="e.g. CBC, BMP, Lipid Panel..." /></div>';
-  } else if (type === 'Imaging') {
-    html += '<div class="form-group"><label class="form-label">Modality</label>' +
-      '<select class="form-control" id="rp-ord-modality"><option>X-Ray</option><option>CT</option><option>MRI</option><option>Ultrasound</option><option>Fluoroscopy</option></select></div>';
-    html += '<div class="form-group"><label class="form-label">Body Part</label>' +
-      '<input type="text" class="form-control" id="rp-ord-bodypart" placeholder="e.g. Chest, Abdomen..." /></div>';
-  } else if (type === 'Consult') {
-    html += '<div class="form-group"><label class="form-label">Specialty</label>' +
-      '<input type="text" class="form-control" id="rp-ord-specialty" placeholder="e.g. Cardiology, Neurology..." /></div>';
+  // Reuse the same renderTypeFields from orders.js
+  var typeFieldsContainer = document.getElementById('rp-type-fields');
+  if (typeof renderTypeFields === 'function') {
+    renderTypeFields(typeFieldsContainer, type);
   }
-
-  html += '<div class="form-group"><label class="form-label">Priority</label>' +
-    '<select class="form-control" id="rp-ord-priority"><option>Routine</option><option>Urgent</option><option>STAT</option></select></div>';
-  html += '<div class="form-group"><label class="form-label">Notes</label>' +
-    '<input type="text" class="form-control" id="rp-ord-notes" placeholder="Clinical indication..." /></div>';
-  html += '<div style="display:flex;gap:8px;">' +
-    '<button class="btn btn-primary btn-sm" id="rp-ord-submit" style="flex:1;">Place Order</button>' +
-    '<button class="btn btn-secondary btn-sm" id="rp-ord-cancel">Cancel</button></div>';
-
-  form.innerHTML = html;
 
   document.getElementById('rp-ord-cancel').addEventListener('click', function() {
     form.classList.add('hidden');
@@ -1881,23 +2208,53 @@ function _showQuickOrderForm(type, patientId, encounterId) {
     var priority = document.getElementById('rp-ord-priority').value;
     var notes = (document.getElementById('rp-ord-notes').value || '').trim();
 
+    // Collect data using the same IDs as the main order form
     if (type === 'Medication') {
-      detail.drug = (document.getElementById('rp-ord-drug').value || '').trim();
-      detail.dose = (document.getElementById('rp-ord-dose').value || '').trim();
-      detail.route = document.getElementById('rp-ord-route').value;
-      detail.frequency = document.getElementById('rp-ord-freq').value;
-      detail.duration = (document.getElementById('rp-ord-dur').value || '').trim();
-      if (!detail.drug) { showToast('Enter a medication name', 'error'); return; }
+      detail.drug = (document.getElementById('med-drug') || {}).value || '';
+      detail.drug = detail.drug.trim();
+      detail.dose = (document.getElementById('med-dose') || {}).value || '';
+      detail.dose = detail.dose.trim();
+      detail.unit = (document.getElementById('med-unit') || {}).value || 'mg';
+      detail.route = (document.getElementById('med-route') || {}).value || 'PO';
+      detail.frequency = (document.getElementById('med-freq') || {}).value || 'Daily';
+      detail.prn = document.getElementById('med-prn') ? document.getElementById('med-prn').checked : false;
+      var durVal = (document.getElementById('med-duration') || {}).value || '';
+      if (durVal === 'other') {
+        detail.duration = ((document.getElementById('med-duration-other') || {}).value || '') + ' days';
+      } else if (durVal === 'ongoing') {
+        detail.duration = 'Ongoing';
+      } else if (durVal) {
+        detail.duration = durVal + ' days';
+      }
+      detail.indication = ((document.getElementById('med-indication') || {}).value || '').trim();
+      if (!detail.drug) { showToast('Drug name is required', 'error'); return; }
+      if (!detail.dose) { showToast('Dose is required', 'error'); return; }
     } else if (type === 'Lab') {
-      detail.panel = (document.getElementById('rp-ord-lab').value || '').trim();
-      if (!detail.panel) { showToast('Enter a lab test', 'error'); return; }
+      detail.panel = ((document.getElementById('lab-search') || {}).value || '').trim();
+      detail.specimen = (document.getElementById('lab-specimen') || {}).value || 'Blood';
+      detail.frequency = (document.getElementById('lab-frequency') || {}).value || 'Once';
+      detail.urgency = (document.getElementById('lab-urgency') || {}).value || 'Routine';
+      var testsRaw = ((document.getElementById('lab-tests') || {}).value || '').trim();
+      detail.tests = testsRaw ? testsRaw.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+      var labEntry = typeFieldsContainer._selectedLabEntry || null;
+      if (labEntry) {
+        detail.tubeColor = labEntry.tubeColor || '';
+        detail.cptCode = labEntry.cptCode || '';
+        detail.fasting = labEntry.fasting || false;
+        detail.specialInstructions = labEntry.specialInstructions || '';
+      }
+      if (!detail.panel) { showToast('Lab test is required', 'error'); return; }
+      priority = detail.urgency;
     } else if (type === 'Imaging') {
-      detail.modality = document.getElementById('rp-ord-modality').value;
-      detail.bodyPart = (document.getElementById('rp-ord-bodypart').value || '').trim();
-      if (!detail.bodyPart) { showToast('Enter a body part', 'error'); return; }
+      detail.modality = (document.getElementById('img-modality') || document.getElementById('rp-ord-modality') || {}).value || '';
+      detail.bodyPart = ((document.getElementById('img-body') || document.getElementById('rp-ord-bodypart') || {}).value || '').trim();
+      detail.indication = ((document.getElementById('img-indication') || {}).value || '').trim();
+      detail.laterality = (document.getElementById('img-laterality') || {}).value || 'N/A';
+      if (!detail.bodyPart) { showToast('Body part is required', 'error'); return; }
     } else if (type === 'Consult') {
-      detail.service = (document.getElementById('rp-ord-specialty').value || '').trim();
-      if (!detail.service) { showToast('Enter a specialty', 'error'); return; }
+      detail.service = ((document.getElementById('consult-service') || document.getElementById('rp-ord-specialty') || {}).value || '').trim();
+      detail.reason = ((document.getElementById('consult-reason') || {}).value || '').trim();
+      if (!detail.service) { showToast('Specialty is required', 'error'); return; }
     }
 
     var result = saveOrder({
@@ -1916,10 +2273,11 @@ function _showQuickOrderForm(type, patientId, encounterId) {
       return;
     }
 
-    showToast(type + ' order placed', 'success');
+    showToast(type + ' order added to queue — awaiting signature', 'success');
     form.classList.add('hidden');
     form.innerHTML = '';
     refreshRightPanel();
+    refreshOrderQueue(true);
   });
 }
 
@@ -1930,6 +2288,180 @@ route = function() {
   if (_rightPanelOpen) {
     setTimeout(refreshRightPanel, 100);
   }
+  setTimeout(refreshOrderQueue, 150);
 };
+
+/* ============================================================
+   Order Queue — floating bottom bar for unsigned orders
+   ============================================================ */
+function signOrder(id) {
+  var orders = loadAll(KEYS.orders, true);
+  var idx = orders.findIndex(function(o) { return o.id === id; });
+  if (idx < 0) return null;
+  var user = getSessionUser();
+  orders[idx].signed = true;
+  orders[idx].signedBy = user ? user.id : '';
+  orders[idx].signedAt = new Date().toISOString();
+  if (orders[idx].status === 'Pending') orders[idx].status = 'Active';
+  saveAll(KEYS.orders, orders);
+  logSystemAudit('ORDER_SIGNED', user ? user.id : '', orders[idx].patientId, 'Order signed: ' + orders[idx].type + ' (id: ' + id + ')', user ? user.email : '');
+  return orders[idx];
+}
+
+function getUnsignedOrders() {
+  return getOrders().filter(function(o) { return !o.signed && o.status !== 'Cancelled'; });
+}
+
+var _orderQueueExpanded = false;
+
+function initOrderQueue() {
+  var existing = document.getElementById('order-queue');
+  if (existing) existing.remove();
+
+  var queue = document.createElement('div');
+  queue.id = 'order-queue';
+  queue.className = 'order-queue';
+  queue.innerHTML =
+    '<div class="order-queue-bar" id="order-queue-bar">' +
+      '<div class="order-queue-bar-left">' +
+        '<span class="order-queue-icon">📋</span>' +
+        '<span class="order-queue-label">Order Queue</span>' +
+        '<span class="order-queue-badge" id="order-queue-badge">0</span>' +
+      '</div>' +
+      '<button class="order-queue-toggle" id="order-queue-toggle" aria-label="Expand order queue">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+          '<polyline points="18 15 12 9 6 15"/>' +
+        '</svg>' +
+      '</button>' +
+    '</div>' +
+    '<div class="order-queue-body" id="order-queue-body"></div>';
+  document.body.appendChild(queue);
+
+  document.getElementById('order-queue-bar').addEventListener('click', function() {
+    _orderQueueExpanded = !_orderQueueExpanded;
+    queue.classList.toggle('expanded', _orderQueueExpanded);
+    if (_orderQueueExpanded) renderOrderQueueBody();
+  });
+
+  refreshOrderQueue();
+}
+
+function refreshOrderQueue(autoExpand) {
+  var unsigned = getUnsignedOrders();
+  var badge = document.getElementById('order-queue-badge');
+  var queueEl = document.getElementById('order-queue');
+  if (!badge || !queueEl) return;
+
+  badge.textContent = unsigned.length;
+  badge.classList.toggle('has-orders', unsigned.length > 0);
+
+  if (unsigned.length === 0) {
+    queueEl.classList.add('empty');
+    queueEl.classList.remove('expanded');
+    _orderQueueExpanded = false;
+  } else {
+    queueEl.classList.remove('empty');
+    if (autoExpand) {
+      _orderQueueExpanded = true;
+      queueEl.classList.add('expanded');
+    }
+  }
+
+  if (_orderQueueExpanded) renderOrderQueueBody();
+}
+
+function renderOrderQueueBody() {
+  var body = document.getElementById('order-queue-body');
+  if (!body) return;
+  var unsigned = getUnsignedOrders();
+
+  if (unsigned.length === 0) {
+    body.innerHTML = '<div class="oq-empty">No unsigned orders</div>';
+    return;
+  }
+
+  var patients = {};
+  unsigned.forEach(function(o) {
+    if (!patients[o.patientId]) patients[o.patientId] = [];
+    patients[o.patientId].push(o);
+  });
+
+  var html = '<div class="oq-actions-top">' +
+    '<button class="btn btn-primary btn-sm" id="oq-sign-all">Sign All (' + unsigned.length + ')</button>' +
+    '</div>';
+
+  Object.keys(patients).forEach(function(pid) {
+    var orders = patients[pid];
+    var pat = typeof getPatient === 'function' ? getPatient(pid) : null;
+    var patName = pat ? (pat.lastName + ', ' + pat.firstName) : pid;
+
+    html += '<div class="oq-patient-group">';
+    html += '<div class="oq-patient-name">' + esc(patName) + '</div>';
+
+    orders.forEach(function(o) {
+      var d = o.detail || {};
+      var name = '';
+      switch (o.type) {
+        case 'Medication': name = (d.drug || 'Medication') + ' ' + (d.dose || '') + (d.unit || ''); break;
+        case 'Lab': name = d.panel || 'Lab'; break;
+        case 'Imaging': name = (d.modality || '') + ' ' + (d.bodyPart || ''); break;
+        case 'Consult': name = 'Consult: ' + (d.service || ''); break;
+        default: name = o.type;
+      }
+      var sub = '';
+      if (o.type === 'Medication') sub = [d.route, d.frequency, d.duration].filter(Boolean).join(', ');
+      else if (o.type === 'Lab') sub = [d.frequency !== 'Once' ? d.frequency : '', d.urgency !== 'Routine' ? d.urgency : '', d.specimen].filter(Boolean).join(' · ');
+
+      var typeIcon = { Medication: '💊', Lab: '🧪', Imaging: '🩻', Consult: '👨‍⚕️' }[o.type] || '📄';
+      var priBadge = o.priority === 'STAT' ? ' <span class="oq-pri-stat">STAT</span>' :
+                     o.priority === 'Urgent' ? ' <span class="oq-pri-urgent">Urgent</span>' : '';
+
+      html += '<div class="oq-order-row">';
+      html += '<div class="oq-order-info">';
+      html += '<span class="oq-order-icon">' + typeIcon + '</span>';
+      html += '<div><div class="oq-order-name">' + esc(name) + priBadge + '</div>';
+      if (sub) html += '<div class="oq-order-sub">' + esc(sub) + '</div>';
+      html += '</div></div>';
+      html += '<div class="oq-order-actions">' +
+        '<button class="btn btn-sm btn-primary oq-sign-btn" data-order-id="' + o.id + '">Sign</button>' +
+        '<button class="btn btn-sm btn-secondary oq-cancel-btn" data-order-id="' + o.id + '" title="Cancel order">✕</button>' +
+        '</div>';
+      html += '</div>';
+    });
+
+    html += '</div>';
+  });
+
+  body.innerHTML = html;
+
+  // Wire sign all
+  var signAllBtn = document.getElementById('oq-sign-all');
+  if (signAllBtn) {
+    signAllBtn.addEventListener('click', function() {
+      unsigned.forEach(function(o) { signOrder(o.id); });
+      showToast('All orders signed', 'success');
+      refreshOrderQueue();
+    });
+  }
+
+  // Wire individual sign/cancel buttons
+  body.querySelectorAll('.oq-sign-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      signOrder(btn.dataset.orderId);
+      showToast('Order signed', 'success');
+      refreshOrderQueue();
+    });
+  });
+
+  body.querySelectorAll('.oq-cancel-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      updateOrderStatus(btn.dataset.orderId, 'Cancelled');
+      showToast('Order cancelled', 'warning');
+      refreshOrderQueue();
+    });
+  });
+}
 
 init();
