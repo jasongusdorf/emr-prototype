@@ -91,7 +91,7 @@ a:hover { text-decoration: underline; }
 /* ---------- App shell layout ---------- */
 #shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-width) 1fr auto;
   grid-template-rows: 100vh;
   height: 100vh;
 }
@@ -7946,11 +7946,6 @@ body.dark-mode .ai-score-bar {
 }
 .rp-enc-item:hover { background: var(--accent-blue-light, #ebf4ff); border-color: var(--accent-blue, #2b6cb0); }
 .rp-enc-item.selected { background: var(--accent-blue-light, #ebf4ff); border-color: var(--accent-blue, #2b6cb0); font-weight: 600; }
-
-/* Grid layout update to include right panel */
-#shell {
-  grid-template-columns: var(--sidebar-width, 220px) 1fr auto;
-}
 
 /* Dark mode */
 body.dark-mode .right-panel-toggle {
