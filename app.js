@@ -1347,6 +1347,7 @@ function initAppAfterAuth() {
   initListsNav();
   if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
   if (typeof refreshSidebarLists === 'function') refreshSidebarLists();
+  initRightPanel();
   startSessionTimer();
   updateSessionActivity();
   updateAdminBadge();
@@ -1585,5 +1586,333 @@ function initForcePasswordChange() {
     });
   }
 }
+
+/* ============================================================
+   Right Quick-Action Panel
+   ============================================================ */
+var _rightPanelOpen = false;
+
+function initRightPanel() {
+  const toggle = document.getElementById('right-panel-toggle');
+  const panel = document.getElementById('right-panel');
+  if (!toggle || !panel) return;
+
+  toggle.addEventListener('click', function() {
+    _rightPanelOpen = !_rightPanelOpen;
+    panel.classList.toggle('open', _rightPanelOpen);
+    if (_rightPanelOpen) refreshRightPanel();
+  });
+}
+
+function refreshRightPanel() {
+  const body = document.getElementById('right-panel-body');
+  if (!body) return;
+
+  // Determine patient context
+  var patientId = typeof _currentChartPatientId !== 'undefined' ? _currentChartPatientId : null;
+
+  // If on encounter page, get patient from encounter
+  if (!patientId && location.hash.startsWith('#encounter/')) {
+    var encId = location.hash.split('/')[1];
+    if (encId) {
+      var enc = loadAll(KEYS.encounters).find(function(e) { return e.id === encId; });
+      if (enc) patientId = enc.patientId;
+    }
+  }
+
+  // If on orders page, get patient from encounter
+  if (!patientId && location.hash.startsWith('#orders/')) {
+    var ordEncId = location.hash.split('/')[1];
+    if (ordEncId) {
+      var ordEnc = loadAll(KEYS.encounters).find(function(e) { return e.id === ordEncId; });
+      if (ordEnc) patientId = ordEnc.patientId;
+    }
+  }
+
+  var html = '';
+
+  if (patientId) {
+    var patient = loadAll(KEYS.patients).find(function(p) { return p.id === patientId; });
+    if (patient) {
+      var initials = ((patient.firstName || '')[0] || '') + ((patient.lastName || '')[0] || '');
+      html += '<div class="rp-patient-ctx">' +
+        '<div class="rp-patient-avatar">' + esc(initials.toUpperCase()) + '</div>' +
+        '<div><div class="rp-patient-name">' + esc(patient.lastName + ', ' + patient.firstName) + '</div>' +
+        '<div class="rp-patient-mrn">MRN: ' + esc(patient.mrn || '—') + '</div></div></div>';
+    }
+
+    // --- New Note section ---
+    html += '<div class="rp-section">';
+    html += '<div class="rp-section-title">Notes</div>';
+    html += '<button class="rp-action-btn" id="rp-new-note">' +
+      '<div class="rp-action-icon note">&#9997;</div>' +
+      '<div class="rp-action-body"><div class="rp-action-label">New Note</div>' +
+      '<div class="rp-action-desc">Start a new encounter &amp; note</div></div></button>';
+
+    // Show open encounters for quick access
+    var openEncs = loadAll(KEYS.encounters).filter(function(e) {
+      return e.patientId === patientId && e.status === 'Open';
+    });
+    if (openEncs.length > 0) {
+      html += '<div style="margin-top:8px;font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">Open Encounters</div>';
+      html += '<div class="rp-enc-list">';
+      openEncs.forEach(function(e) {
+        html += '<div class="rp-enc-item" data-enc-id="' + esc(e.id) + '">' +
+          '<strong>' + esc(e.visitType || 'Visit') + '</strong>' +
+          (e.visitSubtype ? ' — ' + esc(e.visitSubtype) : '') +
+          '<br/><span style="color:var(--text-muted)">' + formatDateTime(e.dateTime) + '</span></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // --- Orders section ---
+    html += '<div class="rp-section">';
+    html += '<div class="rp-section-title">Quick Orders</div>';
+
+    // Need an encounter for orders
+    if (openEncs.length > 0) {
+      var defaultEnc = openEncs[0];
+
+      html += '<button class="rp-action-btn" data-order-type="Medication">' +
+        '<div class="rp-action-icon med">&#128138;</div>' +
+        '<div class="rp-action-body"><div class="rp-action-label">Medication</div>' +
+        '<div class="rp-action-desc">Prescribe a medication</div></div></button>';
+
+      html += '<button class="rp-action-btn" data-order-type="Lab">' +
+        '<div class="rp-action-icon lab">&#129514;</div>' +
+        '<div class="rp-action-body"><div class="rp-action-label">Lab Order</div>' +
+        '<div class="rp-action-desc">Order labs &amp; bloodwork</div></div></button>';
+
+      html += '<button class="rp-action-btn" data-order-type="Imaging">' +
+        '<div class="rp-action-icon img">&#128248;</div>' +
+        '<div class="rp-action-body"><div class="rp-action-label">Imaging</div>' +
+        '<div class="rp-action-desc">X-ray, CT, MRI, Ultrasound</div></div></button>';
+
+      html += '<button class="rp-action-btn" data-order-type="Consult">' +
+        '<div class="rp-action-icon consult">&#128101;</div>' +
+        '<div class="rp-action-body"><div class="rp-action-label">Consult</div>' +
+        '<div class="rp-action-desc">Request a specialist consult</div></div></button>';
+
+      // Quick order form (hidden, shown when type is selected)
+      html += '<div id="rp-quick-order-form" class="rp-quick-form hidden"></div>';
+
+    } else {
+      html += '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Create an encounter first to place orders.</div>';
+    }
+    html += '</div>';
+
+    // --- Navigate ---
+    html += '<div class="rp-section">';
+    html += '<div class="rp-section-title">Navigate</div>';
+    html += '<button class="rp-action-btn" id="rp-go-chart">' +
+      '<div class="rp-action-icon" style="background:#f1f5f9;color:#475569;">&#128203;</div>' +
+      '<div class="rp-action-body"><div class="rp-action-label">Open Chart</div>' +
+      '<div class="rp-action-desc">View full patient chart</div></div></button>';
+    html += '</div>';
+
+  } else {
+    // No patient context
+    html += '<div class="rp-no-patient">' +
+      '<div class="rp-no-patient-icon">&#128100;</div>' +
+      '<div><strong>No patient selected</strong></div>' +
+      '<div style="margin-top:6px;">Navigate to a patient chart to use quick actions, or search below.</div>' +
+      '</div>';
+
+    // Patient search
+    html += '<div class="rp-section" style="margin-top:12px;">';
+    html += '<div class="rp-section-title">Find Patient</div>';
+    html += '<input type="text" class="form-control" id="rp-patient-search" placeholder="Search by name or MRN..." style="font-size:13px;" />';
+    html += '<div id="rp-patient-results" style="margin-top:8px;"></div>';
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+
+  // Wire events
+  _wireRightPanelEvents(patientId);
+}
+
+function _wireRightPanelEvents(patientId) {
+  // New Note
+  var newNoteBtn = document.getElementById('rp-new-note');
+  if (newNoteBtn) {
+    newNoteBtn.addEventListener('click', function() {
+      if (typeof openNewNoteForPatient === 'function') {
+        openNewNoteForPatient(patientId);
+      } else if (typeof openNewEncounterModal === 'function') {
+        openNewEncounterModal(patientId);
+      }
+    });
+  }
+
+  // Open encounter items
+  document.querySelectorAll('.rp-enc-item').forEach(function(el) {
+    el.addEventListener('click', function() {
+      navigate('#encounter/' + el.dataset.encId);
+    });
+  });
+
+  // Go to chart
+  var goChart = document.getElementById('rp-go-chart');
+  if (goChart) {
+    goChart.addEventListener('click', function() {
+      navigate('#chart/' + patientId);
+    });
+  }
+
+  // Order type buttons
+  var openEncs = patientId ? loadAll(KEYS.encounters).filter(function(e) {
+    return e.patientId === patientId && e.status === 'Open';
+  }) : [];
+  var defaultEncId = openEncs.length > 0 ? openEncs[0].id : null;
+
+  document.querySelectorAll('[data-order-type]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (defaultEncId) {
+        _showQuickOrderForm(btn.dataset.orderType, patientId, defaultEncId);
+      }
+    });
+  });
+
+  // Patient search (when no patient context)
+  var searchInput = document.getElementById('rp-patient-search');
+  if (searchInput) {
+    var debounce;
+    searchInput.addEventListener('input', function() {
+      clearTimeout(debounce);
+      debounce = setTimeout(function() {
+        var q = searchInput.value.trim().toLowerCase();
+        var results = document.getElementById('rp-patient-results');
+        if (!results) return;
+        if (q.length < 2) { results.innerHTML = ''; return; }
+        var patients = loadAll(KEYS.patients).filter(function(p) {
+          return (p.firstName + ' ' + p.lastName).toLowerCase().includes(q) ||
+                 (p.mrn || '').toLowerCase().includes(q);
+        }).slice(0, 8);
+        if (patients.length === 0) {
+          results.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">No patients found.</div>';
+          return;
+        }
+        var h = '';
+        patients.forEach(function(p) {
+          h += '<div class="rp-enc-item" data-pid="' + esc(p.id) + '">' +
+            '<strong>' + esc(p.lastName + ', ' + p.firstName) + '</strong>' +
+            '<br/><span style="color:var(--text-muted);font-size:11px;">' + esc(p.mrn || '') + '</span></div>';
+        });
+        results.innerHTML = h;
+        results.querySelectorAll('[data-pid]').forEach(function(el) {
+          el.addEventListener('click', function() {
+            navigate('#chart/' + el.dataset.pid);
+          });
+        });
+      }, 200);
+    });
+  }
+}
+
+function _showQuickOrderForm(type, patientId, encounterId) {
+  var form = document.getElementById('rp-quick-order-form');
+  if (!form) return;
+  form.classList.remove('hidden');
+
+  var html = '<div style="font-size:12px;font-weight:700;color:var(--accent-blue);margin-bottom:8px;">' + esc(type) + ' Order</div>';
+
+  if (type === 'Medication') {
+    html += '<div class="form-group"><label class="form-label">Medication</label>' +
+      '<input type="text" class="form-control" id="rp-ord-drug" placeholder="Drug name..." /></div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label class="form-label">Dose</label>' +
+      '<input type="text" class="form-control" id="rp-ord-dose" placeholder="e.g. 500mg" /></div>' +
+      '<div class="form-group"><label class="form-label">Route</label>' +
+      '<select class="form-control" id="rp-ord-route"><option>PO</option><option>IV</option><option>IM</option><option>SQ</option><option>Topical</option><option>Inhaled</option></select></div></div>';
+    html += '<div class="form-row">' +
+      '<div class="form-group"><label class="form-label">Frequency</label>' +
+      '<select class="form-control" id="rp-ord-freq"><option>Daily</option><option>BID</option><option>TID</option><option>QID</option><option>Q6H</option><option>Q8H</option><option>Q12H</option><option>PRN</option><option>Once</option></select></div>' +
+      '<div class="form-group"><label class="form-label">Duration</label>' +
+      '<input type="text" class="form-control" id="rp-ord-dur" placeholder="e.g. 7 days" /></div></div>';
+  } else if (type === 'Lab') {
+    html += '<div class="form-group"><label class="form-label">Lab Test / Panel</label>' +
+      '<input type="text" class="form-control" id="rp-ord-lab" placeholder="e.g. CBC, BMP, Lipid Panel..." /></div>';
+  } else if (type === 'Imaging') {
+    html += '<div class="form-group"><label class="form-label">Modality</label>' +
+      '<select class="form-control" id="rp-ord-modality"><option>X-Ray</option><option>CT</option><option>MRI</option><option>Ultrasound</option><option>Fluoroscopy</option></select></div>';
+    html += '<div class="form-group"><label class="form-label">Body Part</label>' +
+      '<input type="text" class="form-control" id="rp-ord-bodypart" placeholder="e.g. Chest, Abdomen..." /></div>';
+  } else if (type === 'Consult') {
+    html += '<div class="form-group"><label class="form-label">Specialty</label>' +
+      '<input type="text" class="form-control" id="rp-ord-specialty" placeholder="e.g. Cardiology, Neurology..." /></div>';
+  }
+
+  html += '<div class="form-group"><label class="form-label">Priority</label>' +
+    '<select class="form-control" id="rp-ord-priority"><option>Routine</option><option>Urgent</option><option>STAT</option></select></div>';
+  html += '<div class="form-group"><label class="form-label">Notes</label>' +
+    '<input type="text" class="form-control" id="rp-ord-notes" placeholder="Clinical indication..." /></div>';
+  html += '<div style="display:flex;gap:8px;">' +
+    '<button class="btn btn-primary btn-sm" id="rp-ord-submit" style="flex:1;">Place Order</button>' +
+    '<button class="btn btn-secondary btn-sm" id="rp-ord-cancel">Cancel</button></div>';
+
+  form.innerHTML = html;
+
+  document.getElementById('rp-ord-cancel').addEventListener('click', function() {
+    form.classList.add('hidden');
+    form.innerHTML = '';
+  });
+
+  document.getElementById('rp-ord-submit').addEventListener('click', function() {
+    var detail = {};
+    var priority = document.getElementById('rp-ord-priority').value;
+    var notes = (document.getElementById('rp-ord-notes').value || '').trim();
+
+    if (type === 'Medication') {
+      detail.drug = (document.getElementById('rp-ord-drug').value || '').trim();
+      detail.dose = (document.getElementById('rp-ord-dose').value || '').trim();
+      detail.route = document.getElementById('rp-ord-route').value;
+      detail.frequency = document.getElementById('rp-ord-freq').value;
+      detail.duration = (document.getElementById('rp-ord-dur').value || '').trim();
+      if (!detail.drug) { showToast('Enter a medication name', 'error'); return; }
+    } else if (type === 'Lab') {
+      detail.panel = (document.getElementById('rp-ord-lab').value || '').trim();
+      if (!detail.panel) { showToast('Enter a lab test', 'error'); return; }
+    } else if (type === 'Imaging') {
+      detail.modality = document.getElementById('rp-ord-modality').value;
+      detail.bodyPart = (document.getElementById('rp-ord-bodypart').value || '').trim();
+      if (!detail.bodyPart) { showToast('Enter a body part', 'error'); return; }
+    } else if (type === 'Consult') {
+      detail.service = (document.getElementById('rp-ord-specialty').value || '').trim();
+      if (!detail.service) { showToast('Enter a specialty', 'error'); return; }
+    }
+
+    var result = saveOrder({
+      encounterId: encounterId,
+      patientId: patientId,
+      type: type,
+      priority: priority,
+      status: 'Pending',
+      detail: detail,
+      notes: notes,
+      dateTime: new Date().toISOString(),
+    });
+
+    if (result && result.error) {
+      showToast('Error: ' + (result.errors || []).join(', '), 'error');
+      return;
+    }
+
+    showToast(type + ' order placed', 'success');
+    form.classList.add('hidden');
+    form.innerHTML = '';
+    refreshRightPanel();
+  });
+}
+
+// Refresh right panel on route changes
+var _origRoute = route;
+route = function() {
+  _origRoute();
+  if (_rightPanelOpen) {
+    setTimeout(refreshRightPanel, 100);
+  }
+};
 
 init();

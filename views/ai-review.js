@@ -1,905 +1,1304 @@
 /* ============================================================
-   views/ai-review.js — AI Chart Review / Clinical Decision Support
-   Simulated AI system using rule-based logic.
+   views/ai-review.js — AI Clinical Decision Support System
+   Rule-based simulated AI review: chart completeness, care gaps,
+   drug interactions, clinical decision support, documentation
+   quality, risk stratification, patient education.
    ============================================================ */
 
-/* ============================================================
-   1. DRUG INTERACTION DATABASE
-   ============================================================ */
+/* ---------- Module-level state ---------- */
+let _aiFindings = [];           // current session findings (not persisted)
+let _aiDismissed = new Set();   // dismissed finding IDs for this session
+let _aiActiveTab = 'overview';  // active tab key
 
-const DRUG_INTERACTIONS = [
-  { drugA: 'warfarin', drugB: 'aspirin', severity: 'high', description: 'Increased bleeding risk. Combined antiplatelet and anticoagulant therapy requires close INR monitoring.' },
-  { drugA: 'warfarin', drugB: 'ibuprofen', severity: 'high', description: 'NSAIDs increase bleeding risk and may elevate INR. Avoid combination or monitor closely.' },
-  { drugA: 'warfarin', drugB: 'naproxen', severity: 'high', description: 'NSAIDs increase bleeding risk with warfarin. Consider acetaminophen as alternative.' },
-  { drugA: 'warfarin', drugB: 'metronidazole', severity: 'high', description: 'Metronidazole inhibits warfarin metabolism, significantly increasing INR.' },
-  { drugA: 'warfarin', drugB: 'fluconazole', severity: 'high', description: 'Fluconazole inhibits CYP2C9, greatly increasing warfarin effect and bleeding risk.' },
-  { drugA: 'warfarin', drugB: 'amiodarone', severity: 'high', description: 'Amiodarone inhibits warfarin metabolism. Reduce warfarin dose by 30-50% and monitor INR closely.' },
-  { drugA: 'warfarin', drugB: 'trimethoprim', severity: 'moderate', description: 'Trimethoprim may increase warfarin effect. Monitor INR.' },
-  { drugA: 'fluoxetine', drugB: 'tramadol', severity: 'high', description: 'Risk of serotonin syndrome. Both increase serotonergic activity.' },
-  { drugA: 'sertraline', drugB: 'tramadol', severity: 'high', description: 'Risk of serotonin syndrome. Both increase serotonergic activity.' },
-  { drugA: 'fluoxetine', drugB: 'sumatriptan', severity: 'high', description: 'Risk of serotonin syndrome with combined serotonergic agents.' },
-  { drugA: 'sertraline', drugB: 'sumatriptan', severity: 'high', description: 'Risk of serotonin syndrome with combined serotonergic agents.' },
-  { drugA: 'fluoxetine', drugB: 'maoi', severity: 'critical', description: 'CONTRAINDICATED. Risk of fatal serotonin syndrome. Requires 5-week washout period.' },
-  { drugA: 'sertraline', drugB: 'maoi', severity: 'critical', description: 'CONTRAINDICATED. Risk of fatal serotonin syndrome. Requires 2-week washout period.' },
-  { drugA: 'fluoxetine', drugB: 'linezolid', severity: 'critical', description: 'Linezolid has MAOI activity. Risk of serotonin syndrome.' },
-  { drugA: 'simvastatin', drugB: 'amiodarone', severity: 'high', description: 'Do not exceed simvastatin 20mg/day with amiodarone. Risk of rhabdomyolysis.' },
-  { drugA: 'simvastatin', drugB: 'clarithromycin', severity: 'high', description: 'CYP3A4 inhibition increases statin levels. Risk of rhabdomyolysis. Use alternative statin.' },
-  { drugA: 'atorvastatin', drugB: 'clarithromycin', severity: 'moderate', description: 'Macrolide increases statin levels. Consider dose reduction or alternative.' },
-  { drugA: 'simvastatin', drugB: 'diltiazem', severity: 'moderate', description: 'Do not exceed simvastatin 10mg/day with diltiazem.' },
-  { drugA: 'lisinopril', drugB: 'spironolactone', severity: 'high', description: 'Risk of hyperkalemia. Monitor potassium closely.' },
-  { drugA: 'losartan', drugB: 'spironolactone', severity: 'high', description: 'Risk of hyperkalemia. Monitor potassium closely.' },
-  { drugA: 'lisinopril', drugB: 'potassium', severity: 'moderate', description: 'ACE inhibitors increase potassium retention. Monitor serum potassium.' },
-  { drugA: 'losartan', drugB: 'potassium', severity: 'moderate', description: 'ARBs increase potassium retention. Monitor serum potassium.' },
-  { drugA: 'metformin', drugB: 'contrast dye', severity: 'high', description: 'Hold metformin before and 48h after iodinated contrast. Risk of lactic acidosis.' },
-  { drugA: 'amiodarone', drugB: 'azithromycin', severity: 'high', description: 'Both prolong QTc interval. Risk of Torsades de Pointes.' },
-  { drugA: 'amiodarone', drugB: 'fluoroquinolone', severity: 'high', description: 'Both prolong QTc interval. Risk of Torsades de Pointes.' },
-  { drugA: 'methadone', drugB: 'azithromycin', severity: 'moderate', description: 'Both may prolong QTc. Monitor ECG.' },
-  { drugA: 'ondansetron', drugB: 'amiodarone', severity: 'moderate', description: 'Both prolong QTc interval. Monitor ECG.' },
-  { drugA: 'oxycodone', drugB: 'benzodiazepine', severity: 'critical', description: 'FDA black box warning: Combined opioid-benzodiazepine use risks respiratory depression, coma, and death.' },
-  { drugA: 'hydrocodone', drugB: 'benzodiazepine', severity: 'critical', description: 'FDA black box warning: Combined opioid-benzodiazepine use risks respiratory depression, coma, and death.' },
-  { drugA: 'morphine', drugB: 'benzodiazepine', severity: 'critical', description: 'FDA black box warning: Combined opioid-benzodiazepine use risks respiratory depression, coma, and death.' },
-  { drugA: 'fentanyl', drugB: 'benzodiazepine', severity: 'critical', description: 'FDA black box warning: Combined opioid-benzodiazepine use risks respiratory depression, coma, and death.' },
-  { drugA: 'digoxin', drugB: 'amiodarone', severity: 'high', description: 'Amiodarone increases digoxin levels by 70-100%. Reduce digoxin dose by 50%.' },
-  { drugA: 'digoxin', drugB: 'verapamil', severity: 'high', description: 'Verapamil increases digoxin levels. Risk of toxicity and bradycardia.' },
-  { drugA: 'digoxin', drugB: 'clarithromycin', severity: 'moderate', description: 'Macrolides may increase digoxin levels. Monitor digoxin levels.' },
-  { drugA: 'methotrexate', drugB: 'trimethoprim', severity: 'high', description: 'Both are antifolates. Significantly increased risk of pancytopenia.' },
-  { drugA: 'methotrexate', drugB: 'nsaid', severity: 'high', description: 'NSAIDs reduce methotrexate clearance. Risk of severe toxicity.' },
-  { drugA: 'methotrexate', drugB: 'ibuprofen', severity: 'high', description: 'Ibuprofen reduces methotrexate clearance. Risk of severe toxicity.' },
-  { drugA: 'lithium', drugB: 'lisinopril', severity: 'high', description: 'ACE inhibitors decrease lithium clearance. Risk of lithium toxicity.' },
-  { drugA: 'lithium', drugB: 'ibuprofen', severity: 'high', description: 'NSAIDs decrease lithium clearance. Risk of lithium toxicity.' },
-  { drugA: 'lithium', drugB: 'hydrochlorothiazide', severity: 'high', description: 'Thiazides decrease lithium clearance by 25%. Monitor lithium levels.' },
-];
-
-const _AI_BENZODIAZEPINES = ['alprazolam', 'lorazepam', 'diazepam', 'clonazepam', 'midazolam', 'temazepam', 'triazolam', 'chlordiazepoxide', 'oxazepam'];
-
-const DUPLICATE_THERAPY_CLASSES = [
-  { className: 'ACE Inhibitors', drugs: ['lisinopril', 'enalapril', 'ramipril', 'benazepril', 'captopril', 'fosinopril', 'quinapril'] },
-  { className: 'ARBs', drugs: ['losartan', 'valsartan', 'irbesartan', 'candesartan', 'olmesartan', 'telmisartan', 'azilsartan'] },
-  { className: 'Beta Blockers', drugs: ['metoprolol', 'atenolol', 'propranolol', 'carvedilol', 'bisoprolol', 'nebivolol', 'labetalol'] },
-  { className: 'Statins', drugs: ['atorvastatin', 'simvastatin', 'rosuvastatin', 'pravastatin', 'lovastatin', 'fluvastatin', 'pitavastatin'] },
-  { className: 'PPIs', drugs: ['omeprazole', 'pantoprazole', 'esomeprazole', 'lansoprazole', 'rabeprazole', 'dexlansoprazole'] },
-  { className: 'SSRIs', drugs: ['fluoxetine', 'sertraline', 'paroxetine', 'citalopram', 'escitalopram', 'fluvoxamine'] },
-  { className: 'Benzodiazepines', drugs: _AI_BENZODIAZEPINES },
-  { className: 'Opioids', drugs: ['oxycodone', 'hydrocodone', 'morphine', 'fentanyl', 'codeine', 'tramadol', 'methadone', 'buprenorphine'] },
-  { className: 'NSAIDs', drugs: ['ibuprofen', 'naproxen', 'diclofenac', 'meloxicam', 'celecoxib', 'indomethacin', 'ketorolac', 'piroxicam'] },
-  { className: 'Calcium Channel Blockers', drugs: ['amlodipine', 'nifedipine', 'diltiazem', 'verapamil', 'felodipine'] },
-  { className: 'Thiazide Diuretics', drugs: ['hydrochlorothiazide', 'chlorthalidone', 'indapamide', 'metolazone'] },
-];
-
-const MEDICATION_MONITORING = [
-  { drug: 'warfarin', labs: ['INR', 'PT'], frequency: 'Every 1-4 weeks', description: 'INR monitoring required. Target 2.0-3.0 for most indications.' },
-  { drug: 'methotrexate', labs: ['CBC', 'CMP', 'LFTs'], frequency: 'Every 1-3 months', description: 'Monitor for hepatotoxicity, myelosuppression, renal function.' },
-  { drug: 'lithium', labs: ['Lithium level', 'TSH', 'Cr', 'BMP'], frequency: 'Every 3-6 months', description: 'Monitor lithium levels (therapeutic 0.6-1.2), thyroid, renal function.' },
-  { drug: 'metformin', labs: ['BMP', 'Cr', 'eGFR', 'B12'], frequency: 'Every 6-12 months', description: 'Monitor renal function. B12 deficiency with long-term use.' },
-  { drug: 'atorvastatin', labs: ['Lipid panel', 'LFTs', 'CK'], frequency: 'Every 6-12 months', description: 'Baseline LFTs. Monitor for myopathy symptoms.' },
-  { drug: 'simvastatin', labs: ['Lipid panel', 'LFTs', 'CK'], frequency: 'Every 6-12 months', description: 'Baseline LFTs. Monitor for myopathy symptoms.' },
-  { drug: 'rosuvastatin', labs: ['Lipid panel', 'LFTs', 'CK'], frequency: 'Every 6-12 months', description: 'Baseline LFTs. Monitor for myopathy symptoms.' },
-  { drug: 'amiodarone', labs: ['TFTs', 'LFTs', 'PFTs', 'CXR'], frequency: 'Every 6 months', description: 'Monitor thyroid, liver, pulmonary function. Baseline eye exam.' },
-  { drug: 'digoxin', labs: ['Digoxin level', 'BMP', 'Mg'], frequency: 'Every 6-12 months', description: 'Therapeutic range 0.5-2.0 ng/mL. Monitor electrolytes.' },
-  { drug: 'carbamazepine', labs: ['CBC', 'CMP', 'Drug level'], frequency: 'Every 3-6 months', description: 'Monitor for blood dyscrasias, hepatotoxicity.' },
-  { drug: 'valproic acid', labs: ['CBC', 'LFTs', 'Drug level', 'Ammonia'], frequency: 'Every 3-6 months', description: 'Monitor for hepatotoxicity, thrombocytopenia.' },
-  { drug: 'phenytoin', labs: ['CBC', 'CMP', 'Drug level'], frequency: 'Every 3-6 months', description: 'Therapeutic range 10-20 mcg/mL. Monitor for toxicity.' },
-  { drug: 'clozapine', labs: ['ANC'], frequency: 'Weekly for 6 months, then biweekly', description: 'REMS program. Must monitor ANC for agranulocytosis.' },
-  { drug: 'lisinopril', labs: ['BMP', 'Cr', 'K+'], frequency: 'Within 1-2 weeks of start, then every 6-12 months', description: 'Monitor renal function and potassium.' },
-  { drug: 'spironolactone', labs: ['BMP', 'K+', 'Cr'], frequency: 'Within 1 week, then every 3-6 months', description: 'Monitor potassium closely for hyperkalemia.' },
-  { drug: 'levothyroxine', labs: ['TSH'], frequency: 'Every 6-8 weeks after dose change, then annually', description: 'Monitor TSH. Adjust dose to maintain TSH in range.' },
-];
-
-/* ============================================================
-   2. PATIENT EDUCATION DATABASE
-   ============================================================ */
-
-const _AI_PATIENT_EDUCATION = {
-  conditions: {
-    'diabetes': { title: 'Diabetes Self-Management', items: [
-      'Blood glucose monitoring: Check fasting and post-meal levels as directed',
-      'Diet: Follow low-glycemic, balanced meal plan. Limit refined carbs and sugars',
-      'Exercise: 150 minutes moderate activity per week (walking, swimming)',
-      'Foot care: Daily inspection, proper footwear, see podiatrist annually',
-      'Eye care: Annual dilated eye exam to screen for diabetic retinopathy',
-      'Sick day management: Monitor glucose more often, stay hydrated, contact provider if unable to eat',
-      'Hypoglycemia recognition: Shakiness, sweating, confusion. Treat with 15g fast carbs',
-      'A1C goal: Generally < 7%, individualized based on patient factors'
-    ]},
-    'hypertension': { title: 'Blood Pressure Management', items: [
-      'Home BP monitoring: Check twice daily (morning and evening), keep a log',
-      'DASH diet: Rich in fruits, vegetables, whole grains, low-fat dairy. Limit sodium to <2300mg/day',
-      'Exercise: 30 minutes moderate activity most days of the week',
-      'Limit alcohol: No more than 1 drink/day (women) or 2 drinks/day (men)',
-      'Medication adherence: Take BP medications at the same time daily, do not skip doses',
-      'Weight management: Losing 5-10% body weight can significantly lower BP',
-      'Stress management: Relaxation techniques, adequate sleep',
-      'Know your numbers: Target generally <130/80 mmHg'
-    ]},
-    'heart failure': { title: 'Heart Failure Self-Care', items: [
-      'Daily weight monitoring: Weigh every morning, report gain >2 lbs in 1 day or >5 lbs in 1 week',
-      'Fluid restriction: Typically 1.5-2 liters per day as directed',
-      'Low sodium diet: <2000mg sodium per day',
-      'Medication adherence: ACE/ARB, beta-blocker, diuretic as prescribed',
-      'Activity: Stay as active as tolerable, cardiac rehab if recommended',
-      'Symptom monitoring: Watch for increased swelling, shortness of breath, fatigue',
-      'Vaccinations: Flu shot annually, pneumococcal vaccine',
-      'Avoid NSAIDs (ibuprofen, naproxen) as they worsen fluid retention'
-    ]},
-    'copd': { title: 'COPD Management', items: [
-      'Smoking cessation: Most important intervention. Ask about cessation support',
-      'Inhaler technique: Review proper use of inhalers. Use spacer with MDIs',
-      'Pulmonary rehab: Improves exercise tolerance and quality of life',
-      'Action plan: Know when to increase medications and when to seek emergency care',
-      'Vaccinations: Annual flu shot, pneumococcal vaccine, COVID-19 vaccine',
-      'Oxygen therapy: If prescribed, use as directed. Do not adjust flow rate',
-      'Avoid triggers: Air pollution, dust, strong fumes, cold air',
-      'Breathing exercises: Pursed-lip and diaphragmatic breathing techniques'
-    ]},
-    'asthma': { title: 'Asthma Self-Management', items: [
-      'Controller medication: Use daily even when feeling well',
-      'Rescue inhaler: Carry at all times. If using >2x/week, asthma not well controlled',
-      'Trigger avoidance: Identify and minimize exposure to allergens, irritants',
-      'Asthma action plan: Know your green/yellow/red zone actions',
-      'Peak flow monitoring: Track daily if recommended',
-      'Exercise: Regular activity is beneficial. Pre-treat with rescue inhaler if needed'
-    ]},
-    'depression': { title: 'Depression Management', items: [
-      'Medication: Antidepressants take 2-4 weeks to reach full effect. Do not stop abruptly',
-      'Therapy: Cognitive behavioral therapy (CBT) is highly effective',
-      'Exercise: Regular physical activity improves mood. Aim for 30 min most days',
-      'Sleep hygiene: Maintain consistent sleep schedule, limit screens before bed',
-      'Social connection: Stay connected with supportive people',
-      'Avoid alcohol: Can worsen depression and interact with medications',
-      'Crisis resources: National Suicide Prevention Lifeline: 988',
-      'Follow-up: Regular appointments to monitor symptoms and adjust treatment'
-    ]},
-    'chronic kidney disease': { title: 'Kidney Disease Management', items: [
-      'Blood pressure control: Target <130/80. Most important modifiable factor',
-      'Diabetes management: Tight glucose control slows progression',
-      'Diet: May need protein, potassium, phosphorus, sodium restriction depending on stage',
-      'Avoid nephrotoxins: NSAIDs, contrast dye, aminoglycosides',
-      'Medication review: Dose adjust renally-cleared medications',
-      'Hydration: Stay well hydrated unless fluid restricted',
-      'Monitor labs: Regular BMP, CBC, PTH, phosphorus, urinalysis'
-    ]},
-  },
-  medications: {
-    'metformin': ['Take with food to reduce GI side effects', 'Report any severe nausea, vomiting, or unusual fatigue', 'Hold before procedures with contrast dye'],
-    'warfarin': ['Maintain consistent vitamin K intake', 'Report any unusual bruising or bleeding', 'Attend all INR monitoring appointments', 'Many drug interactions - always check before starting new medications'],
-    'insulin': ['Rotate injection sites', 'Store unopened insulin in refrigerator', 'Know signs of hypoglycemia and how to treat', 'Carry glucose tablets or juice'],
-    'metoprolol': ['Do not stop abruptly - taper under supervision', 'May cause fatigue or dizziness initially', 'Monitor heart rate at home'],
-    'lisinopril': ['Report persistent dry cough (common side effect)', 'Rise slowly from sitting to avoid dizziness', 'Avoid potassium supplements unless directed'],
-    'amlodipine': ['Ankle swelling is common - report if severe', 'Avoid grapefruit in large amounts'],
-    'prednisone': ['Take with food', 'Do not stop abruptly if taken >7 days', 'May increase blood sugar and appetite', 'Increased infection risk'],
-    'levothyroxine': ['Take on empty stomach, 30-60 min before breakfast', 'Separate from calcium, iron supplements by 4 hours', 'Consistent daily timing important'],
-  }
+/* ---------- Severity constants ---------- */
+const AI_SEV = {
+  CRITICAL: 'critical',
+  WARNING:  'warning',
+  INFO:     'info',
 };
 
-/* ============================================================
-   3. CHARLSON COMORBIDITY INDEX WEIGHTS
-   ============================================================ */
+/* ---------- Drug interaction database ---------- */
+const DRUG_INTERACTIONS = [
+  {
+    id: 'warfarin-nsaid',
+    drugs: [['warfarin', 'coumadin'], ['ibuprofen', 'naproxen', 'aspirin', 'nsaid', 'diclofenac', 'meloxicam', 'celecoxib', 'ketorolac', 'indomethacin']],
+    severity: AI_SEV.CRITICAL,
+    risk: 'Increased bleeding risk',
+    description: 'Concurrent use of warfarin and NSAIDs significantly increases the risk of gastrointestinal and other hemorrhagic events. Consider alternative analgesics (acetaminophen) or add GI prophylaxis.',
+    category: 'drug-safety',
+  },
+  {
+    id: 'ace-potassium',
+    drugs: [['lisinopril', 'enalapril', 'ramipril', 'benazepril', 'captopril', 'fosinopril', 'quinapril', 'ace inhibitor'], ['potassium', 'k-dur', 'klor-con', 'potassium chloride']],
+    severity: AI_SEV.CRITICAL,
+    risk: 'Hyperkalemia risk',
+    description: 'ACE inhibitors reduce potassium excretion. Adding potassium supplements can lead to dangerous hyperkalemia. Monitor serum potassium levels closely.',
+    category: 'drug-safety',
+  },
+  {
+    id: 'ssri-maoi',
+    drugs: [['sertraline', 'fluoxetine', 'paroxetine', 'citalopram', 'escitalopram', 'fluvoxamine', 'ssri'], ['phenelzine', 'tranylcypromine', 'isocarboxazid', 'selegiline', 'maoi']],
+    severity: AI_SEV.CRITICAL,
+    risk: 'Serotonin syndrome',
+    description: 'Concurrent SSRI and MAOI use can cause potentially fatal serotonin syndrome. These agents must not be used together. A 14-day washout period is required between switching.',
+    category: 'drug-safety',
+  },
+  {
+    id: 'metformin-contrast',
+    drugs: [['metformin', 'glucophage'], ['contrast', 'iodinated contrast', 'contrast dye']],
+    severity: AI_SEV.WARNING,
+    risk: 'Lactic acidosis risk',
+    description: 'Metformin should be held 48 hours before and after iodinated contrast administration due to risk of contrast-induced nephropathy and subsequent lactic acidosis.',
+    category: 'drug-safety',
+  },
+  {
+    id: 'statin-macrolide',
+    drugs: [['atorvastatin', 'simvastatin', 'lovastatin', 'rosuvastatin', 'pravastatin', 'statin'], ['erythromycin', 'clarithromycin', 'azithromycin', 'macrolide']],
+    severity: AI_SEV.WARNING,
+    risk: 'Rhabdomyolysis risk',
+    description: 'Macrolide antibiotics inhibit CYP3A4 metabolism of certain statins, increasing statin levels and risk of rhabdomyolysis. Consider temporarily holding statin or using azithromycin (lower interaction risk).',
+    category: 'drug-safety',
+  },
+  {
+    id: 'opioid-benzo',
+    drugs: [['oxycodone', 'hydrocodone', 'morphine', 'fentanyl', 'tramadol', 'codeine', 'methadone', 'opioid', 'hydromorphone', 'oxymorphone'], ['diazepam', 'lorazepam', 'alprazolam', 'clonazepam', 'midazolam', 'benzodiazepine', 'temazepam']],
+    severity: AI_SEV.CRITICAL,
+    risk: 'Respiratory depression',
+    description: 'FDA Black Box Warning: Concurrent opioid and benzodiazepine use increases the risk of profound sedation, respiratory depression, coma, and death. Avoid concurrent use when possible.',
+    category: 'drug-safety',
+  },
+  {
+    id: 'anticoag-antiplatelet',
+    drugs: [['warfarin', 'apixaban', 'rivaroxaban', 'dabigatran', 'edoxaban', 'enoxaparin', 'heparin', 'anticoagulant'], ['clopidogrel', 'prasugrel', 'ticagrelor', 'aspirin', 'antiplatelet']],
+    severity: AI_SEV.WARNING,
+    risk: 'Increased bleeding risk',
+    description: 'Dual antithrombotic therapy (anticoagulant + antiplatelet) substantially increases bleeding risk. Ensure clear indication exists (e.g., recent ACS with stent) and use shortest recommended duration.',
+    category: 'drug-safety',
+  },
+];
 
+/* ---------- Charlson Comorbidity Index mappings ---------- */
 const CHARLSON_CONDITIONS = [
-  { name: 'Myocardial infarction', weight: 1, keywords: ['myocardial infarction', 'mi', 'heart attack', 'stemi', 'nstemi'] },
-  { name: 'Congestive heart failure', weight: 1, keywords: ['heart failure', 'chf', 'hfref', 'hfpef', 'cardiomyopathy'] },
-  { name: 'Peripheral vascular disease', weight: 1, keywords: ['peripheral vascular', 'pvd', 'pad', 'peripheral artery', 'claudication'] },
-  { name: 'Cerebrovascular disease', weight: 1, keywords: ['stroke', 'cva', 'tia', 'cerebrovascular'] },
-  { name: 'Dementia', weight: 1, keywords: ['dementia', 'alzheimer', 'cognitive impairment'] },
-  { name: 'Chronic pulmonary disease', weight: 1, keywords: ['copd', 'chronic obstructive', 'emphysema', 'chronic bronchitis', 'asthma'] },
-  { name: 'Connective tissue disease', weight: 1, keywords: ['rheumatoid', 'lupus', 'sle', 'scleroderma', 'polymyositis'] },
-  { name: 'Peptic ulcer disease', weight: 1, keywords: ['peptic ulcer', 'gastric ulcer', 'duodenal ulcer'] },
-  { name: 'Mild liver disease', weight: 1, keywords: ['hepatitis', 'fatty liver', 'nafld', 'nash'] },
-  { name: 'Diabetes without complications', weight: 1, keywords: ['diabetes', 'dm', 'type 2 diabetes', 'type 1 diabetes'] },
-  { name: 'Diabetes with complications', weight: 2, keywords: ['diabetic nephropathy', 'diabetic retinopathy', 'diabetic neuropathy', 'diabetic foot'] },
-  { name: 'Hemiplegia', weight: 2, keywords: ['hemiplegia', 'hemiparesis', 'paraplegia', 'quadriplegia'] },
-  { name: 'Renal disease', weight: 2, keywords: ['chronic kidney', 'ckd', 'renal failure', 'dialysis', 'esrd'] },
-  { name: 'Malignancy', weight: 2, keywords: ['cancer', 'carcinoma', 'lymphoma', 'leukemia', 'malignant', 'neoplasm'] },
-  { name: 'Moderate/severe liver disease', weight: 3, keywords: ['cirrhosis decompensated', 'portal hypertension', 'variceal', 'ascites', 'hepatic encephalopathy'] },
-  { name: 'Metastatic solid tumor', weight: 6, keywords: ['metastatic', 'metastasis', 'stage iv cancer', 'stage 4 cancer'] },
-  { name: 'AIDS', weight: 6, keywords: ['aids', 'hiv', 'acquired immunodeficiency'] },
+  { weight: 1, terms: ['myocardial infarction', 'mi', 'heart attack', 'nstemi', 'stemi'] },
+  { weight: 1, terms: ['congestive heart failure', 'chf', 'heart failure', 'hfref', 'hfpef'] },
+  { weight: 1, terms: ['peripheral vascular', 'pvd', 'pad', 'peripheral arterial'] },
+  { weight: 1, terms: ['cerebrovascular', 'stroke', 'cva', 'tia', 'transient ischemic'] },
+  { weight: 1, terms: ['dementia', 'alzheimer'] },
+  { weight: 1, terms: ['copd', 'chronic obstructive', 'pulmonary disease', 'emphysema', 'chronic bronchitis'] },
+  { weight: 1, terms: ['connective tissue', 'rheumatoid', 'lupus', 'sle', 'scleroderma'] },
+  { weight: 1, terms: ['peptic ulcer', 'gastric ulcer', 'duodenal ulcer'] },
+  { weight: 1, terms: ['mild liver', 'hepatitis', 'fatty liver', 'nafld'] },
+  { weight: 1, terms: ['diabetes', 'dm type 2', 'dm type 1', 'type 2 diabetes', 'type 1 diabetes', 't2dm', 't1dm'] },
+  { weight: 2, terms: ['hemiplegia', 'paraplegia', 'quadriplegia'] },
+  { weight: 2, terms: ['moderate renal', 'severe renal', 'ckd stage 3', 'ckd stage 4', 'ckd stage 5', 'chronic kidney disease', 'ckd', 'esrd', 'dialysis'] },
+  { weight: 2, terms: ['diabetes with complications', 'diabetic nephropathy', 'diabetic retinopathy', 'diabetic neuropathy'] },
+  { weight: 2, terms: ['malignancy', 'cancer', 'carcinoma', 'lymphoma', 'leukemia', 'tumor'] },
+  { weight: 3, terms: ['moderate liver', 'severe liver', 'cirrhosis', 'portal hypertension', 'esophageal varices'] },
+  { weight: 6, terms: ['metastatic', 'metastasis'] },
+  { weight: 6, terms: ['aids', 'hiv'] },
+];
+
+/* ---------- Patient education database ---------- */
+const EDUCATION_TOPICS = [
+  { conditions: ['diabetes', 'dm', 't2dm', 't1dm', 'a1c'], title: 'Diabetes Self-Management', description: 'Blood glucose monitoring, dietary carbohydrate counting, hypoglycemia recognition and treatment, sick-day management, and foot care basics.' },
+  { conditions: ['hypertension', 'htn', 'high blood pressure'], title: 'Blood Pressure Management', description: 'DASH diet principles, sodium restriction (<2300mg/day), regular physical activity (150 min/week), medication adherence, and home BP monitoring technique.' },
+  { conditions: ['heart failure', 'chf', 'hfref', 'hfpef'], title: 'Heart Failure Self-Care', description: 'Daily weight monitoring, fluid restriction, low-sodium diet, recognizing worsening symptoms (weight gain >2 lbs/day), and when to seek emergency care.' },
+  { conditions: ['copd', 'emphysema', 'chronic bronchitis'], title: 'COPD Action Plan', description: 'Inhaler technique, recognizing exacerbations, smoking cessation resources, pulmonary rehabilitation, and oxygen therapy guidance.' },
+  { conditions: ['asthma'], title: 'Asthma Management', description: 'Inhaler technique and spacer use, identifying triggers, asthma action plan zones (green/yellow/red), and when to use rescue vs. controller medications.' },
+  { conditions: ['atrial fibrillation', 'afib', 'a-fib'], title: 'Atrial Fibrillation Education', description: 'Understanding stroke risk, anticoagulation importance, pulse self-check, rate vs. rhythm control, and when to seek emergency care.' },
+  { conditions: ['ckd', 'chronic kidney', 'renal'], title: 'Kidney Disease Nutrition', description: 'Protein, phosphorus, potassium, and sodium dietary guidelines. Medication review for nephrotoxic drugs. Hydration guidance.' },
+  { conditions: ['obesity', 'overweight', 'bmi'], title: 'Weight Management', description: 'Caloric deficit strategies, physical activity recommendations, behavioral modification techniques, and overview of pharmacologic/surgical options.' },
+  { conditions: ['depression', 'anxiety', 'phq'], title: 'Mental Health Resources', description: 'Cognitive behavioral therapy basics, crisis hotline numbers (988 Suicide & Crisis Lifeline), medication expectations and side effects, sleep hygiene, and mindfulness techniques.' },
+  { conditions: ['anticoagulant', 'warfarin', 'blood thinner', 'apixaban', 'rivaroxaban'], title: 'Anticoagulant Safety', description: 'Bleeding precautions, dietary vitamin K consistency (warfarin), signs requiring emergency care, medication interactions to avoid, and importance of adherence.' },
+  { conditions: ['opioid', 'pain management', 'chronic pain'], title: 'Safe Opioid Use & Pain Management', description: 'Naloxone (Narcan) training, safe storage and disposal, non-opioid alternatives, risk of dependence, and tapering expectations.' },
+  { conditions: ['osteoporosis', 'bone density', 'dexa'], title: 'Fall Prevention & Bone Health', description: 'Calcium and vitamin D supplementation, weight-bearing exercise, home safety modifications, and bisphosphonate medication guidance.' },
 ];
 
 /* ============================================================
-   4. ANALYSIS ENGINE FUNCTIONS
+   MAIN ENTRY: renderAIReview(patientId)
    ============================================================ */
-
-function _aiGetAge(patient) {
-  if (!patient || !patient.dob) return null;
-  var d = new Date(patient.dob);
-  if (isNaN(d.getTime())) return null;
-  var now = new Date();
-  var age = now.getFullYear() - d.getFullYear();
-  if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--;
-  return age;
-}
-
-function _aiMatchKw(text, keywords) {
-  if (!text) return false;
-  var t = text.toLowerCase();
-  return keywords.some(function(k) { return t.indexOf(k.toLowerCase()) >= 0; });
-}
-
-function _aiGetAllConditionText(patientId) {
-  var problems = typeof getActiveProblems === 'function' ? getActiveProblems(patientId) : [];
-  var diagnoses = typeof getPatientDiagnoses === 'function' ? getPatientDiagnoses(patientId) : [];
-  var text = '';
-  problems.forEach(function(p) { text += ' ' + (p.name || '') + ' ' + (p.icd10 || '') + ' ' + (p.notes || ''); });
-  diagnoses.forEach(function(d) { text += ' ' + (d.name || '') + ' ' + (d.icd10 || '') + ' ' + (d.evidenceNotes || ''); });
-  return text.toLowerCase();
-}
-
-function _aiGetActiveMeds(patientId) {
-  var meds = typeof getPatientMedications === 'function' ? getPatientMedications(patientId) : [];
-  return meds.filter(function(m) { return (m.status || '').toLowerCase() === 'active'; });
-}
-
-/* ---------- 4a. Chart Completeness ---------- */
-
-function analyzeChartCompleteness(patientId) {
-  var findings = [];
-  var patient = getPatient(patientId);
-  if (!patient) return findings;
-
-  var allergies = typeof getPatientAllergies === 'function' ? getPatientAllergies(patientId) : [];
-  if (allergies.length === 0) {
-    findings.push({ category: 'Chart Completeness', type: 'missing_allergies', severity: 'warning', title: 'No Allergies Documented', description: 'Allergy status has not been documented. Record NKDA or specific allergies.', action: 'Document allergy status in patient chart' });
-  }
-
-  var problems = typeof getActiveProblems === 'function' ? getActiveProblems(patientId) : [];
-  if (problems.length === 0) {
-    findings.push({ category: 'Chart Completeness', type: 'incomplete_problem_list', severity: 'info', title: 'Empty Problem List', description: 'No active problems documented. If the patient has known conditions, add them to the problem list.', action: 'Review and update problem list' });
-  }
-
-  var encounters = getEncountersByPatient(patientId);
-  var unsignedCount = 0;
-  encounters.forEach(function(enc) {
-    var note = typeof getNoteByEncounter === 'function' ? getNoteByEncounter(enc.id) : null;
-    if (note && !note.signed && enc.status !== 'Cancelled') unsignedCount++;
-  });
-  if (unsignedCount > 0) {
-    findings.push({ category: 'Chart Completeness', type: 'unsigned_encounters', severity: unsignedCount > 3 ? 'critical' : 'warning', title: unsignedCount + ' Unsigned Encounter' + (unsignedCount > 1 ? 's' : ''), description: 'There ' + (unsignedCount === 1 ? 'is' : 'are') + ' ' + unsignedCount + ' encounter note' + (unsignedCount > 1 ? 's' : '') + ' awaiting signature.', action: 'Review and sign pending encounter notes' });
-  }
-
-  if (!patient.dob) findings.push({ category: 'Chart Completeness', type: 'missing_dob', severity: 'warning', title: 'Missing Date of Birth', description: 'Date of birth is not recorded. This affects age-based screening recommendations.', action: 'Update patient demographics' });
-  if (!patient.sex) findings.push({ category: 'Chart Completeness', type: 'missing_sex', severity: 'warning', title: 'Missing Sex/Gender', description: 'Sex is not recorded. This affects gender-specific screening recommendations.', action: 'Update patient demographics' });
-  if (!patient.phone && !patient.email) findings.push({ category: 'Chart Completeness', type: 'missing_contact', severity: 'info', title: 'No Contact Information', description: 'No phone number or email on file.', action: 'Obtain patient contact information' });
-
-  var sh = typeof getSocialHistory === 'function' ? getSocialHistory(patientId) : null;
-  if (!sh) findings.push({ category: 'Chart Completeness', type: 'missing_social_hx', severity: 'info', title: 'No Social History', description: 'Social history has not been documented.', action: 'Document social history' });
-
-  var fh = typeof getFamilyHistory === 'function' ? getFamilyHistory(patientId) : null;
-  if (!fh || (!fh.mother && !fh.father && !fh.siblings && !fh.other)) {
-    findings.push({ category: 'Chart Completeness', type: 'missing_family_hx', severity: 'info', title: 'No Family History', description: 'Family history has not been documented.', action: 'Document family medical history' });
-  }
-
-  if (typeof evaluatePatientCareGaps === 'function') {
-    var careGaps = evaluatePatientCareGaps(patientId);
-    var overdueGaps = careGaps.filter(function(g) { return g.status === 'overdue'; });
-    if (overdueGaps.length > 0) {
-      findings.push({ category: 'Chart Completeness', type: 'overdue_screenings', severity: 'warning', title: overdueGaps.length + ' Overdue Screening' + (overdueGaps.length > 1 ? 's' : ''), description: 'Overdue: ' + overdueGaps.slice(0, 4).map(function(g) { return g.ruleName; }).join(', ') + (overdueGaps.length > 4 ? ' and ' + (overdueGaps.length - 4) + ' more' : ''), action: 'Order overdue screenings and schedule follow-up' });
-    }
-  }
-
-  var age = _aiGetAge(patient);
-  if (age !== null && age >= 65) {
-    var imms = typeof getImmunizations === 'function' ? getImmunizations(patientId) : [];
-    var oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    var hasFlue = imms.some(function(i) { return _aiMatchKw(i.vaccine, ['influenza', 'flu']) && new Date(i.date) > oneYearAgo; });
-    var hasPneumo = imms.some(function(i) { return _aiMatchKw(i.vaccine, ['pneumococcal', 'prevnar', 'pneumovax']); });
-    var hasZoster = imms.some(function(i) { return _aiMatchKw(i.vaccine, ['zoster', 'shingrix', 'shingles']); });
-    if (!hasFlue) findings.push({ category: 'Chart Completeness', type: 'missing_flu', severity: 'info', title: 'No Recent Flu Vaccine', description: 'No influenza vaccine documented in the past year for patient age 65+.', action: 'Administer influenza vaccine' });
-    if (!hasPneumo) findings.push({ category: 'Chart Completeness', type: 'missing_pneumo', severity: 'info', title: 'No Pneumococcal Vaccine', description: 'Pneumococcal vaccine not documented for patient age 65+.', action: 'Administer pneumococcal vaccine series' });
-    if (!hasZoster) findings.push({ category: 'Chart Completeness', type: 'missing_zoster', severity: 'info', title: 'No Shingles Vaccine', description: 'Shingrix vaccine not documented for patient age 65+.', action: 'Administer Shingrix vaccine series' });
-  }
-
-  return findings;
-}
-
-/* ---------- 4b. Drug Interaction Checker ---------- */
-
-function analyzeDrugInteractions(patientId) {
-  var findings = [];
-  var meds = _aiGetActiveMeds(patientId);
-  if (meds.length === 0) return findings;
-  var medNames = meds.map(function(m) { return (m.name || m.drug || '').toLowerCase(); });
-
-  DRUG_INTERACTIONS.forEach(function(ix) {
-    var hasA = medNames.some(function(n) { return n.indexOf(ix.drugA) >= 0; });
-    var hasB = false;
-    if (ix.drugB === 'benzodiazepine') hasB = medNames.some(function(n) { return _AI_BENZODIAZEPINES.some(function(bz) { return n.indexOf(bz) >= 0; }); });
-    else if (ix.drugB === 'nsaid') hasB = medNames.some(function(n) { return ['ibuprofen','naproxen','diclofenac','meloxicam','celecoxib','indomethacin','ketorolac'].some(function(ns) { return n.indexOf(ns) >= 0; }); });
-    else if (ix.drugB === 'fluoroquinolone') hasB = medNames.some(function(n) { return ['ciprofloxacin','levofloxacin','moxifloxacin'].some(function(fq) { return n.indexOf(fq) >= 0; }); });
-    else if (ix.drugB === 'maoi') hasB = medNames.some(function(n) { return ['phenelzine','tranylcypromine','isocarboxazid','selegiline'].some(function(m) { return n.indexOf(m) >= 0; }); });
-    else hasB = medNames.some(function(n) { return n.indexOf(ix.drugB) >= 0; });
-    if (hasA && hasB) {
-      findings.push({ category: 'Drug Interactions', type: 'drug_drug', severity: ix.severity, title: 'Interaction: ' + ix.drugA.charAt(0).toUpperCase() + ix.drugA.slice(1) + ' + ' + ix.drugB.charAt(0).toUpperCase() + ix.drugB.slice(1), description: ix.description, action: 'Review indication for both medications. Consider alternatives.' });
-    }
-  });
-
-  var allergies = typeof getPatientAllergies === 'function' ? getPatientAllergies(patientId) : [];
-  allergies.forEach(function(allergy) {
-    var allergen = (allergy.allergen || '').toLowerCase();
-    meds.forEach(function(med) {
-      var medName = (med.name || med.drug || '').toLowerCase();
-      if (medName.indexOf(allergen) >= 0 || allergen.indexOf(medName) >= 0) {
-        findings.push({ category: 'Drug Interactions', type: 'drug_allergy', severity: (allergy.severity || '').toLowerCase() === 'severe' || (allergy.severity || '').toLowerCase() === 'life-threatening' ? 'critical' : 'high', title: 'Drug-Allergy Conflict: ' + (med.name || med.drug), description: 'Patient has documented ' + (allergy.severity || '') + ' allergy to ' + allergy.allergen + '. Reaction: ' + (allergy.reaction || 'not specified'), action: 'Discontinue medication or verify allergy documentation' });
-      }
-    });
-    if (allergen.indexOf('penicillin') >= 0 || allergen.indexOf('amoxicillin') >= 0) {
-      var cephalosporins = medNames.filter(function(n) { return ['cephalexin','cefazolin','ceftriaxone','cefdinir','cefepime'].some(function(c) { return n.indexOf(c) >= 0; }); });
-      if (cephalosporins.length > 0) {
-        findings.push({ category: 'Drug Interactions', type: 'cross_reactivity', severity: 'moderate', title: 'Cross-Reactivity: Penicillin Allergy + Cephalosporin', description: 'Patient has penicillin allergy and is on a cephalosporin. Cross-reactivity is ~1-2%.', action: 'Verify cephalosporin tolerance or consider alternative' });
-      }
-    }
-  });
-
-  DUPLICATE_THERAPY_CLASSES.forEach(function(cls) {
-    var matching = meds.filter(function(m) { var n = (m.name || m.drug || '').toLowerCase(); return cls.drugs.some(function(d) { return n.indexOf(d) >= 0; }); });
-    if (matching.length > 1) {
-      findings.push({ category: 'Drug Interactions', type: 'duplicate_therapy', severity: 'moderate', title: 'Duplicate Therapy: ' + cls.className, description: 'Multiple ' + cls.className + ' prescribed: ' + matching.map(function(m) { return m.name || m.drug; }).join(', '), action: 'Evaluate if duplicate therapy is intentional' });
-    }
-  });
-
-  MEDICATION_MONITORING.forEach(function(mon) {
-    var isOnDrug = medNames.some(function(n) { return n.indexOf(mon.drug) >= 0; });
-    if (!isOnDrug) return;
-    var labs = typeof getLabResults === 'function' ? getLabResults(patientId) : [];
-    var hasRecentLab = false;
-    var sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    labs.forEach(function(lab) {
-      if (new Date(lab.resultDate) < sixMonthsAgo) return;
-      var labText = (lab.panel || '').toLowerCase();
-      if (lab.tests) lab.tests.forEach(function(t) { labText += ' ' + (t.name || t.testName || '').toLowerCase(); });
-      if (mon.labs.some(function(l) { return labText.indexOf(l.toLowerCase()) >= 0; })) hasRecentLab = true;
-    });
-    if (!hasRecentLab) {
-      findings.push({ category: 'Medication Monitoring', type: 'monitoring_gap', severity: 'warning', title: 'Monitoring Due: ' + mon.drug.charAt(0).toUpperCase() + mon.drug.slice(1), description: mon.description + ' Required labs: ' + mon.labs.join(', ') + '. No matching labs in past 6 months.', action: 'Order monitoring labs: ' + mon.labs.join(', ') });
-    }
-  });
-
-  return findings;
-}
-
-/* ---------- 4c. Clinical Decision Support ---------- */
-
-function analyzeClinicalDecisionSupport(patientId) {
-  var findings = [];
-  var patient = getPatient(patientId);
-  if (!patient) return findings;
-  var conditionText = _aiGetAllConditionText(patientId);
-  var meds = _aiGetActiveMeds(patientId);
-  var medNames = meds.map(function(m) { return (m.name || m.drug || '').toLowerCase(); });
-  var age = _aiGetAge(patient);
-  var vitalsResult = typeof getLatestVitalsByPatient === 'function' ? getLatestVitalsByPatient(patientId) : null;
-  var vitals = vitalsResult ? vitalsResult.vitals : null;
-
-  if (vitals) {
-    var sirsCount = 0;
-    if (vitals.tempF && (parseFloat(vitals.tempF) > 100.4 || parseFloat(vitals.tempF) < 96.8)) sirsCount++;
-    if (vitals.heartRate && parseFloat(vitals.heartRate) > 90) sirsCount++;
-    if (vitals.respRate && parseFloat(vitals.respRate) > 20) sirsCount++;
-    var labs = typeof getLabResults === 'function' ? getLabResults(patientId) : [];
-    labs.forEach(function(lab) {
-      if (!lab.tests) return;
-      lab.tests.forEach(function(t) {
-        var tN = (t.name || t.testName || '').toLowerCase();
-        if ((tN.indexOf('wbc') >= 0 || tN.indexOf('white blood cell') >= 0)) {
-          var val = parseFloat(t.value);
-          if (!isNaN(val) && (val > 12 || val < 4)) sirsCount++;
-        }
-      });
-    });
-    if (sirsCount >= 2) {
-      var suspectedInfx = _aiMatchKw(conditionText, ['infection', 'pneumonia', 'uti', 'cellulitis', 'abscess', 'sepsis', 'bacteremia', 'fever']);
-      if (suspectedInfx) {
-        findings.push({ category: 'Clinical Decision Support', type: 'sepsis_screening', severity: 'critical', title: 'Sepsis Alert: ' + sirsCount + ' SIRS Criteria + Suspected Infection', description: 'Consider sepsis workup: blood cultures, lactate, procalcitonin. Initiate early antibiotics and IV fluids per sepsis bundle.', action: 'Initiate sepsis bundle: cultures, lactate, antibiotics within 1 hour' });
-      } else {
-        findings.push({ category: 'Clinical Decision Support', type: 'sirs_alert', severity: 'warning', title: 'SIRS Alert: ' + sirsCount + ' Criteria Met', description: 'Patient meets ' + sirsCount + ' SIRS criteria. Evaluate for possible infectious or non-infectious etiology.', action: 'Assess for source of inflammation/infection' });
-      }
-    }
-
-    var fallScore = 0, fallFactors = [];
-    if (age !== null && age >= 65) { fallScore += 2; fallFactors.push('Age >=65'); }
-    if (age !== null && age >= 80) { fallScore += 1; fallFactors.push('Age >=80'); }
-    if (_aiMatchKw(conditionText, ['fall', 'gait instability', 'balance disorder'])) { fallScore += 2; fallFactors.push('History of falls'); }
-    if (_aiMatchKw(conditionText, ['dementia', 'cognitive impairment', 'delirium'])) { fallScore += 2; fallFactors.push('Cognitive impairment'); }
-    if (medNames.some(function(n) { return _AI_BENZODIAZEPINES.some(function(bz) { return n.indexOf(bz) >= 0; }); })) { fallScore += 2; fallFactors.push('Benzodiazepine use'); }
-    if (medNames.some(function(n) { return ['oxycodone','hydrocodone','morphine','fentanyl','tramadol'].some(function(op) { return n.indexOf(op) >= 0; }); })) { fallScore += 1; fallFactors.push('Opioid use'); }
-    if (_aiMatchKw(conditionText, ['parkinson', 'neuropathy', 'vertigo', 'syncope'])) { fallScore += 2; fallFactors.push('Neurological condition'); }
-    if (vitals.bpSystolic && parseFloat(vitals.bpSystolic) < 100) { fallScore += 1; fallFactors.push('Hypotension'); }
-    if (fallScore >= 4) {
-      findings.push({ category: 'Clinical Decision Support', type: 'fall_risk', severity: fallScore >= 6 ? 'high' : 'moderate', title: 'Fall Risk: ' + (fallScore >= 6 ? 'HIGH' : 'MODERATE') + ' (Score ' + fallScore + ')', description: 'Risk factors: ' + fallFactors.join(', ') + '. Consider fall prevention measures.', action: 'Implement fall prevention protocol, consider PT referral' });
-    }
-
-    if (vitals.bpSystolic && parseFloat(vitals.bpSystolic) >= 180) {
-      findings.push({ category: 'Clinical Decision Support', type: 'htn_urgency', severity: 'critical', title: 'Hypertensive Urgency: SBP ' + vitals.bpSystolic, description: 'Systolic BP >= 180 mmHg. Assess for end-organ damage.', action: 'Recheck BP, assess for symptoms, consider acute treatment' });
-    } else if (vitals.bpSystolic && parseFloat(vitals.bpSystolic) >= 160) {
-      findings.push({ category: 'Clinical Decision Support', type: 'htn_elevated', severity: 'warning', title: 'Elevated BP: ' + vitals.bpSystolic + '/' + (vitals.bpDiastolic || '?'), description: 'Blood pressure is significantly elevated.', action: 'Review antihypertensive regimen, check compliance' });
-    }
-
-    if (vitals.spo2 && parseFloat(vitals.spo2) < 92) {
-      findings.push({ category: 'Clinical Decision Support', type: 'hypoxia', severity: parseFloat(vitals.spo2) < 88 ? 'critical' : 'high', title: 'Hypoxia: SpO2 ' + vitals.spo2 + '%', description: 'Oxygen saturation below 92%. Assess respiratory status.', action: 'Apply supplemental oxygen, assess for cause' });
-    }
-
-    if (vitals.heartRate && parseFloat(vitals.heartRate) > 120) {
-      findings.push({ category: 'Clinical Decision Support', type: 'tachycardia', severity: parseFloat(vitals.heartRate) > 150 ? 'critical' : 'warning', title: 'Tachycardia: HR ' + vitals.heartRate, description: 'Heart rate > 120 bpm.', action: 'Evaluate etiology, consider ECG' });
-    }
-    if (vitals.heartRate && parseFloat(vitals.heartRate) < 50) {
-      findings.push({ category: 'Clinical Decision Support', type: 'bradycardia', severity: parseFloat(vitals.heartRate) < 40 ? 'critical' : 'warning', title: 'Bradycardia: HR ' + vitals.heartRate, description: 'Heart rate < 50 bpm. Check for medication effects.', action: 'Review rate-controlling medications, obtain ECG' });
-    }
-  }
-
-  var encounters = getEncountersByPatient(patientId);
-  var hasOpenInpatient = encounters.some(function(e) { return (e.visitType || '').toLowerCase() === 'inpatient' && e.status === 'Open'; });
-  if (hasOpenInpatient) {
-    var hasAnticoag = medNames.some(function(n) { return ['heparin','enoxaparin','lovenox','warfarin','apixaban','rivaroxaban','dabigatran','fondaparinux'].some(function(ac) { return n.indexOf(ac) >= 0; }); });
-    if (!hasAnticoag) {
-      findings.push({ category: 'Clinical Decision Support', type: 'vte_prophylaxis', severity: 'high', title: 'VTE Prophylaxis Not Ordered', description: 'Inpatient without documented anticoagulation. Consider VTE prophylaxis.', action: 'Order VTE prophylaxis or document contraindication' });
-    }
-    var broadSpectrum = meds.filter(function(m) { var n = (m.name || m.drug || '').toLowerCase(); return ['vancomycin','piperacillin','meropenem','cefepime','linezolid'].some(function(bs) { return n.indexOf(bs) >= 0; }); });
-    if (broadSpectrum.length > 0) {
-      findings.push({ category: 'Clinical Decision Support', type: 'abx_stewardship', severity: 'moderate', title: 'Antibiotic Stewardship: Broad-Spectrum Agent(s)', description: 'Broad-spectrum antibiotic(s): ' + broadSpectrum.map(function(m) { return m.name || m.drug; }).join(', ') + '. Consider de-escalation.', action: 'Review cultures at 48-72h, de-escalate if possible' });
-    }
-  }
-
-  if (_aiMatchKw(conditionText, ['diabetes', 'dm', 'type 2 diabetes', 'type 1 diabetes'])) {
-    var hasStatin = medNames.some(function(n) { return ['atorvastatin','simvastatin','rosuvastatin','pravastatin'].some(function(s) { return n.indexOf(s) >= 0; }); });
-    var hasACE = medNames.some(function(n) { return ['lisinopril','enalapril','ramipril','losartan','valsartan','irbesartan'].some(function(a) { return n.indexOf(a) >= 0; }); });
-    if (age !== null && age >= 40 && !hasStatin) {
-      findings.push({ category: 'Clinical Decision Support', type: 'dm_statin', severity: 'info', title: 'Diabetic Patient Without Statin', description: 'ADA recommends moderate-intensity statin for diabetic patients age 40-75.', action: 'Consider initiating statin therapy' });
-    }
-    if (_aiMatchKw(conditionText, ['nephropathy', 'proteinuria', 'albuminuria', 'ckd']) && !hasACE) {
-      findings.push({ category: 'Clinical Decision Support', type: 'dm_ace', severity: 'warning', title: 'Diabetic Kidney Disease Without ACEi/ARB', description: 'Patient has diabetes with nephropathy but no ACE/ARB. These are renoprotective.', action: 'Consider ACE inhibitor or ARB for renoprotection' });
-    }
-  }
-
-  if (_aiMatchKw(conditionText, ['heart failure', 'chf', 'hfref', 'cardiomyopathy'])) {
-    var hasBB = medNames.some(function(n) { return ['metoprolol','carvedilol','bisoprolol'].some(function(bb) { return n.indexOf(bb) >= 0; }); });
-    var hasACEorARB = medNames.some(function(n) { return ['lisinopril','enalapril','ramipril','losartan','valsartan','sacubitril'].some(function(a) { return n.indexOf(a) >= 0; }); });
-    if (!hasBB) findings.push({ category: 'Clinical Decision Support', type: 'chf_beta_blocker', severity: 'warning', title: 'HF Without Evidence-Based Beta-Blocker', description: 'Guidelines recommend carvedilol, metoprolol succinate, or bisoprolol for HFrEF.', action: 'Consider adding guideline-directed beta-blocker' });
-    if (!hasACEorARB) findings.push({ category: 'Clinical Decision Support', type: 'chf_ace', severity: 'warning', title: 'HF Without ACEi/ARB/ARNI', description: 'Guidelines recommend ACE inhibitor, ARB, or sacubitril/valsartan for HFrEF.', action: 'Consider adding guideline-directed RAAS inhibitor' });
-    var hasNSAID = medNames.some(function(n) { return ['ibuprofen','naproxen','diclofenac','meloxicam','celecoxib','indomethacin','ketorolac'].some(function(ns) { return n.indexOf(ns) >= 0; }); });
-    if (hasNSAID) findings.push({ category: 'Clinical Decision Support', type: 'chf_nsaid', severity: 'high', title: 'NSAID Use in Heart Failure', description: 'NSAIDs worsen fluid retention and can precipitate HF exacerbation.', action: 'Discontinue NSAID, consider acetaminophen alternative' });
-  }
-
-  return findings;
-}
-
-/* ---------- 4d. Documentation Quality Score ---------- */
-
-function analyzeDocumentationQuality(patientId) {
-  var findings = [];
-  var encounters = getEncountersByPatient(patientId);
-  if (encounters.length === 0) return findings;
-  var recentEnc = encounters[0];
-  var note = typeof getNoteByEncounter === 'function' ? getNoteByEncounter(recentEnc.id) : null;
-
-  if (!note) {
-    findings.push({ category: 'Documentation Quality', type: 'no_note', severity: 'warning', title: 'No Note for Most Recent Encounter', description: 'Encounter on ' + formatDate(recentEnc.dateTime) + ' has no documentation.', action: 'Complete encounter documentation' });
-    return findings;
-  }
-
-  var score = 0, maxScore = 105;
-  var details = [];
-
-  if (note.chiefComplaint && note.chiefComplaint.trim().length > 0) { score += 10; details.push({ section: 'Chief Complaint', points: 10, max: 10, status: 'complete' }); }
-  else details.push({ section: 'Chief Complaint', points: 0, max: 10, status: 'missing' });
-
-  if (note.hpi && note.hpi.trim().length > 0) {
-    var hpiLen = note.hpi.trim().length;
-    if (hpiLen >= 200) { score += 20; details.push({ section: 'HPI', points: 20, max: 20, status: 'complete' }); }
-    else if (hpiLen >= 100) { score += 15; details.push({ section: 'HPI', points: 15, max: 20, status: 'partial' }); }
-    else { score += 8; details.push({ section: 'HPI', points: 8, max: 20, status: 'brief' }); }
-  } else details.push({ section: 'HPI', points: 0, max: 20, status: 'missing' });
-
-  if (note.ros && note.ros.trim().length > 0) {
-    if (note.ros.trim().length >= 50) { score += 10; details.push({ section: 'ROS', points: 10, max: 10, status: 'complete' }); }
-    else { score += 5; details.push({ section: 'ROS', points: 5, max: 10, status: 'brief' }); }
-  } else details.push({ section: 'ROS', points: 0, max: 10, status: 'missing' });
-
-  if (note.physicalExam && note.physicalExam.trim().length > 0) {
-    var peLen = note.physicalExam.trim().length;
-    if (peLen >= 150) { score += 15; details.push({ section: 'Physical Exam', points: 15, max: 15, status: 'complete' }); }
-    else if (peLen >= 50) { score += 10; details.push({ section: 'Physical Exam', points: 10, max: 15, status: 'partial' }); }
-    else { score += 5; details.push({ section: 'Physical Exam', points: 5, max: 15, status: 'brief' }); }
-  } else details.push({ section: 'Physical Exam', points: 0, max: 15, status: 'missing' });
-
-  if (note.assessment && note.assessment.trim().length > 0) {
-    var aLen = note.assessment.trim().length;
-    if (aLen >= 100) { score += 20; details.push({ section: 'Assessment', points: 20, max: 20, status: 'complete' }); }
-    else if (aLen >= 30) { score += 12; details.push({ section: 'Assessment', points: 12, max: 20, status: 'partial' }); }
-    else { score += 5; details.push({ section: 'Assessment', points: 5, max: 20, status: 'brief' }); }
-  } else details.push({ section: 'Assessment', points: 0, max: 20, status: 'missing' });
-
-  if (note.plan && note.plan.trim().length > 0) {
-    var pLen = note.plan.trim().length;
-    if (pLen >= 100) { score += 20; details.push({ section: 'Plan', points: 20, max: 20, status: 'complete' }); }
-    else if (pLen >= 30) { score += 12; details.push({ section: 'Plan', points: 12, max: 20, status: 'partial' }); }
-    else { score += 5; details.push({ section: 'Plan', points: 5, max: 20, status: 'brief' }); }
-  } else details.push({ section: 'Plan', points: 0, max: 20, status: 'missing' });
-
-  if (note.signed) { score += 5; details.push({ section: 'Signature', points: 5, max: 5, status: 'complete' }); }
-  else details.push({ section: 'Signature', points: 0, max: 5, status: 'missing' });
-
-  var pct = Math.round((score / maxScore) * 100);
-  var grade = pct >= 90 ? 'A' : pct >= 80 ? 'B' : pct >= 70 ? 'C' : pct >= 60 ? 'D' : 'F';
-
-  findings.push({ category: 'Documentation Quality', type: 'doc_score', severity: pct >= 80 ? 'success' : pct >= 60 ? 'warning' : 'critical', title: 'Documentation Score: ' + pct + '% (Grade ' + grade + ')', description: 'Most recent encounter (' + formatDate(recentEnc.dateTime) + ').', action: pct < 80 ? 'Improve documentation in incomplete sections' : 'Documentation meets quality standards', details: details, score: pct, grade: grade });
-
-  var missing = details.filter(function(d) { return d.status === 'missing'; });
-  if (missing.length > 0) {
-    findings.push({ category: 'Documentation Quality', type: 'missing_sections', severity: 'info', title: missing.length + ' Missing Section' + (missing.length > 1 ? 's' : ''), description: 'Missing: ' + missing.map(function(d) { return d.section; }).join(', '), action: 'Complete missing sections in encounter note' });
-  }
-
-  return findings;
-}
-
-/* ---------- 4e. Risk Stratification ---------- */
-
-function analyzeRiskStratification(patientId) {
-  var findings = [];
-  var patient = getPatient(patientId);
-  if (!patient) return findings;
-  var conditionText = _aiGetAllConditionText(patientId);
-  var age = _aiGetAge(patient);
-
-  var charlsonScore = 0, agePoints = 0;
-  if (age !== null && age >= 50) agePoints = Math.floor((age - 40) / 10);
-  charlsonScore += agePoints;
-  var matchedConds = [];
-  CHARLSON_CONDITIONS.forEach(function(c) {
-    if (_aiMatchKw(conditionText, c.keywords)) { charlsonScore += c.weight; matchedConds.push(c.name + ' (+' + c.weight + ')'); }
-  });
-  var survival = charlsonScore <= 1 ? '~98%' : charlsonScore <= 2 ? '~90%' : charlsonScore <= 3 ? '~77%' : charlsonScore <= 4 ? '~53%' : charlsonScore <= 5 ? '~21%' : '<10%';
-  findings.push({ category: 'Risk Stratification', type: 'charlson', severity: charlsonScore >= 5 ? 'high' : charlsonScore >= 3 ? 'moderate' : 'info', title: 'Charlson Comorbidity Index: ' + charlsonScore, description: 'Estimated 10-year survival: ' + survival + '. ' + (matchedConds.length > 0 ? 'Conditions: ' + matchedConds.join(', ') : 'No contributing conditions.') + (agePoints > 0 ? ' Age: +' + agePoints : ''), action: charlsonScore >= 3 ? 'Consider goals of care discussion and advance care planning' : 'Continue standard care' });
-
-  var hasDepressionDx = _aiMatchKw(conditionText, ['depression', 'major depressive', 'mdd']);
-  var meds = _aiGetActiveMeds(patientId);
-  var onAntidepressant = meds.some(function(m) { var n = (m.name || m.drug || '').toLowerCase(); return ['fluoxetine','sertraline','paroxetine','citalopram','escitalopram','venlafaxine','duloxetine','bupropion','mirtazapine'].some(function(ad) { return n.indexOf(ad) >= 0; }); });
-  if (hasDepressionDx || onAntidepressant) {
-    var screenings = typeof getScreeningRecords === 'function' ? getScreeningRecords(patientId) : [];
-    var ninetyDaysAgo = new Date(); ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    var recentPHQ = screenings.some(function(s) { return _aiMatchKw(s.screening, ['phq-9','phq9','depression']) && new Date(s.completedDate) > ninetyDaysAgo; });
-    if (!recentPHQ) findings.push({ category: 'Risk Stratification', type: 'phq9_due', severity: 'info', title: 'PHQ-9 Depression Screening Due', description: 'Patient has depression diagnosis or is on antidepressant. No PHQ-9 in past 90 days.', action: 'Administer PHQ-9 screening' });
-  }
-
-  var socialHx = typeof getSocialHistory === 'function' ? getSocialHistory(patientId) : null;
-  if (socialHx && socialHx.alcoholUse) {
-    var alc = socialHx.alcoholUse.toLowerCase();
-    if (alc.indexOf('heavy') >= 0 || alc.indexOf('daily') >= 0 || alc.indexOf('excessive') >= 0 || alc.indexOf('abuse') >= 0) {
-      findings.push({ category: 'Risk Stratification', type: 'audit_c', severity: 'warning', title: 'AUDIT-C Screening Recommended', description: 'Social history suggests alcohol use that may warrant formal screening.', action: 'Administer AUDIT-C screening questionnaire' });
-    }
-  }
-
-  if (age !== null && age >= 40) {
-    var cvRF = [];
-    if (_aiMatchKw(conditionText, ['hypertension', 'htn', 'high blood pressure'])) cvRF.push('Hypertension');
-    if (_aiMatchKw(conditionText, ['diabetes', 'dm'])) cvRF.push('Diabetes');
-    if (_aiMatchKw(conditionText, ['hyperlipidemia', 'dyslipidemia', 'high cholesterol'])) cvRF.push('Dyslipidemia');
-    if (socialHx && socialHx.smokingStatus && socialHx.smokingStatus.toLowerCase().indexOf('current') >= 0) cvRF.push('Active smoker');
-    var fh = typeof getFamilyHistory === 'function' ? getFamilyHistory(patientId) : null;
-    if (fh) { var fhT = [fh.mother, fh.father, fh.siblings].filter(Boolean).join(' ').toLowerCase(); if (fhT.indexOf('heart') >= 0 || fhT.indexOf('cardiac') >= 0) cvRF.push('Family Hx CVD'); }
-    if (cvRF.length >= 2) findings.push({ category: 'Risk Stratification', type: 'cv_risk', severity: cvRF.length >= 3 ? 'warning' : 'info', title: 'Cardiovascular Risk: ' + cvRF.length + ' Major Risk Factors', description: 'Risk factors: ' + cvRF.join(', '), action: 'Calculate ASCVD risk score, consider statin therapy' });
-  }
-
-  return findings;
-}
-
-/* ---------- 4f. Patient Education ---------- */
-
-function analyzePatientEducation(patientId) {
-  var findings = [];
-  var conditionText = _aiGetAllConditionText(patientId);
-  var meds = _aiGetActiveMeds(patientId);
-
-  Object.keys(_AI_PATIENT_EDUCATION.conditions).forEach(function(condition) {
-    if (_aiMatchKw(conditionText, [condition])) {
-      var edu = _AI_PATIENT_EDUCATION.conditions[condition];
-      findings.push({ category: 'Patient Education', type: 'condition_education', severity: 'info', title: edu.title, description: edu.items.slice(0, 3).join('; ') + (edu.items.length > 3 ? '...' : ''), action: 'Provide patient education materials', educationItems: edu.items });
-    }
-  });
-
-  meds.forEach(function(m) {
-    var medName = (m.name || m.drug || '').toLowerCase();
-    Object.keys(_AI_PATIENT_EDUCATION.medications).forEach(function(drug) {
-      if (medName.indexOf(drug) >= 0) {
-        var tips = _AI_PATIENT_EDUCATION.medications[drug];
-        findings.push({ category: 'Patient Education', type: 'medication_education', severity: 'info', title: 'Medication Guide: ' + drug.charAt(0).toUpperCase() + drug.slice(1), description: tips.join('; '), action: 'Review medication counseling points', educationItems: tips });
-      }
-    });
-  });
-
-  var socialHx = typeof getSocialHistory === 'function' ? getSocialHistory(patientId) : null;
-  if (socialHx && socialHx.smokingStatus && socialHx.smokingStatus.toLowerCase().indexOf('current') >= 0) {
-    findings.push({ category: 'Patient Education', type: 'smoking_cessation', severity: 'warning', title: 'Smoking Cessation Counseling', description: 'Patient is an active smoker. Offer NRT, bupropion, or varenicline. Quitline: 1-800-QUIT-NOW.', action: 'Counsel on smoking cessation, offer pharmacotherapy' });
-  }
-
-  return findings;
-}
-
-/* ============================================================
-   5. MASTER ANALYSIS + DISMISSALS
-   ============================================================ */
-
-function runFullAIReview(patientId) {
-  var all = [];
-  all = all.concat(analyzeChartCompleteness(patientId));
-  all = all.concat(analyzeDrugInteractions(patientId));
-  all = all.concat(analyzeClinicalDecisionSupport(patientId));
-  all = all.concat(analyzeDocumentationQuality(patientId));
-  all = all.concat(analyzeRiskStratification(patientId));
-  all = all.concat(analyzePatientEducation(patientId));
-  var sevOrd = { critical: 0, high: 1, warning: 2, moderate: 3, info: 4, success: 5 };
-  all.sort(function(a, b) { return (sevOrd[a.severity] || 99) - (sevOrd[b.severity] || 99); });
-  return all;
-}
-
-var _AI_DISMISS_KEY = 'emr_ai_review_dismissals';
-
-function _getAIDismissals() {
-  try { var r = localStorage.getItem(_AI_DISMISS_KEY); return r ? JSON.parse(r) : []; } catch(e) { return []; }
-}
-function _dismissAIFinding(pid, key) {
-  var all = _getAIDismissals();
-  all.push({ patientId: pid, key: key, date: new Date().toISOString(), by: getSessionUser() ? getSessionUser().id : '' });
-  localStorage.setItem(_AI_DISMISS_KEY, JSON.stringify(all));
-}
-function _isAIDismissed(pid, key) { return _getAIDismissals().some(function(d) { return d.patientId === pid && d.key === key; }); }
-function _undismissAI(pid, key) {
-  var all = _getAIDismissals().filter(function(d) { return !(d.patientId === pid && d.key === key); });
-  localStorage.setItem(_AI_DISMISS_KEY, JSON.stringify(all));
-}
-
-/* ============================================================
-   6. VIEW -- renderAIReview (standalone dashboard)
-   ============================================================ */
-
-function renderAIReview() {
+function renderAIReview(patientId) {
   var app = document.getElementById('app');
   app.innerHTML = '';
-  setTopbar({ title: 'AI Chart Review', meta: 'Clinical Decision Support', actions: '' });
-  if (typeof setActiveNav === 'function') setActiveNav('ai-review');
 
-  var _selPid = null, _fCat = '', _fSev = '', _showDismissed = false, _search = '';
-
-  function _render() {
-    app.innerHTML = '';
-
-    var patients = getPatients();
-    var user = getSessionUser();
-    var panel = patients.filter(function(p) { return p.panelProviders && p.panelProviders.indexOf(user.id) >= 0; });
-    if (panel.length === 0) panel = patients;
-
-    var stats = { critical: 0, high: 0, warning: 0, info: 0, pwf: 0, total: panel.length };
-    panel.forEach(function(p) {
-      var f = runFullAIReview(p.id).filter(function(f) { return !_isAIDismissed(p.id, f.type + ':' + f.title); });
-      if (f.length > 0) stats.pwf++;
-      f.forEach(function(f) { if (f.severity === 'critical') stats.critical++; else if (f.severity === 'high') stats.high++; else if (f.severity === 'warning' || f.severity === 'moderate') stats.warning++; else stats.info++; });
-    });
-
-    var statsRow = document.createElement('div');
-    statsRow.className = 'ai-review-stats-row';
-    statsRow.innerHTML =
-      '<div class="ai-stat-card ai-stat-critical"><div class="ai-stat-value">' + stats.critical + '</div><div class="ai-stat-label">Critical</div></div>' +
-      '<div class="ai-stat-card ai-stat-high"><div class="ai-stat-value">' + stats.high + '</div><div class="ai-stat-label">High Priority</div></div>' +
-      '<div class="ai-stat-card ai-stat-warning"><div class="ai-stat-value">' + stats.warning + '</div><div class="ai-stat-label">Warnings</div></div>' +
-      '<div class="ai-stat-card ai-stat-info"><div class="ai-stat-value">' + stats.info + '</div><div class="ai-stat-label">Informational</div></div>' +
-      '<div class="ai-stat-card ai-stat-patients"><div class="ai-stat-value">' + stats.pwf + '/' + stats.total + '</div><div class="ai-stat-label">Patients w/ Findings</div></div>';
-    app.appendChild(statsRow);
-
-    var tb = document.createElement('div');
-    tb.className = 'ai-review-toolbar';
-    tb.innerHTML =
-      '<input type="text" class="form-control ai-review-search" id="ai-search" placeholder="Search patients or findings..." value="' + esc(_search) + '">' +
-      '<select class="form-control ai-review-filter" id="ai-cat-filter"><option value="">All Categories</option><option value="Chart Completeness">Chart Completeness</option><option value="Drug Interactions">Drug Interactions</option><option value="Medication Monitoring">Medication Monitoring</option><option value="Clinical Decision Support">CDS Alerts</option><option value="Documentation Quality">Doc Quality</option><option value="Risk Stratification">Risk Stratification</option><option value="Patient Education">Education</option></select>' +
-      '<select class="form-control ai-review-filter" id="ai-sev-filter"><option value="">All Severities</option><option value="critical">Critical</option><option value="high">High</option><option value="warning">Warning</option><option value="info">Info</option></select>' +
-      '<label class="ai-review-toggle-label"><input type="checkbox" id="ai-show-dismissed" ' + (_showDismissed ? 'checked' : '') + '> Show Dismissed</label>';
-    app.appendChild(tb);
-
-    if (_selPid) _renderPatientDetail(app, _selPid, panel);
-    else _renderPanelTable(app, panel);
-
-    var s = document.getElementById('ai-search'); if (s) s.addEventListener('input', function() { _search = this.value; _render(); });
-    var c = document.getElementById('ai-cat-filter'); if (c) { c.value = _fCat; c.addEventListener('change', function() { _fCat = this.value; _render(); }); }
-    var sv = document.getElementById('ai-sev-filter'); if (sv) { sv.value = _fSev; sv.addEventListener('change', function() { _fSev = this.value; _render(); }); }
-    var dm = document.getElementById('ai-show-dismissed'); if (dm) dm.addEventListener('change', function() { _showDismissed = this.checked; _render(); });
+  /* ---------- Load all patient data ---------- */
+  var patient = loadAll(KEYS.patients).find(function(p) { return p.id === patientId; });
+  if (!patient) {
+    app.innerHTML = '<div class="ai-empty">Patient not found.</div>';
+    return;
   }
 
-  function _renderPanelTable(container, panelPts) {
-    var rows = [];
-    panelPts.forEach(function(p) {
-      var findings = runFullAIReview(p.id);
-      var active = findings.filter(function(f) { return !_isAIDismissed(p.id, f.type + ':' + f.title); });
-      if (_fCat) active = active.filter(function(f) { return f.category === _fCat; });
-      if (_fSev) active = active.filter(function(f) { return f.severity === _fSev; });
-      if (active.length === 0 && !_showDismissed) return;
-      if (_search) { var t = _search.toLowerCase(); var nm = ((p.firstName||'') + ' ' + (p.lastName||'') + ' ' + (p.mrn||'')).toLowerCase(); var fm = active.some(function(f) { return (f.title + ' ' + f.description).toLowerCase().indexOf(t) >= 0; }); if (nm.indexOf(t) < 0 && !fm) return; }
-      var cc = active.filter(function(f) { return f.severity === 'critical'; }).length;
-      var hc = active.filter(function(f) { return f.severity === 'high'; }).length;
-      var wc = active.filter(function(f) { return f.severity === 'warning' || f.severity === 'moderate'; }).length;
-      rows.push({ patient: p, findings: active, cc: cc, hc: hc, wc: wc, total: active.length, top: active.length > 0 ? active[0] : null });
-    });
-    rows.sort(function(a, b) { if (b.cc !== a.cc) return b.cc - a.cc; if (b.hc !== a.hc) return b.hc - a.hc; return b.total - a.total; });
+  var meds          = loadAll(KEYS.patientMeds).filter(function(m) { return m.patientId === patientId; });
+  var problems      = loadAll(KEYS.problems).filter(function(p) { return p.patientId === patientId; });
+  var vitals        = loadAll(KEYS.vitals).filter(function(v) { return v.patientId === patientId; });
+  var encounters    = loadAll(KEYS.encounters).filter(function(e) { return e.patientId === patientId; });
+  var orders        = loadAll(KEYS.orders).filter(function(o) { return o.patientId === patientId; });
+  var allergies     = loadAll(KEYS.allergies).filter(function(a) { return a.patientId === patientId; });
+  var labs          = loadAll(KEYS.labResults).filter(function(l) { return l.patientId === patientId; });
+  var immunizations = loadAll(KEYS.immunizations).filter(function(i) { return i.patientId === patientId; });
+  var screenings    = loadAll(KEYS.screenings).filter(function(s) { return s.patientId === patientId; });
+  var referrals     = loadAll(KEYS.referrals).filter(function(r) { return r.patientId === patientId; });
+  var notes         = loadAll(KEYS.notes).filter(function(n) { return encounters.some(function(e) { return e.id === n.encounterId; }); });
 
-    if (rows.length === 0) {
-      var empty = document.createElement('div'); empty.className = 'ai-empty-state';
-      empty.innerHTML = '<div class="ai-empty-icon">&#10003;</div><h3>No Active Findings</h3><p>All patients up to date or no matches.</p>';
-      container.appendChild(empty); return;
-    }
+  var activeMeds     = meds.filter(function(m) { return (m.status || '').toLowerCase() === 'active'; });
+  var activeProblems = problems.filter(function(p) { return (p.status || '').toLowerCase() === 'active'; });
 
-    var card = document.createElement('div'); card.className = 'card';
-    var wrap = document.createElement('div'); wrap.className = 'table-wrap';
-    var table = document.createElement('table'); table.className = 'table ai-review-table';
-    table.innerHTML = '<thead><tr><th>Patient</th><th>Critical</th><th>High</th><th>Warnings</th><th>Top Finding</th><th>Total</th><th></th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    rows.forEach(function(r) {
-      var tr = document.createElement('tr'); tr.className = 'ai-review-row'; tr.style.cursor = 'pointer';
-      tr.innerHTML = '<td><strong>' + esc(r.patient.lastName + ', ' + r.patient.firstName) + '</strong><br><small class="text-muted">' + esc(r.patient.mrn || '') + '</small></td>' +
-        '<td><span class="ai-badge ' + (r.cc > 0 ? 'ai-badge-critical' : 'ai-badge-none') + '">' + r.cc + '</span></td>' +
-        '<td><span class="ai-badge ' + (r.hc > 0 ? 'ai-badge-high' : 'ai-badge-none') + '">' + r.hc + '</span></td>' +
-        '<td><span class="ai-badge ' + (r.wc > 0 ? 'ai-badge-warning' : 'ai-badge-none') + '">' + r.wc + '</span></td>' +
-        '<td class="ai-top-finding">' + (r.top ? esc(r.top.title) : '-') + '</td>' +
-        '<td><strong>' + r.total + '</strong></td><td></td>';
-      var btn = document.createElement('button'); btn.className = 'btn btn-primary btn-sm'; btn.textContent = 'Review';
-      btn.addEventListener('click', function(e) { e.stopPropagation(); _selPid = r.patient.id; _render(); });
-      tr.querySelector('td:last-child').appendChild(btn);
-      tr.addEventListener('click', function() { _selPid = r.patient.id; _render(); });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody); wrap.appendChild(table); card.appendChild(wrap); container.appendChild(card);
-  }
+  var patientAge = patient.dob ? Math.floor((Date.now() - new Date(patient.dob).getTime()) / 31557600000) : null;
+  var patientSex = (patient.sex || '').toLowerCase();
 
-  function _renderPatientDetail(container, pid) {
-    var patient = getPatient(pid);
-    if (!patient) return;
+  /* ---------- Reset session state ---------- */
+  _aiFindings = [];
+  _aiDismissed = new Set();
+  _aiActiveTab = 'overview';
 
-    var backBar = document.createElement('div'); backBar.className = 'ai-back-bar';
-    var backBtn = document.createElement('button'); backBtn.className = 'btn btn-secondary btn-sm'; backBtn.textContent = '< Back to Panel';
-    backBtn.addEventListener('click', function() { _selPid = null; _render(); });
-    backBar.appendChild(backBtn);
-    var chartLink = document.createElement('a'); chartLink.className = 'btn btn-ghost btn-sm'; chartLink.href = '#chart/' + pid; chartLink.textContent = 'Open Chart';
-    backBar.appendChild(chartLink);
-    container.appendChild(backBar);
+  /* ============================================================
+     1. Chart Completeness Review
+     ============================================================ */
+  _runChartCompleteness(patient, allergies, activeProblems, encounters, vitals, patientAge);
 
-    var hdr = document.createElement('div'); hdr.className = 'ai-patient-header';
-    var age = _aiGetAge(patient);
-    hdr.innerHTML = '<h2>' + esc(patient.lastName + ', ' + patient.firstName) + '</h2><span class="ai-patient-meta">' + esc(patient.mrn || '') + ' | ' + (age !== null ? age + 'y' : 'Age ?') + ' | ' + esc(patient.sex || '?') + '</span>';
-    container.appendChild(hdr);
+  /* ============================================================
+     2. Care Gap Analysis
+     ============================================================ */
+  _runCareGapAnalysis(patient, patientAge, patientSex, activeProblems, labs, screenings, orders, immunizations);
 
-    var findings = runFullAIReview(pid);
-    var active = findings.filter(function(f) {
-      var key = f.type + ':' + f.title;
-      if (!_showDismissed && _isAIDismissed(pid, key)) return false;
-      if (_fCat && f.category !== _fCat) return false;
-      if (_fSev && f.severity !== _fSev) return false;
-      if (_search) { var t = _search.toLowerCase(); if ((f.title + ' ' + f.description + ' ' + f.category).toLowerCase().indexOf(t) < 0) return false; }
-      return true;
-    });
+  /* ============================================================
+     3. Drug Interaction Checker
+     ============================================================ */
+  _runDrugInteractions(activeMeds, patientId);
 
-    if (active.length === 0) {
-      var empty = document.createElement('div'); empty.className = 'ai-empty-state';
-      empty.innerHTML = '<div class="ai-empty-icon">&#10003;</div><h3>No Active Findings</h3><p>All findings addressed or dismissed.</p>';
-      container.appendChild(empty); return;
-    }
+  /* ============================================================
+     4. Clinical Decision Support
+     ============================================================ */
+  _runClinicalDecisionSupport(activeProblems, activeMeds, vitals, labs, orders, referrals, patientAge, patientId);
 
-    var cats = {};
-    active.forEach(function(f) { if (!cats[f.category]) cats[f.category] = []; cats[f.category].push(f); });
-    var catOrder = ['Drug Interactions', 'Clinical Decision Support', 'Medication Monitoring', 'Chart Completeness', 'Documentation Quality', 'Risk Stratification', 'Patient Education'];
+  /* ============================================================
+     5. Documentation Quality Score
+     ============================================================ */
+  _runDocumentationQuality(encounters, notes);
 
-    catOrder.forEach(function(catName) {
-      if (!cats[catName]) return;
-      var catF = cats[catName];
-      var section = document.createElement('div'); section.className = 'ai-category-section';
-      var catHdr = document.createElement('div'); catHdr.className = 'ai-category-header';
-      catHdr.innerHTML = '<h3>' + esc(catName) + '</h3><span class="ai-category-count">' + catF.length + ' finding' + (catF.length > 1 ? 's' : '') + '</span>';
-      section.appendChild(catHdr);
+  /* ============================================================
+     6. Risk Stratification
+     ============================================================ */
+  _runRiskStratification(activeProblems, activeMeds, screenings, encounters, patientAge);
 
-      catF.forEach(function(finding) {
-        var fKey = finding.type + ':' + finding.title;
-        var isDismissed = _isAIDismissed(pid, fKey);
-        var fCard = document.createElement('div');
-        fCard.className = 'ai-finding-card ai-severity-' + finding.severity + (isDismissed ? ' ai-dismissed' : '');
-        var sevLabel = finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
-        var sevIcon = finding.severity === 'critical' ? '!!' : finding.severity === 'high' ? '!' : finding.severity === 'warning' ? '?' : finding.severity === 'moderate' ? '~' : finding.severity === 'success' ? '>' : 'i';
-        fCard.innerHTML =
-          '<div class="ai-finding-header"><span class="ai-severity-badge ai-sev-' + finding.severity + '">' + sevIcon + ' ' + sevLabel + '</span><span class="ai-finding-type">' + esc(finding.category) + '</span></div>' +
-          '<h4 class="ai-finding-title">' + esc(finding.title) + '</h4>' +
-          '<p class="ai-finding-desc">' + esc(finding.description) + '</p>' +
-          '<div class="ai-finding-action"><strong>Recommended:</strong> ' + esc(finding.action) + '</div>';
+  /* ============================================================
+     7. Patient Education Recommendations
+     ============================================================ */
+  _runEducationRecommendations(activeProblems, activeMeds);
 
-        if (finding.type === 'doc_score' && finding.details) {
-          var sb = document.createElement('div'); sb.className = 'ai-score-details';
-          finding.details.forEach(function(d) {
-            var pct2 = Math.round((d.points / d.max) * 100);
-            var cls = d.status === 'complete' ? 'ai-bar-complete' : d.status === 'missing' ? 'ai-bar-missing' : 'ai-bar-partial';
-            sb.innerHTML += '<div class="ai-score-row"><span class="ai-score-label">' + esc(d.section) + '</span><div class="ai-score-bar"><div class="ai-score-fill ' + cls + '" style="width:' + pct2 + '%"></div></div><span class="ai-score-pts">' + d.points + '/' + d.max + '</span></div>';
-          });
-          fCard.appendChild(sb);
-        }
-
-        if (finding.educationItems && finding.educationItems.length > 0) {
-          var det = document.createElement('details'); det.className = 'ai-edu-details';
-          det.innerHTML = '<summary>View All Points (' + finding.educationItems.length + ')</summary>';
-          var ul = document.createElement('ul'); ul.className = 'ai-edu-list';
-          finding.educationItems.forEach(function(item) { var li = document.createElement('li'); li.textContent = item; ul.appendChild(li); });
-          det.appendChild(ul); fCard.appendChild(det);
-        }
-
-        var actions = document.createElement('div'); actions.className = 'ai-finding-actions';
-        if (!isDismissed) {
-          var db = document.createElement('button'); db.className = 'btn btn-ghost btn-sm'; db.textContent = 'Dismiss';
-          db.addEventListener('click', function(e) { e.stopPropagation(); _dismissAIFinding(pid, fKey); showToast('Finding dismissed', 'success'); _render(); });
-          actions.appendChild(db);
-        } else {
-          var ub = document.createElement('button'); ub.className = 'btn btn-ghost btn-sm'; ub.textContent = 'Restore';
-          ub.addEventListener('click', function(e) { e.stopPropagation(); _undismissAI(pid, fKey); showToast('Finding restored', 'success'); _render(); });
-          actions.appendChild(ub);
-        }
-        var cl = document.createElement('a'); cl.className = 'btn btn-secondary btn-sm'; cl.href = '#chart/' + pid; cl.textContent = 'View in Chart';
-        actions.appendChild(cl);
-        fCard.appendChild(actions);
-        section.appendChild(fCard);
-      });
-      container.appendChild(section);
-    });
-  }
-
-  _render();
+  /* ---------- Render the dashboard ---------- */
+  _renderAIDashboard(app, patient, patientAge, patientSex);
 }
 
 /* ============================================================
-   7. Chart Sub-Tab -- AI Review card in patient chart
+   1. Chart Completeness
    ============================================================ */
-
-function buildAIReviewChartSection(patientId) {
-  var container = document.createElement('div');
-  container.className = 'ai-review-chart-section';
-  container.id = 'section-ai-review';
-
-  var findings = runFullAIReview(patientId);
-  var active = findings.filter(function(f) { return !_isAIDismissed(patientId, f.type + ':' + f.title); });
-
-  var critC = active.filter(function(f) { return f.severity === 'critical'; }).length;
-  var highC = active.filter(function(f) { return f.severity === 'high'; }).length;
-  var warnC = active.filter(function(f) { return f.severity === 'warning' || f.severity === 'moderate'; }).length;
-  var infoC = active.filter(function(f) { return f.severity === 'info' || f.severity === 'success'; }).length;
-
-  var summaryDiv = document.createElement('div');
-  summaryDiv.className = 'ai-chart-summary';
-  summaryDiv.innerHTML =
-    '<div class="ai-chart-summary-title"><span class="ai-chart-icon">AI</span> AI Chart Review <span class="ai-chart-count">' + active.length + ' finding' + (active.length !== 1 ? 's' : '') + '</span></div>' +
-    '<div class="ai-chart-badges">' +
-      (critC > 0 ? '<span class="ai-mini-badge ai-mini-critical">' + critC + ' Critical</span>' : '') +
-      (highC > 0 ? '<span class="ai-mini-badge ai-mini-high">' + highC + ' High</span>' : '') +
-      (warnC > 0 ? '<span class="ai-mini-badge ai-mini-warning">' + warnC + ' Warning</span>' : '') +
-      (infoC > 0 ? '<span class="ai-mini-badge ai-mini-info">' + infoC + ' Info</span>' : '') +
-      (active.length === 0 ? '<span class="ai-mini-badge ai-mini-ok">All Clear</span>' : '') +
-    '</div>';
-  container.appendChild(summaryDiv);
-
-  var actionable = active.filter(function(f) { return f.severity === 'critical' || f.severity === 'high' || f.severity === 'warning' || f.severity === 'moderate'; });
-  actionable.slice(0, 8).forEach(function(finding) {
-    var fKey = finding.type + ':' + finding.title;
-    var row = document.createElement('div');
-    row.className = 'ai-chart-finding ai-severity-' + finding.severity;
-    var sevIcon = finding.severity === 'critical' ? '!!' : finding.severity === 'high' ? '!' : '?';
-    row.innerHTML =
-      '<div class="ai-chart-finding-header"><span class="ai-sev-dot ai-sev-dot-' + finding.severity + '">' + sevIcon + '</span><span class="ai-chart-finding-title">' + esc(finding.title) + '</span></div>' +
-      '<p class="ai-chart-finding-desc">' + esc(finding.description.length > 150 ? finding.description.slice(0, 150) + '...' : finding.description) + '</p>';
-    var db = document.createElement('button'); db.className = 'btn btn-ghost btn-sm'; db.textContent = 'Dismiss'; db.style.cssText = 'margin-top:4px;font-size:11px;';
-    db.addEventListener('click', function() {
-      _dismissAIFinding(patientId, fKey); showToast('Finding dismissed', 'success');
-      var par = container.parentElement;
-      if (par) { var ns = buildAIReviewChartSection(patientId); par.replaceChild(ns, container); }
+function _runChartCompleteness(patient, allergies, activeProblems, encounters, vitals, age) {
+  // Missing allergies
+  if (allergies.length === 0) {
+    _aiFindings.push({
+      id: 'comp-no-allergies',
+      category: 'completeness',
+      severity: AI_SEV.WARNING,
+      title: 'No Allergies Documented',
+      description: 'No allergy information has been recorded for this patient. Document allergies or mark as NKDA (No Known Drug Allergies) to ensure medication safety.',
+      action: { label: 'Go to Chart', hash: '#chart/' + patient.id },
     });
-    row.appendChild(db);
-    container.appendChild(row);
-  });
-  if (actionable.length > 8) {
-    var more = document.createElement('div'); more.className = 'ai-chart-more'; more.textContent = '+ ' + (actionable.length - 8) + ' more findings';
-    container.appendChild(more);
   }
 
-  var fullLink = document.createElement('div'); fullLink.className = 'ai-chart-full-link';
-  var linkBtn = document.createElement('a'); linkBtn.className = 'btn btn-secondary btn-sm'; linkBtn.href = '#ai-review'; linkBtn.textContent = 'Open Full AI Review Dashboard';
-  fullLink.appendChild(linkBtn);
-  container.appendChild(fullLink);
+  // No active problems
+  if (activeProblems.length === 0) {
+    _aiFindings.push({
+      id: 'comp-no-problems',
+      category: 'completeness',
+      severity: AI_SEV.WARNING,
+      title: 'Empty Problem List',
+      description: 'No active problems on the problem list. An accurate problem list is essential for clinical decision support, billing accuracy, and care coordination.',
+      action: { label: 'Go to Chart', hash: '#chart/' + patient.id },
+    });
+  }
 
-  return container;
+  // Unsigned encounters
+  var unsigned = encounters.filter(function(e) { return !e.signedAt && !e.signed; });
+  if (unsigned.length > 0) {
+    _aiFindings.push({
+      id: 'comp-unsigned-enc',
+      category: 'completeness',
+      severity: AI_SEV.WARNING,
+      title: unsigned.length + ' Unsigned Encounter' + (unsigned.length > 1 ? 's' : ''),
+      description: 'Unsigned encounter notes may delay billing, create compliance risk, and leave clinical documentation incomplete. Sign encounters promptly.',
+      action: { label: 'View Encounters', hash: '#chart/' + patient.id },
+    });
+  }
+
+  // Overdue vitals (none in last 90 days)
+  var now = Date.now();
+  var ninetyDays = 90 * 24 * 60 * 60 * 1000;
+  var recentVitals = vitals.filter(function(v) {
+    return v.date && (now - new Date(v.date).getTime()) < ninetyDays;
+  });
+  if (vitals.length > 0 && recentVitals.length === 0) {
+    _aiFindings.push({
+      id: 'comp-overdue-vitals',
+      category: 'completeness',
+      severity: AI_SEV.INFO,
+      title: 'Vitals Overdue',
+      description: 'No vital signs recorded in the last 90 days. Updated vitals support accurate clinical assessment and risk scoring.',
+      action: { label: 'Go to Chart', hash: '#chart/' + patient.id },
+    });
+  } else if (vitals.length === 0) {
+    _aiFindings.push({
+      id: 'comp-no-vitals',
+      category: 'completeness',
+      severity: AI_SEV.WARNING,
+      title: 'No Vitals Recorded',
+      description: 'No vital signs have ever been documented for this patient. Baseline vitals are required for clinical assessment.',
+      action: { label: 'Go to Chart', hash: '#chart/' + patient.id },
+    });
+  }
+
+  // Missing demographics
+  var missingDemo = [];
+  if (!patient.dob) missingDemo.push('date of birth');
+  if (!patient.sex) missingDemo.push('sex');
+  if (!patient.firstName) missingDemo.push('first name');
+  if (!patient.lastName) missingDemo.push('last name');
+  if (missingDemo.length > 0) {
+    _aiFindings.push({
+      id: 'comp-missing-demo',
+      category: 'completeness',
+      severity: AI_SEV.WARNING,
+      title: 'Missing Demographics',
+      description: 'Missing: ' + missingDemo.join(', ') + '. Complete demographics are required for accurate screening recommendations and billing.',
+      action: { label: 'Edit Patient', hash: '#chart/' + patient.id },
+    });
+  }
 }
+
+/* ============================================================
+   2. Care Gap Analysis
+   ============================================================ */
+function _runCareGapAnalysis(patient, age, sex, activeProblems, labs, screenings, orders, immunizations) {
+  if (age === null) return;  // cannot assess without age
+
+  var problemText = activeProblems.map(function(p) { return (p.name || '').toLowerCase(); }).join(' ');
+  var hasDiabetes = /diabetes|dm |dm$|t2dm|t1dm|a1c/i.test(problemText);
+  var now = Date.now();
+  var oneYear = 365 * 24 * 60 * 60 * 1000;
+
+  // Helper: check if a screening/order/lab/immunization contains keywords in the last N years
+  function _hasRecentItem(keywords, yearsBack) {
+    var cutoff = now - (yearsBack * oneYear);
+    var kw = keywords.map(function(k) { return k.toLowerCase(); });
+    var matchFn = function(text) { return kw.some(function(k) { return (text || '').toLowerCase().indexOf(k) >= 0; }); };
+
+    var inScreenings = screenings.some(function(s) { return matchFn(s.name || s.type || '') && s.date && new Date(s.date).getTime() > cutoff; });
+    if (inScreenings) return true;
+    var inOrders = orders.some(function(o) { return matchFn(o.detail || o.type || '') && o.createdAt && new Date(o.createdAt).getTime() > cutoff; });
+    if (inOrders) return true;
+    var inLabs = labs.some(function(l) { return matchFn(l.testName || '') && l.date && new Date(l.date).getTime() > cutoff; });
+    if (inLabs) return true;
+    var inImmunizations = immunizations.some(function(i) { return matchFn(i.name || i.vaccine || '') && (i.date || i.administeredDate) && new Date(i.date || i.administeredDate).getTime() > cutoff; });
+    if (inImmunizations) return true;
+    return false;
+  }
+
+  // Mammogram: Female 40+
+  if (sex.startsWith('f') && age >= 40) {
+    if (!_hasRecentItem(['mammogram', 'mammography', 'breast imaging'], 2)) {
+      _aiFindings.push({
+        id: 'gap-mammogram',
+        category: 'care-gaps',
+        severity: AI_SEV.WARNING,
+        title: 'Mammogram Overdue',
+        description: 'USPSTF recommends biennial screening mammography for women ages 40-74. No recent mammogram found in the last 2 years.',
+        action: { label: 'Order Mammogram', hash: '#chart/' + patient.id },
+      });
+    }
+  }
+
+  // Colonoscopy: 50+
+  if (age >= 50) {
+    if (!_hasRecentItem(['colonoscopy', 'colorectal', 'colon'], 10)) {
+      _aiFindings.push({
+        id: 'gap-colonoscopy',
+        category: 'care-gaps',
+        severity: AI_SEV.WARNING,
+        title: 'Colonoscopy Overdue',
+        description: 'USPSTF recommends colorectal cancer screening starting at age 45-50. Colonoscopy is recommended every 10 years. No recent colonoscopy found.',
+        action: { label: 'Order Colonoscopy', hash: '#chart/' + patient.id },
+      });
+    }
+  }
+
+  // A1C for diabetics
+  if (hasDiabetes) {
+    if (!_hasRecentItem(['a1c', 'hemoglobin a1c', 'hba1c', 'glycated'], 0.5)) {
+      _aiFindings.push({
+        id: 'gap-a1c',
+        category: 'care-gaps',
+        severity: AI_SEV.WARNING,
+        title: 'HbA1c Overdue',
+        description: 'ADA guidelines recommend HbA1c monitoring every 3-6 months for diabetic patients. No recent A1c result found in the last 6 months.',
+        action: { label: 'Order A1c', hash: '#chart/' + patient.id },
+      });
+    }
+  }
+
+  // Lipid panel: 40+
+  if (age >= 40) {
+    if (!_hasRecentItem(['lipid', 'cholesterol', 'ldl', 'hdl', 'triglyceride'], 5)) {
+      _aiFindings.push({
+        id: 'gap-lipid',
+        category: 'care-gaps',
+        severity: AI_SEV.INFO,
+        title: 'Lipid Panel Due',
+        description: 'ACC/AHA recommends lipid screening every 4-6 years for adults 40+, and more frequently for patients on statins or with risk factors.',
+        action: { label: 'Order Lipid Panel', hash: '#chart/' + patient.id },
+      });
+    }
+  }
+
+  // Depression screening (PHQ-9)
+  if (!_hasRecentItem(['phq', 'phq-9', 'depression screen', 'depression screening'], 1)) {
+    _aiFindings.push({
+      id: 'gap-phq9',
+      category: 'care-gaps',
+      severity: AI_SEV.INFO,
+      title: 'Depression Screening Due',
+      description: 'USPSTF recommends screening for depression in the general adult population. No PHQ-9 or depression screening documented in the last year.',
+      action: { label: 'Order PHQ-9', hash: '#chart/' + patient.id },
+    });
+  }
+
+  // Influenza vaccine
+  if (!_hasRecentItem(['influenza', 'flu vaccine', 'flu shot'], 1)) {
+    _aiFindings.push({
+      id: 'gap-flu',
+      category: 'care-gaps',
+      severity: AI_SEV.INFO,
+      title: 'Annual Flu Vaccine Due',
+      description: 'CDC recommends annual influenza vaccination for all patients 6 months and older. No flu vaccine documented in the last year.',
+      action: { label: 'Order Flu Vaccine', hash: '#chart/' + patient.id },
+    });
+  }
+
+  // Pneumonia vaccine: 65+
+  if (age >= 65) {
+    if (!_hasRecentItem(['pneumonia', 'pneumococcal', 'prevnar', 'pneumovax', 'pcv13', 'pcv15', 'pcv20', 'ppsv23'], 5)) {
+      _aiFindings.push({
+        id: 'gap-pneumonia',
+        category: 'care-gaps',
+        severity: AI_SEV.INFO,
+        title: 'Pneumococcal Vaccine Due',
+        description: 'CDC recommends pneumococcal vaccination for adults 65+. PCV20 or PCV15 followed by PPSV23 is recommended. No recent vaccination found.',
+        action: { label: 'Order Vaccine', hash: '#chart/' + patient.id },
+      });
+    }
+  }
+}
+
+/* ============================================================
+   3. Drug Interaction Checker
+   ============================================================ */
+function _runDrugInteractions(activeMeds, patientId) {
+  if (activeMeds.length < 2) return;
+
+  var medNames = activeMeds.map(function(m) { return (m.name || '').toLowerCase(); });
+
+  DRUG_INTERACTIONS.forEach(function(interaction) {
+    var group1 = interaction.drugs[0];
+    var group2 = interaction.drugs[1];
+
+    // Check if patient has at least one med from each group
+    var match1 = medNames.filter(function(mn) { return group1.some(function(d) { return mn.indexOf(d) >= 0; }); });
+    var match2 = medNames.filter(function(mn) { return group2.some(function(d) { return mn.indexOf(d) >= 0; }); });
+
+    if (match1.length > 0 && match2.length > 0) {
+      _aiFindings.push({
+        id: 'ddi-' + interaction.id,
+        category: 'drug-safety',
+        severity: interaction.severity,
+        title: interaction.risk + ': ' + _aiCapitalize(match1[0]) + ' + ' + _aiCapitalize(match2[0]),
+        description: interaction.description,
+        action: { label: 'Review Medications', hash: '#chart/' + patientId },
+        meds: [match1[0], match2[0]],
+      });
+    }
+  });
+}
+
+/* ============================================================
+   4. Clinical Decision Support
+   ============================================================ */
+function _runClinicalDecisionSupport(activeProblems, activeMeds, vitals, labs, orders, referrals, age, patientId) {
+  var problemText = activeProblems.map(function(p) { return (p.name || '').toLowerCase(); }).join('|');
+  var medNames = activeMeds.map(function(m) { return (m.name || '').toLowerCase(); });
+  var now = Date.now();
+
+  /* --- Diabetic care --- */
+  if (/diabetes|dm |dm$|t2dm|t1dm/i.test(problemText)) {
+    // Eye exam
+    var hasEyeExam = orders.some(function(o) { return /eye|ophthal|retinal|fundus/i.test(o.detail || ''); }) ||
+                     referrals.some(function(r) { return /ophthal|eye/i.test(r.specialty || r.detail || ''); });
+    if (!hasEyeExam) {
+      _aiFindings.push({
+        id: 'cds-dm-eye',
+        category: 'clinical',
+        severity: AI_SEV.WARNING,
+        title: 'Diabetic Eye Exam Needed',
+        description: 'ADA recommends annual dilated eye exam for all diabetic patients to screen for diabetic retinopathy. No ophthalmology referral or eye exam order found.',
+        action: { label: 'Order Referral', hash: '#chart/' + patientId },
+      });
+    }
+
+    // Foot exam
+    var hasFootExam = orders.some(function(o) { return /foot|podiatr/i.test(o.detail || ''); });
+    if (!hasFootExam) {
+      _aiFindings.push({
+        id: 'cds-dm-foot',
+        category: 'clinical',
+        severity: AI_SEV.INFO,
+        title: 'Diabetic Foot Exam Recommended',
+        description: 'ADA recommends annual comprehensive foot exam for patients with diabetes to assess for peripheral neuropathy and vascular insufficiency.',
+        action: { label: 'Document Foot Exam', hash: '#chart/' + patientId },
+      });
+    }
+
+    // Nephrology referral if GFR < 30
+    var dmGfrLabs = labs.filter(function(l) { return /gfr|egfr|glomerular/i.test(l.testName || ''); })
+      .sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+    if (dmGfrLabs.length > 0) {
+      var lastDmGfr = parseFloat(dmGfrLabs[0].value);
+      if (!isNaN(lastDmGfr) && lastDmGfr < 30) {
+        var hasNephRef = referrals.some(function(r) { return /nephrol|renal/i.test(r.specialty || r.detail || ''); });
+        if (!hasNephRef) {
+          _aiFindings.push({
+            id: 'cds-dm-nephrology',
+            category: 'clinical',
+            severity: AI_SEV.CRITICAL,
+            title: 'Nephrology Referral Recommended (GFR ' + lastDmGfr + ')',
+            description: 'Patient has diabetes with GFR < 30 mL/min, indicating advanced CKD (Stage 4-5). KDIGO guidelines recommend nephrology co-management for CKD stage 4+.',
+            action: { label: 'Place Referral', hash: '#chart/' + patientId },
+          });
+        }
+      }
+    }
+  }
+
+  /* --- Hypertension --- */
+  if (/hypertension|htn|high blood pressure/i.test(problemText)) {
+    var sortedVitals = vitals.filter(function(v) { return v.bp; })
+      .sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+    if (sortedVitals.length > 0) {
+      var lastBP = sortedVitals[0].bp;
+      var bpParts = (lastBP || '').split('/');
+      var systolic = parseInt(bpParts[0], 10);
+      var diastolic = parseInt(bpParts[1], 10);
+      if (!isNaN(systolic) && !isNaN(diastolic)) {
+        if (systolic >= 180 || diastolic >= 120) {
+          _aiFindings.push({
+            id: 'cds-htn-crisis',
+            category: 'clinical',
+            severity: AI_SEV.CRITICAL,
+            title: 'Hypertensive Crisis (BP ' + lastBP + ')',
+            description: 'Blood pressure >= 180/120 mmHg. Assess for end-organ damage (headache, visual changes, chest pain). May require emergent treatment.',
+            action: { label: 'Review BP', hash: '#chart/' + patientId },
+          });
+        } else if (systolic >= 140 || diastolic >= 90) {
+          _aiFindings.push({
+            id: 'cds-htn-uncontrolled',
+            category: 'clinical',
+            severity: AI_SEV.WARNING,
+            title: 'Uncontrolled Hypertension (BP ' + lastBP + ')',
+            description: 'Last recorded blood pressure (' + lastBP + ') exceeds the target of <140/90 mmHg. Consider medication adjustment, lifestyle counseling, or ambulatory BP monitoring.',
+            action: { label: 'Review BP', hash: '#chart/' + patientId },
+          });
+        }
+      }
+    }
+  }
+
+  /* --- CHF --- */
+  if (/heart failure|chf|hfref|hfpef/i.test(problemText)) {
+    var hasACEorARB = medNames.some(function(m) {
+      return /lisinopril|enalapril|ramipril|losartan|valsartan|irbesartan|candesartan|sacubitril|entresto|captopril|olmesartan/i.test(m);
+    });
+    var hasBetaBlocker = medNames.some(function(m) {
+      return /metoprolol|carvedilol|bisoprolol|atenolol|propranolol/i.test(m);
+    });
+
+    if (!hasACEorARB) {
+      _aiFindings.push({
+        id: 'cds-chf-acearb',
+        category: 'clinical',
+        severity: AI_SEV.WARNING,
+        title: 'CHF: ACE Inhibitor/ARB Not Found',
+        description: 'ACC/AHA guidelines recommend ACE inhibitor, ARB, or ARNI (sacubitril/valsartan) for all patients with HFrEF. No qualifying medication found on the active medication list.',
+        action: { label: 'Review Meds', hash: '#chart/' + patientId },
+      });
+    }
+    if (!hasBetaBlocker) {
+      _aiFindings.push({
+        id: 'cds-chf-bb',
+        category: 'clinical',
+        severity: AI_SEV.WARNING,
+        title: 'CHF: Beta-Blocker Not Found',
+        description: 'Evidence-based beta-blocker (carvedilol, metoprolol succinate, or bisoprolol) is recommended for all stable HFrEF patients. Not found on active medication list.',
+        action: { label: 'Review Meds', hash: '#chart/' + patientId },
+      });
+    }
+  }
+
+  /* --- CKD staging --- */
+  var gfrLabs = labs.filter(function(l) { return /gfr|egfr|glomerular/i.test(l.testName || ''); })
+    .sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+  if (gfrLabs.length > 0) {
+    var lastGfr = parseFloat(gfrLabs[0].value);
+    if (!isNaN(lastGfr)) {
+      var stage = '';
+      var sev = AI_SEV.INFO;
+      if (lastGfr >= 60 && lastGfr < 90) { stage = 'Stage 2 (GFR 60-89)'; sev = AI_SEV.INFO; }
+      else if (lastGfr >= 45 && lastGfr < 60) { stage = 'Stage 3a (GFR 45-59)'; sev = AI_SEV.INFO; }
+      else if (lastGfr >= 30 && lastGfr < 45) { stage = 'Stage 3b (GFR 30-44)'; sev = AI_SEV.WARNING; }
+      else if (lastGfr >= 15 && lastGfr < 30) { stage = 'Stage 4 (GFR 15-29)'; sev = AI_SEV.CRITICAL; }
+      else if (lastGfr < 15) { stage = 'Stage 5 / ESRD (GFR <15)'; sev = AI_SEV.CRITICAL; }
+
+      if (stage) {
+        _aiFindings.push({
+          id: 'cds-ckd-stage',
+          category: 'clinical',
+          severity: sev,
+          title: 'CKD ' + stage,
+          description: 'Last eGFR result: ' + lastGfr + ' mL/min/1.73m\u00B2. Classification per KDIGO guidelines. Adjust renally-dosed medications and monitor electrolytes.',
+          action: { label: 'View Labs', hash: '#chart/' + patientId },
+        });
+      }
+    }
+  }
+
+  /* --- Antibiotic duration alerts --- */
+  var activeAbxOrders = orders.filter(function(o) {
+    var det = (o.detail || '').toLowerCase();
+    var isAbx = /antibiotic|amoxicillin|azithromycin|ciprofloxacin|levofloxacin|doxycycline|cephalexin|metronidazole|clindamycin|sulfamethoxazole|trimethoprim|augmentin|ceftriaxone|vancomycin|piperacillin|meropenem|linezolid/i.test(det);
+    return isAbx && (o.status || '').toLowerCase() === 'active';
+  });
+
+  activeAbxOrders.forEach(function(o) {
+    if (o.createdAt) {
+      var daysSinceOrder = (now - new Date(o.createdAt).getTime()) / (24 * 60 * 60 * 1000);
+      if (daysSinceOrder > 14) {
+        _aiFindings.push({
+          id: 'cds-abx-duration-' + o.id,
+          category: 'clinical',
+          severity: AI_SEV.WARNING,
+          title: 'Prolonged Antibiotic Course (' + Math.round(daysSinceOrder) + ' days)',
+          description: 'Active antibiotic order "' + esc(o.detail || 'Unknown') + '" has been active for more than 14 days. Review for appropriateness of extended duration per antibiotic stewardship guidelines.',
+          action: { label: 'Review Order', hash: '#chart/' + patientId },
+        });
+      }
+    }
+  });
+}
+
+/* ============================================================
+   5. Documentation Quality Score
+   ============================================================ */
+function _runDocumentationQuality(encounters, notes) {
+  if (encounters.length === 0) return;
+
+  // Score each of the last 5 encounters
+  var encToScore = encounters.slice(-5);
+  var totalScore = 0;
+  var scoredCount = 0;
+
+  encToScore.forEach(function(enc) {
+    var encNotes = notes.filter(function(n) { return n.encounterId === enc.id; });
+    var score = 0;
+    var issues = [];
+
+    // Combine all note text
+    var allText = encNotes.map(function(n) { return (n.text || n.content || n.body || ''); }).join(' ').toLowerCase();
+    var encText = ((enc.hpiText || enc.hpi || '') + ' ' +
+                   (enc.rosText || enc.ros || '') + ' ' +
+                   (enc.peText || enc.pe || enc.physicalExam || '') + ' ' +
+                   (enc.assessmentText || enc.assessment || '') + ' ' +
+                   (enc.planText || enc.plan || '')).toLowerCase();
+    var fullText = allText + ' ' + encText;
+
+    // Check standard sections (20 pts each, 100 total)
+    var sections = [
+      { name: 'HPI (History of Present Illness)', patterns: ['hpi', 'history of present', 'chief complaint', 'presenting concern'], hasField: !!(enc.hpiText || enc.hpi), points: 20 },
+      { name: 'ROS (Review of Systems)', patterns: ['ros', 'review of systems', 'constitutional', 'heent'], hasField: !!(enc.rosText || enc.ros), points: 20 },
+      { name: 'Physical Exam', patterns: ['physical exam', 'pe:', 'examination', 'general appearance', 'lungs clear', 'heart regular'], hasField: !!(enc.peText || enc.pe || enc.physicalExam), points: 20 },
+      { name: 'Assessment', patterns: ['assessment', 'impression', 'diagnosis', 'icd'], hasField: !!(enc.assessmentText || enc.assessment), points: 20 },
+      { name: 'Plan', patterns: ['plan', 'follow up', 'follow-up', 'prescri', 'order', 'refer'], hasField: !!(enc.planText || enc.plan), points: 20 },
+    ];
+
+    sections.forEach(function(sec) {
+      var foundInText = sec.patterns.some(function(p) { return fullText.indexOf(p) >= 0; });
+      if (foundInText || sec.hasField) {
+        score += sec.points;
+      } else {
+        issues.push(sec.name + ' missing');
+      }
+    });
+
+    // Bonus checks (adjust score)
+    var hasICD = /[a-z]\d{2}\.\d/i.test(fullText) || /icd/i.test(fullText);
+    if (!hasICD && score > 0) {
+      score = Math.max(0, score - 5);
+      issues.push('No ICD-10 codes in assessment');
+    }
+
+    var planText = (enc.planText || enc.plan || '').toLowerCase();
+    if (planText && /continue current|no changes|stable/i.test(planText) && planText.length < 50) {
+      score = Math.max(0, score - 5);
+      issues.push('Plan lacks specific actions');
+    }
+
+    totalScore += score;
+    scoredCount++;
+
+    // Only report issues for poor documentation
+    if (score < 60 && issues.length > 0) {
+      var encDate = enc.date || enc.createdAt || 'Unknown date';
+      _aiFindings.push({
+        id: 'doc-quality-' + enc.id,
+        category: 'documentation',
+        severity: score < 40 ? AI_SEV.WARNING : AI_SEV.INFO,
+        title: 'Documentation Score: ' + score + '/100 (' + formatDateTime(encDate) + ')',
+        description: 'Issues: ' + issues.join('; ') + '. Complete documentation supports quality care, accurate billing, and medicolegal protection.',
+        action: { label: 'Edit Encounter', hash: '#encounter/' + enc.id },
+        score: score,
+      });
+    }
+  });
+
+  // Overall documentation score
+  if (scoredCount > 0) {
+    var avgScore = Math.round(totalScore / scoredCount);
+    _aiFindings.push({
+      id: 'doc-overall-score',
+      category: 'documentation',
+      severity: avgScore < 40 ? AI_SEV.WARNING : AI_SEV.INFO,
+      title: 'Average Documentation Score: ' + avgScore + '/100',
+      description: 'Based on the last ' + scoredCount + ' encounter(s). Scores reflect section completeness (HPI, ROS, PE, Assessment, Plan), ICD-10 presence, and plan specificity.',
+      action: null,
+      score: avgScore,
+      isOverallScore: true,
+    });
+  }
+}
+
+/* ============================================================
+   6. Risk Stratification
+   ============================================================ */
+function _runRiskStratification(activeProblems, activeMeds, screenings, encounters, age) {
+  var problemNames = activeProblems.map(function(p) { return (p.name || '').toLowerCase(); });
+  var allProblemText = problemNames.join(' ');
+
+  /* --- Charlson Comorbidity Index --- */
+  var charlsonScore = 0;
+  var charlsonMatches = [];
+  // Age component
+  if (age !== null) {
+    if (age >= 50 && age < 60) { charlsonScore += 1; }
+    else if (age >= 60 && age < 70) { charlsonScore += 2; }
+    else if (age >= 70 && age < 80) { charlsonScore += 3; }
+    else if (age >= 80) { charlsonScore += 4; }
+  }
+
+  CHARLSON_CONDITIONS.forEach(function(cond) {
+    var matched = problemNames.some(function(pt) {
+      return cond.terms.some(function(t) { return pt.indexOf(t) >= 0; });
+    });
+    if (matched) {
+      charlsonScore += cond.weight;
+      charlsonMatches.push(cond.terms[0]);
+    }
+  });
+
+  var charlsonRisk = 'Low';
+  var charlsonSev = AI_SEV.INFO;
+  if (charlsonScore >= 5) { charlsonRisk = 'High'; charlsonSev = AI_SEV.WARNING; }
+  else if (charlsonScore >= 3) { charlsonRisk = 'Moderate'; charlsonSev = AI_SEV.INFO; }
+
+  var charlsonDesc = 'Estimated 10-year mortality risk based on age and comorbidities.';
+  if (charlsonMatches.length > 0) {
+    charlsonDesc += ' Contributing conditions: ' + charlsonMatches.join(', ') + '.';
+  } else {
+    charlsonDesc += ' No comorbidity matches from problem list.';
+  }
+  if (charlsonScore === 0) charlsonDesc += ' Score of 0 corresponds to ~98% 10-year survival.';
+  else if (charlsonScore <= 2) charlsonDesc += ' Score of 1-2 corresponds to ~90% 10-year survival.';
+  else if (charlsonScore <= 4) charlsonDesc += ' Score of 3-4 corresponds to ~75% 10-year survival.';
+  else charlsonDesc += ' Score >= 5 corresponds to <50% 10-year survival.';
+
+  _aiFindings.push({
+    id: 'risk-charlson',
+    category: 'risk',
+    severity: charlsonSev,
+    title: 'Charlson Comorbidity Index: ' + charlsonScore + ' (' + charlsonRisk + ' risk)',
+    description: charlsonDesc,
+    action: null,
+    riskScore: charlsonScore,
+  });
+
+  /* --- PHQ-9 Depression Score --- */
+  var phqScreenings = screenings.filter(function(s) { return /phq|depression/i.test(s.name || s.type || ''); })
+    .sort(function(a, b) { return new Date(b.date || 0) - new Date(a.date || 0); });
+  if (phqScreenings.length > 0) {
+    var lastPHQ = phqScreenings[0];
+    var phqScore = parseInt(lastPHQ.score || lastPHQ.value || lastPHQ.result, 10);
+    if (!isNaN(phqScore)) {
+      var phqLevel = 'Minimal';
+      var phqSev = AI_SEV.INFO;
+      if (phqScore >= 20) { phqLevel = 'Severe'; phqSev = AI_SEV.CRITICAL; }
+      else if (phqScore >= 15) { phqLevel = 'Moderately Severe'; phqSev = AI_SEV.WARNING; }
+      else if (phqScore >= 10) { phqLevel = 'Moderate'; phqSev = AI_SEV.WARNING; }
+      else if (phqScore >= 5) { phqLevel = 'Mild'; phqSev = AI_SEV.INFO; }
+
+      var phqDesc = 'Last PHQ-9 screening result from ' + formatDateTime(lastPHQ.date || '') + '. ';
+      if (phqScore >= 10) {
+        phqDesc += 'Score >= 10 suggests need for treatment (therapy, pharmacotherapy, or both). Consider referral to behavioral health.';
+      } else {
+        phqDesc += 'Continue routine screening per USPSTF guidelines.';
+      }
+
+      _aiFindings.push({
+        id: 'risk-phq9',
+        category: 'risk',
+        severity: phqSev,
+        title: 'PHQ-9 Score: ' + phqScore + ' (' + phqLevel + ')',
+        description: phqDesc,
+        action: phqScore >= 10 ? { label: 'Review Screening', hash: '' } : null,
+        riskScore: phqScore,
+      });
+    }
+  }
+
+  /* --- Fall Risk --- */
+  if (age !== null && age >= 65) {
+    var fallRiskFactors = [];
+    fallRiskFactors.push('Age >= 65');
+    if (activeMeds.length > 3) fallRiskFactors.push(activeMeds.length + ' active medications (polypharmacy)');
+
+    var balanceIssues = /balance|fall|gait|vertigo|dizziness|neuropathy|weakness/i.test(allProblemText);
+    if (balanceIssues) fallRiskFactors.push('Balance/gait-related diagnosis');
+
+    var sedatingMeds = activeMeds.filter(function(m) {
+      return /benzodiazepine|zolpidem|ambien|diazepam|lorazepam|alprazolam|opioid|gabapentin|pregabalin|trazodone|quetiapine/i.test(m.name || '');
+    });
+    if (sedatingMeds.length > 0) {
+      fallRiskFactors.push('Sedating medications (' + sedatingMeds.map(function(m) { return m.name; }).join(', ') + ')');
+    }
+
+    var fallRisk = 'Low';
+    var fallSev = AI_SEV.INFO;
+    if (fallRiskFactors.length >= 3) { fallRisk = 'High'; fallSev = AI_SEV.WARNING; }
+    else if (fallRiskFactors.length >= 2) { fallRisk = 'Moderate'; fallSev = AI_SEV.INFO; }
+
+    var fallDesc = 'Risk factors: ' + fallRiskFactors.join('; ') + '. ';
+    if (fallRisk === 'High') {
+      fallDesc += 'Consider physical therapy referral, home safety evaluation, and medication review to reduce fall risk.';
+    } else {
+      fallDesc += 'Continue monitoring. CDC STEADI toolkit can guide further assessment.';
+    }
+
+    _aiFindings.push({
+      id: 'risk-fall',
+      category: 'risk',
+      severity: fallSev,
+      title: 'Fall Risk: ' + fallRisk + ' (' + fallRiskFactors.length + ' factor' + (fallRiskFactors.length !== 1 ? 's' : '') + ')',
+      description: fallDesc,
+      action: fallRisk === 'High' ? { label: 'Order PT Eval', hash: '' } : null,
+    });
+  }
+
+  /* --- Readmission Risk --- */
+  var recentInpatient = encounters.filter(function(e) {
+    var isInpatient = /inpatient|admission|hospital/i.test(e.type || e.visitType || '');
+    var d = new Date(e.date || e.createdAt);
+    return isInpatient && (Date.now() - d.getTime()) < 30 * 24 * 60 * 60 * 1000;
+  });
+
+  var readmitFactors = [];
+  if (recentInpatient.length > 0) readmitFactors.push('Recent hospitalization within 30 days');
+  if (charlsonScore >= 3) readmitFactors.push('Charlson >= 3');
+  if (age !== null && age >= 75) readmitFactors.push('Age >= 75');
+  if (activeMeds.length >= 8) readmitFactors.push('Polypharmacy (' + activeMeds.length + ' medications)');
+  if (/heart failure|chf|copd|pneumonia/i.test(allProblemText)) readmitFactors.push('High-risk diagnosis (CHF/COPD)');
+
+  if (readmitFactors.length > 0) {
+    var readmitRisk = 'Low';
+    var readmitSev = AI_SEV.INFO;
+    if (readmitFactors.length >= 3) { readmitRisk = 'High'; readmitSev = AI_SEV.WARNING; }
+    else if (readmitFactors.length >= 2) { readmitRisk = 'Moderate'; readmitSev = AI_SEV.INFO; }
+
+    var readmitDesc = 'Contributing factors: ' + readmitFactors.join('; ') + '. ';
+    if (readmitRisk !== 'Low') {
+      readmitDesc += 'Consider transitional care management (TCM), close follow-up within 7-14 days, and medication reconciliation.';
+    }
+
+    _aiFindings.push({
+      id: 'risk-readmit',
+      category: 'risk',
+      severity: readmitSev,
+      title: 'Readmission Risk: ' + readmitRisk,
+      description: readmitDesc,
+      action: readmitRisk === 'High' ? { label: 'Schedule Follow-Up', hash: '' } : null,
+    });
+  }
+}
+
+/* ============================================================
+   7. Patient Education Recommendations
+   ============================================================ */
+function _runEducationRecommendations(activeProblems, activeMeds) {
+  var problemText = activeProblems.map(function(p) { return (p.name || '').toLowerCase(); }).join(' ');
+  var medText = activeMeds.map(function(m) { return (m.name || '').toLowerCase(); }).join(' ');
+  var combinedText = problemText + ' ' + medText;
+
+  EDUCATION_TOPICS.forEach(function(topic) {
+    var matched = topic.conditions.some(function(c) { return combinedText.indexOf(c.toLowerCase()) >= 0; });
+    if (matched) {
+      _aiFindings.push({
+        id: 'edu-' + topic.title.replace(/\s+/g, '-').toLowerCase(),
+        category: 'education',
+        severity: AI_SEV.INFO,
+        title: topic.title,
+        description: topic.description,
+        action: { label: 'Print Handout', hash: '' },
+      });
+    }
+  });
+}
+
+/* ============================================================
+   RENDER: AI Dashboard
+   ============================================================ */
+function _renderAIDashboard(app, patient, age, sex) {
+  var wrap = document.createElement('div');
+  wrap.className = 'ai-dashboard';
+
+  /* ---------- Header ---------- */
+  var header = document.createElement('div');
+  header.className = 'ai-header';
+  header.innerHTML =
+    '<div class="ai-header-left">' +
+      '<h2 class="ai-title">AI Chart Review</h2>' +
+      '<span class="ai-subtitle">' + esc(patient.firstName + ' ' + patient.lastName) +
+        (age !== null ? ' &middot; ' + age + 'y' : '') +
+        (sex ? ' &middot; ' + esc(sex.charAt(0).toUpperCase() + sex.slice(1)) : '') +
+        (patient.mrn ? ' &middot; ' + esc(patient.mrn) : '') +
+      '</span>' +
+    '</div>' +
+    '<div class="ai-header-right">' +
+      '<span class="ai-badge ai-badge-sim">Rule-Based Analysis</span>' +
+    '</div>';
+  wrap.appendChild(header);
+
+  /* ---------- Summary Cards ---------- */
+  var visible = _aiFindings.filter(function(f) { return !_aiDismissed.has(f.id); });
+  var criticalCount = visible.filter(function(f) { return f.severity === AI_SEV.CRITICAL; }).length;
+  var warningCount  = visible.filter(function(f) { return f.severity === AI_SEV.WARNING; }).length;
+  var infoCount     = visible.filter(function(f) { return f.severity === AI_SEV.INFO; }).length;
+
+  // Overall doc score
+  var overallDoc = _aiFindings.find(function(f) { return f.isOverallScore; });
+  var docScore = overallDoc ? overallDoc.score : null;
+
+  var summaryBar = document.createElement('div');
+  summaryBar.className = 'ai-summary-bar';
+
+  var cards = [
+    { label: 'Critical', count: criticalCount, cls: 'ai-card-critical', icon: '\u26A0' },
+    { label: 'Warnings', count: warningCount, cls: 'ai-card-warning', icon: '\u25B2' },
+    { label: 'Info', count: infoCount, cls: 'ai-card-info', icon: '\u2139' },
+    { label: 'Doc Score', count: docScore !== null ? docScore + '/100' : 'N/A', cls: _aiDocScoreClass(docScore), icon: '\u2605' },
+  ];
+
+  cards.forEach(function(c) {
+    var card = document.createElement('div');
+    card.className = 'ai-summary-card ' + c.cls;
+    card.innerHTML =
+      '<div class="ai-card-icon">' + c.icon + '</div>' +
+      '<div class="ai-card-body">' +
+        '<div class="ai-card-count">' + c.count + '</div>' +
+        '<div class="ai-card-label">' + c.label + '</div>' +
+      '</div>';
+    summaryBar.appendChild(card);
+  });
+  wrap.appendChild(summaryBar);
+
+  /* ---------- Tab Bar ---------- */
+  var TABS = [
+    { key: 'overview',       label: 'Overview' },
+    { key: 'drug-safety',    label: 'Drug Safety' },
+    { key: 'care-gaps',      label: 'Care Gaps' },
+    { key: 'documentation',  label: 'Documentation' },
+    { key: 'risk',           label: 'Risk Scores' },
+    { key: 'education',      label: 'Education' },
+  ];
+
+  var tabBar = document.createElement('div');
+  tabBar.className = 'ai-tab-bar';
+
+  var listContainer = document.createElement('div');
+  listContainer.className = 'ai-findings-list';
+
+  TABS.forEach(function(tab) {
+    var btn = document.createElement('button');
+    btn.className = 'ai-tab' + (tab.key === _aiActiveTab ? ' ai-tab-active' : '');
+    var tabFindings = tab.key === 'overview'
+      ? visible
+      : visible.filter(function(f) { return f.category === tab.key; });
+    var count = tabFindings.length;
+    btn.innerHTML = esc(tab.label) + (count > 0 ? ' <span class="ai-tab-count">' + count + '</span>' : '');
+    btn.addEventListener('click', function() {
+      _aiActiveTab = tab.key;
+      tabBar.querySelectorAll('.ai-tab').forEach(function(b) { b.classList.remove('ai-tab-active'); });
+      btn.classList.add('ai-tab-active');
+      _aiRenderFindingsList(listContainer, tab.key);
+    });
+    tabBar.appendChild(btn);
+  });
+  wrap.appendChild(tabBar);
+
+  /* ---------- Findings List ---------- */
+  _aiRenderFindingsList(listContainer, _aiActiveTab);
+  wrap.appendChild(listContainer);
+
+  app.appendChild(wrap);
+}
+
+/* ---------- Render findings for a given tab ---------- */
+function _aiRenderFindingsList(container, tabKey) {
+  container.innerHTML = '';
+
+  var visible = _aiFindings.filter(function(f) { return !_aiDismissed.has(f.id); });
+  var filtered = tabKey === 'overview'
+    ? visible
+    : visible.filter(function(f) { return f.category === tabKey; });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="ai-empty-state">' +
+      '<div class="ai-empty-icon">\u2714</div>' +
+      '<div class="ai-empty-text">No findings in this category</div>' +
+      '</div>';
+    return;
+  }
+
+  // Sort: critical first, then warning, then info
+  var sevOrder = { critical: 0, warning: 1, info: 2 };
+  filtered.sort(function(a, b) { return (sevOrder[a.severity] || 2) - (sevOrder[b.severity] || 2); });
+
+  // Group by category for overview tab
+  if (tabKey === 'overview') {
+    var groups = {};
+    filtered.forEach(function(f) {
+      var cat = f.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(f);
+    });
+
+    var catLabels = {
+      'completeness': 'Chart Completeness',
+      'care-gaps': 'Care Gaps',
+      'drug-safety': 'Drug Interactions',
+      'clinical': 'Clinical Alerts',
+      'documentation': 'Documentation Quality',
+      'risk': 'Risk Scores',
+      'education': 'Patient Education',
+    };
+
+    var catOrder = ['drug-safety', 'clinical', 'completeness', 'care-gaps', 'documentation', 'risk', 'education'];
+    catOrder.forEach(function(cat) {
+      if (groups[cat] && groups[cat].length > 0) {
+        var groupHeader = document.createElement('div');
+        groupHeader.className = 'ai-group-header';
+        groupHeader.textContent = catLabels[cat] || cat;
+        container.appendChild(groupHeader);
+
+        groups[cat].forEach(function(finding) {
+          container.appendChild(_aiBuildFindingCard(finding));
+        });
+      }
+    });
+  } else {
+    filtered.forEach(function(finding) {
+      container.appendChild(_aiBuildFindingCard(finding));
+    });
+  }
+}
+
+/* ---------- Build a single finding card ---------- */
+function _aiBuildFindingCard(finding) {
+  var card = document.createElement('div');
+  card.className = 'ai-finding-card ai-finding-' + finding.severity;
+  card.dataset.findingId = finding.id;
+
+  var iconMap = {
+    critical: '\u26A0',
+    warning:  '\u25B2',
+    info:     '\u2139',
+  };
+  var sevLabelMap = {
+    critical: 'Critical',
+    warning: 'Warning',
+    info: 'Info',
+  };
+
+  // Left icon
+  var iconEl = document.createElement('div');
+  iconEl.className = 'ai-finding-icon ai-icon-' + finding.severity;
+  iconEl.textContent = iconMap[finding.severity] || '\u2139';
+  card.appendChild(iconEl);
+
+  // Content
+  var content = document.createElement('div');
+  content.className = 'ai-finding-content';
+
+  var titleRow = document.createElement('div');
+  titleRow.className = 'ai-finding-title-row';
+
+  var titleEl = document.createElement('div');
+  titleEl.className = 'ai-finding-title';
+  titleEl.textContent = finding.title;
+  titleRow.appendChild(titleEl);
+
+  var sevBadge = document.createElement('span');
+  sevBadge.className = 'ai-sev-badge ai-sev-' + finding.severity;
+  sevBadge.textContent = sevLabelMap[finding.severity] || 'Info';
+  titleRow.appendChild(sevBadge);
+
+  content.appendChild(titleRow);
+
+  var descEl = document.createElement('div');
+  descEl.className = 'ai-finding-desc';
+  descEl.textContent = finding.description;
+  content.appendChild(descEl);
+
+  // Score bar for documentation findings
+  if (typeof finding.score === 'number') {
+    var scoreBar = document.createElement('div');
+    scoreBar.className = 'ai-score-bar';
+    var scoreFill = document.createElement('div');
+    scoreFill.className = 'ai-score-fill ' + _aiDocScoreClass(finding.score);
+    scoreFill.style.width = Math.min(100, Math.max(0, finding.score)) + '%';
+    scoreBar.appendChild(scoreFill);
+    content.appendChild(scoreBar);
+  }
+
+  card.appendChild(content);
+
+  // Actions
+  var actionsEl = document.createElement('div');
+  actionsEl.className = 'ai-finding-actions';
+
+  if (finding.action) {
+    var actionBtn = document.createElement('button');
+    actionBtn.className = 'btn btn-sm btn-primary ai-action-btn';
+    actionBtn.textContent = finding.action.label;
+    actionBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (finding.action.hash) {
+        window.location.hash = finding.action.hash;
+      } else {
+        showToast('Action noted \u2014 ' + finding.action.label, 'success');
+      }
+    });
+    actionsEl.appendChild(actionBtn);
+  }
+
+  var dismissBtn = document.createElement('button');
+  dismissBtn.className = 'btn btn-sm btn-ghost ai-dismiss-btn';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.title = 'Dismiss this finding for this session';
+  dismissBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    _aiDismissed.add(finding.id);
+    card.classList.add('ai-finding-dismissed');
+    setTimeout(function() {
+      card.remove();
+      _aiUpdateSummaryCounts();
+      var listContainer = document.querySelector('.ai-findings-list');
+      if (listContainer) {
+        var remaining = listContainer.querySelectorAll('.ai-finding-card');
+        if (remaining.length === 0) {
+          _aiRenderFindingsList(listContainer, _aiActiveTab);
+        }
+      }
+    }, 300);
+    showToast('Finding dismissed', 'success');
+  });
+  actionsEl.appendChild(dismissBtn);
+
+  card.appendChild(actionsEl);
+
+  return card;
+}
+
+/* ---------- Update summary card counts after dismiss ---------- */
+function _aiUpdateSummaryCounts() {
+  var visible = _aiFindings.filter(function(f) { return !_aiDismissed.has(f.id); });
+  var counts = {
+    critical: visible.filter(function(f) { return f.severity === AI_SEV.CRITICAL; }).length,
+    warning:  visible.filter(function(f) { return f.severity === AI_SEV.WARNING; }).length,
+    info:     visible.filter(function(f) { return f.severity === AI_SEV.INFO; }).length,
+  };
+
+  var summaryCards = document.querySelectorAll('.ai-summary-card');
+  if (summaryCards.length >= 3) {
+    var countEl0 = summaryCards[0].querySelector('.ai-card-count');
+    var countEl1 = summaryCards[1].querySelector('.ai-card-count');
+    var countEl2 = summaryCards[2].querySelector('.ai-card-count');
+    if (countEl0) countEl0.textContent = counts.critical;
+    if (countEl1) countEl1.textContent = counts.warning;
+    if (countEl2) countEl2.textContent = counts.info;
+  }
+
+  // Update tab counts
+  var tabs = document.querySelectorAll('.ai-tab');
+  var TABS_MAP = ['overview', 'drug-safety', 'care-gaps', 'documentation', 'risk', 'education'];
+  tabs.forEach(function(tab, i) {
+    var key = TABS_MAP[i];
+    if (!key) return;
+    var tabFindings = key === 'overview'
+      ? visible
+      : visible.filter(function(f) { return f.category === key; });
+    var countEl = tab.querySelector('.ai-tab-count');
+    if (countEl) {
+      countEl.textContent = tabFindings.length;
+      if (tabFindings.length === 0) countEl.remove();
+    } else if (tabFindings.length > 0) {
+      var span = document.createElement('span');
+      span.className = 'ai-tab-count';
+      span.textContent = tabFindings.length;
+      tab.appendChild(span);
+    }
+  });
+}
+
+/* ---------- Utility helpers ---------- */
+function _aiCapitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function _aiDocScoreClass(score) {
+  if (score === null || score === undefined) return 'ai-card-neutral';
+  if (score >= 80) return 'ai-card-good';
+  if (score >= 60) return 'ai-card-ok';
+  if (score >= 40) return 'ai-card-poor';
+  return 'ai-card-critical';
+}
+
+/* ============================================================
+   STYLES — injected once on first render
+   ============================================================ */
+(function _injectAIReviewStyles() {
+  if (document.getElementById('ai-review-styles')) return;
+  var style = document.createElement('style');
+  style.id = 'ai-review-styles';
+  style.textContent = [
+    '/* ===== AI Review Dashboard ===== */',
+    '.ai-dashboard { max-width:1100px; margin:0 auto; padding:24px 20px 40px; }',
+
+    '/* Header */',
+    '.ai-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px; }',
+    '.ai-header-left { display:flex; flex-direction:column; gap:2px; }',
+    '.ai-title { font-size:22px; font-weight:700; color:var(--text,#1a1a2e); margin:0; }',
+    '.ai-subtitle { font-size:14px; color:var(--text-secondary,#6b7280); }',
+    '.ai-badge-sim { display:inline-block; padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; background:var(--bg-secondary,#f3f4f6); color:var(--text-secondary,#6b7280); border:1px solid var(--border,#e5e7eb); }',
+
+    '/* Summary Cards */',
+    '.ai-summary-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }',
+    '.ai-summary-card { display:flex; align-items:center; gap:12px; padding:16px; border-radius:10px; border:1px solid var(--border,#e5e7eb); background:var(--bg,#fff); transition:box-shadow .15s; }',
+    '.ai-summary-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.06); }',
+    '.ai-card-icon { font-size:24px; width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:10px; flex-shrink:0; }',
+    '.ai-card-critical .ai-card-icon { background:#fef2f2; color:#dc2626; }',
+    '.ai-card-warning .ai-card-icon { background:#fffbeb; color:#d97706; }',
+    '.ai-card-info .ai-card-icon { background:#eff6ff; color:#2563eb; }',
+    '.ai-card-neutral .ai-card-icon { background:#f3f4f6; color:#6b7280; }',
+    '.ai-card-good .ai-card-icon { background:#f0fdf4; color:#16a34a; }',
+    '.ai-card-ok .ai-card-icon { background:#eff6ff; color:#2563eb; }',
+    '.ai-card-poor .ai-card-icon { background:#fffbeb; color:#d97706; }',
+    '.ai-card-count { font-size:22px; font-weight:700; line-height:1.1; color:var(--text,#1a1a2e); }',
+    '.ai-card-label { font-size:12px; color:var(--text-secondary,#6b7280); text-transform:uppercase; letter-spacing:.03em; }',
+
+    '/* Tabs */',
+    '.ai-tab-bar { display:flex; gap:4px; border-bottom:2px solid var(--border,#e5e7eb); margin-bottom:20px; overflow-x:auto; -webkit-overflow-scrolling:touch; }',
+    '.ai-tab { padding:10px 16px; font-size:14px; font-weight:500; background:none; border:none; border-bottom:2px solid transparent; margin-bottom:-2px; cursor:pointer; color:var(--text-secondary,#6b7280); white-space:nowrap; transition:color .15s,border-color .15s; }',
+    '.ai-tab:hover { color:var(--primary,#2563eb); }',
+    '.ai-tab-active { color:var(--primary,#2563eb); border-bottom-color:var(--primary,#2563eb); font-weight:600; }',
+    '.ai-tab-count { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; padding:0 6px; border-radius:10px; font-size:11px; font-weight:600; background:var(--bg-secondary,#f3f4f6); color:var(--text-secondary,#6b7280); margin-left:6px; }',
+
+    '/* Findings List */',
+    '.ai-findings-list { min-height:200px; }',
+    '.ai-group-header { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-secondary,#6b7280); padding:14px 0 6px; border-bottom:1px solid var(--border,#e5e7eb); margin-bottom:8px; }',
+    '.ai-group-header:first-child { padding-top:0; }',
+
+    '/* Finding Card */',
+    '.ai-finding-card { display:flex; align-items:flex-start; gap:12px; padding:14px 16px; border-radius:8px; border:1px solid var(--border,#e5e7eb); background:var(--bg,#fff); margin-bottom:8px; transition:opacity .3s,transform .3s,box-shadow .15s; }',
+    '.ai-finding-card:hover { box-shadow:0 1px 6px rgba(0,0,0,.05); }',
+    '.ai-finding-dismissed { opacity:0; transform:translateX(20px); pointer-events:none; }',
+
+    '/* Severity left border */',
+    '.ai-finding-critical { border-left:4px solid #dc2626; }',
+    '.ai-finding-warning { border-left:4px solid #d97706; }',
+    '.ai-finding-info { border-left:4px solid #2563eb; }',
+
+    '/* Finding Icon */',
+    '.ai-finding-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; margin-top:2px; }',
+    '.ai-icon-critical { background:#fef2f2; color:#dc2626; }',
+    '.ai-icon-warning { background:#fffbeb; color:#d97706; }',
+    '.ai-icon-info { background:#eff6ff; color:#2563eb; }',
+
+    '/* Finding Content */',
+    '.ai-finding-content { flex:1; min-width:0; }',
+    '.ai-finding-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; }',
+    '.ai-finding-title { font-size:14px; font-weight:600; color:var(--text,#1a1a2e); }',
+    '.ai-sev-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.02em; }',
+    '.ai-sev-critical { background:#fef2f2; color:#dc2626; }',
+    '.ai-sev-warning { background:#fffbeb; color:#d97706; }',
+    '.ai-sev-info { background:#eff6ff; color:#2563eb; }',
+    '.ai-finding-desc { font-size:13px; color:var(--text-secondary,#6b7280); line-height:1.5; }',
+
+    '/* Score Bar */',
+    '.ai-score-bar { height:6px; background:var(--bg-secondary,#f3f4f6); border-radius:3px; margin-top:8px; overflow:hidden; }',
+    '.ai-score-fill { height:100%; border-radius:3px; transition:width .5s ease; }',
+    '.ai-score-fill.ai-card-good { background:#16a34a; }',
+    '.ai-score-fill.ai-card-ok { background:#2563eb; }',
+    '.ai-score-fill.ai-card-poor { background:#d97706; }',
+    '.ai-score-fill.ai-card-critical { background:#dc2626; }',
+    '.ai-score-fill.ai-card-neutral { background:#9ca3af; }',
+
+    '/* Finding Actions */',
+    '.ai-finding-actions { display:flex; flex-direction:column; gap:6px; flex-shrink:0; align-self:center; }',
+    '.ai-action-btn { white-space:nowrap; font-size:12px; }',
+    '.ai-dismiss-btn { font-size:12px; color:var(--text-secondary,#6b7280); opacity:.6; white-space:nowrap; }',
+    '.ai-dismiss-btn:hover { opacity:1; }',
+
+    '/* Empty State */',
+    '.ai-empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; text-align:center; }',
+    '.ai-empty-icon { font-size:48px; color:#16a34a; margin-bottom:12px; }',
+    '.ai-empty-text { font-size:15px; color:var(--text-secondary,#6b7280); }',
+    '.ai-empty { padding:40px 20px; text-align:center; color:var(--text-secondary,#6b7280); font-size:15px; }',
+
+    '/* Responsive */',
+    '@media (max-width:768px) {',
+    '  .ai-summary-bar { grid-template-columns:repeat(2,1fr); }',
+    '  .ai-finding-card { flex-wrap:wrap; }',
+    '  .ai-finding-actions { flex-direction:row; width:100%; padding-top:8px; border-top:1px solid var(--border,#e5e7eb); margin-top:4px; }',
+    '  .ai-dashboard { padding:16px 12px 32px; }',
+    '}',
+    '@media (max-width:480px) {',
+    '  .ai-summary-bar { grid-template-columns:1fr 1fr; gap:8px; }',
+    '  .ai-summary-card { padding:12px; }',
+    '  .ai-tab { padding:8px 12px; font-size:13px; }',
+    '}',
+  ].join('\n');
+  document.head.appendChild(style);
+})();
