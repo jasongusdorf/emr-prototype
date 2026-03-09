@@ -54,7 +54,7 @@ function renderMessages() {
   // Message threads
   const threads = _getMessageThreads();
   if (threads.length === 0) {
-    card.appendChild(buildEmptyState('💬', 'No messages', 'Send a message to a patient to get started.'));
+    card.appendChild(buildEmptyState('', 'No messages', 'Send a message to a patient to get started.'));
   } else {
     threads.forEach(thread => {
       const patient = getPatient(thread.patientId);

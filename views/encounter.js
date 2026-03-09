@@ -1083,7 +1083,7 @@ function buildMedRecBanner(encounter, note) {
     const badge = document.createElement('div');
     badge.className = 'med-rec-complete-badge';
     const actions = existingRec.map(r => r.medName + ': ' + r.action).join(', ');
-    badge.textContent = '✓ Medication reconciliation complete — ' + actions;
+    badge.textContent = ' Medication reconciliation complete — ' + actions;
     container.appendChild(badge);
     return container;
   }
@@ -1099,7 +1099,7 @@ function buildMedRecBanner(encounter, note) {
 
   const title = document.createElement('span');
   title.className = 'med-rec-banner-title';
-  title.textContent = '⚠ Medication Reconciliation Needed — ' + currentMeds.length + ' current medication(s)';
+  title.textContent = ' Medication Reconciliation Needed — ' + currentMeds.length + ' current medication(s)';
 
   const btns = document.createElement('div');
   btns.style.display = 'flex'; btns.style.gap = '8px';
@@ -1201,7 +1201,7 @@ function buildMedRecBanner(encounter, note) {
     const badge = document.createElement('div');
     badge.className = 'med-rec-complete-badge';
     const actions = records.map(r => r.medName + ': ' + r.action).join(', ');
-    badge.textContent = '✓ Medication reconciliation complete — ' + actions;
+    badge.textContent = ' Medication reconciliation complete — ' + actions;
     container.appendChild(badge);
 
     const msg = ordersCreated > 0

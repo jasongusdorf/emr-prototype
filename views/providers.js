@@ -66,7 +66,7 @@ function renderProviders() {
 
     if (filtered.length === 0) {
       tableWrap.innerHTML = '';
-      tableWrap.appendChild(buildEmptyState('👨‍⚕️', q ? 'No matching providers' : 'No providers yet', q ? 'Try a different search term.' : 'Add a provider to get started.'));
+      tableWrap.appendChild(buildEmptyState('', q ? 'No matching providers' : 'No providers yet', q ? 'Try a different search term.' : 'Add a provider to get started.'));
       return;
     }
 

@@ -961,13 +961,13 @@ var _CE_HOSPITAL_NAMES = [
 var _CE_RECORD_TYPES = ['encounter', 'lab', 'medication', 'allergy', 'immunization', 'problem', 'note'];
 
 var _CE_TYPE_ICONS = {
-  encounter:    '🏥',
-  lab:          '🔬',
-  medication:   '💊',
-  allergy:      '⚠️',
-  immunization: '💉',
-  problem:      '📋',
-  note:         '📝',
+  encounter:    '',
+  lab:          '',
+  medication:   '',
+  allergy:      '',
+  immunization: '',
+  problem:      '',
+  note:         '',
 };
 
 /* ---------- Data Layer ---------- */
@@ -1261,7 +1261,7 @@ function renderCareEverywhere(patientId, container) {
     var emptyEl = document.createElement('div');
     emptyEl.className = 'ce-empty';
     emptyEl.innerHTML =
-      '<div style="font-size:36px;margin-bottom:12px;">🔗</div>' +
+      '<div style="font-size:36px;margin-bottom:12px;"></div>' +
       '<div style="font-weight:600;margin-bottom:4px;">No external records</div>' +
       '<div style="color:var(--text-muted);font-size:13px;">Click "Refresh / Query External Systems" to search for records from other health systems.</div>';
     container.appendChild(emptyEl);
@@ -1317,7 +1317,7 @@ function _buildRecordCard(record, patientId, parentContainer) {
 
   var icon = document.createElement('span');
   icon.className = 'ce-record-type-icon';
-  icon.textContent = _CE_TYPE_ICONS[record.recordType] || '📄';
+  icon.textContent = _CE_TYPE_ICONS[record.recordType] || '';
 
   var info = document.createElement('div');
   info.className = 'ce-record-info';
@@ -1787,7 +1787,7 @@ function openCareEverywhereSearch(patientId) {
 
             var icon = document.createElement('span');
             icon.className = 'ce-record-type-icon';
-            icon.textContent = _CE_TYPE_ICONS[record.recordType] || '📄';
+            icon.textContent = _CE_TYPE_ICONS[record.recordType] || '';
 
             var info = document.createElement('div');
             info.className = 'ce-search-result-info';

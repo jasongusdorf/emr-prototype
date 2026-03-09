@@ -5,7 +5,7 @@
    ============================================================ */
 
 const ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult'];
-const ORDER_TYPE_ICONS = { Medication: '💊', Lab: '🧪', Imaging: '🩻', Consult: '👨‍⚕️' };
+const ORDER_TYPE_ICONS = { Medication: '', Lab: '', Imaging: '', Consult: '' };
 const PRIORITIES = ['Routine', 'Urgent', 'STAT'];
 
 // Common lab panels
@@ -207,7 +207,7 @@ function renderOrderList(container, encounterId) {
   const orders = getOrdersByEncounter(encounterId);
 
   if (orders.length === 0) {
-    const empty = buildEmptyState('📋', 'No orders yet', 'Use the form to place an order.');
+    const empty = buildEmptyState('', 'No orders yet', 'Use the form to place an order.');
     body.appendChild(empty);
     card.appendChild(body);
     container.appendChild(card);
@@ -962,7 +962,7 @@ function placeOrder(encounter, patient) {
     if (majorDDI.length > 0) {
       const ddiText = majorDDI.map(d => '<strong>' + esc(d.drug1) + ' + ' + esc(d.drug2) + '</strong>: ' + esc(d.effect)).join('<br><br>');
       confirmAction({
-        title: '⚠ MAJOR Drug Interaction',
+        title: ' MAJOR Drug Interaction',
         message: ddiText + (moderateDDI.length ? '<br><br><em>+ ' + moderateDDI.length + ' moderate interaction(s)</em>' : ''),
         confirmLabel: 'Override & Continue',
         danger: true,
@@ -1193,7 +1193,7 @@ function _continueAfterDupeCheck(encounter, patient, type, detail, priority, not
     if (majorDDI.length > 0) {
       const ddiText = majorDDI.map(d => '<strong>' + esc(d.drug1) + ' + ' + esc(d.drug2) + '</strong>: ' + esc(d.effect)).join('<br><br>');
       confirmAction({
-        title: '⚠ MAJOR Drug Interaction',
+        title: ' MAJOR Drug Interaction',
         message: ddiText,
         confirmLabel: 'Override & Continue',
         danger: true,
@@ -1213,7 +1213,7 @@ function _proceedAfterDDI(type, detail, patient, doSave) {
     if (matches.length > 0) {
       const allergyText = matches.map(a => a.allergen + ' (' + a.severity + ' — ' + a.reaction + ')').join(', ');
       confirmAction({
-        title: '⚠ Allergy Alert — Override?',
+        title: ' Allergy Alert — Override?',
         message: 'Patient has a recorded allergy to: ' + allergyText + '. Are you sure you want to place this order?',
         confirmLabel: 'Override & Place Order',
         danger: true,
@@ -1258,7 +1258,7 @@ function _checkDrugAllergy(drugName, patientId, medEntry) {
   // Allergy check
   const matches = _matchingAllergies(drugName, patientId, medEntry);
   if (matches.length > 0) {
-    parts.push('⚠ Allergy: ' + matches.map(a => a.allergen + ' (' + a.severity + ' — ' + a.reaction + ')').join('; '));
+    parts.push(' Allergy: ' + matches.map(a => a.allergen + ' (' + a.severity + ' — ' + a.reaction + ')').join('; '));
   }
 
   // Drug-drug interaction check
@@ -1268,7 +1268,7 @@ function _checkDrugAllergy(drugName, patientId, medEntry) {
       const majorDDI = ddiResults.filter(d => d.severity === 'major');
       const moderateDDI = ddiResults.filter(d => d.severity === 'moderate');
       if (majorDDI.length > 0) {
-        parts.push('⚠ MAJOR Interaction: ' + majorDDI.map(d => d.drug2 + ' — ' + d.effect).join('; '));
+        parts.push(' MAJOR Interaction: ' + majorDDI.map(d => d.drug2 + ' — ' + d.effect).join('; '));
       }
       if (moderateDDI.length > 0) {
         parts.push('Moderate Interaction: ' + moderateDDI.map(d => d.drug2 + ' — ' + d.effect).join('; '));

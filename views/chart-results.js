@@ -108,7 +108,7 @@ function buildLabResultsCard(patientId) {
   card.appendChild(hdr);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('🧪', 'No lab results', 'Add lab results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No lab results', 'Add lab results for this patient.'));
     return card;
   }
 
@@ -456,7 +456,7 @@ function buildImagingResultsCard(patientId) {
   const card = chartCard('Imaging Results', addBtn);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('📷', 'No imaging results', 'Add imaging results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No imaging results', 'Add imaging results for this patient.'));
     return card;
   }
 
@@ -523,7 +523,7 @@ function buildMicroResultsCard(patientId) {
   const card = chartCard('Microbiology Results', addBtn);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('🦠', 'No microbiology results', 'Add micro results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No microbiology results', 'Add micro results for this patient.'));
     return card;
   }
 
@@ -598,7 +598,7 @@ function buildPathResultsCard(patientId) {
   const card = chartCard('Pathology Results', addBtn);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('🔬', 'No pathology results', 'Add pathology results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No pathology results', 'Add pathology results for this patient.'));
     return card;
   }
 

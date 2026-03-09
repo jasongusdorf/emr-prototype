@@ -53,7 +53,7 @@ function renderSchedule() {
   if (getEncounterMode() === 'inpatient') {
     setTopbar({ title: 'Schedule', meta: '', actions: '' });
     setActiveNav('schedule');
-    app.appendChild(buildEmptyState('📅', 'Not available', 'Schedule is only available in Outpatient mode.'));
+    app.appendChild(buildEmptyState('', 'Not available', 'Schedule is only available in Outpatient mode.'));
     return;
   }
 

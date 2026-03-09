@@ -134,8 +134,8 @@ function renderChart(patientId) {
     title:   '',
     meta:    '',
     actions: `<a href="#patients" class="btn btn-secondary btn-sm no-print">← Patients</a>
-              <button class="btn btn-secondary btn-sm no-print" id="chart-search-toggle">🔍 Search</button>
-              <button class="btn btn-secondary btn-sm no-print" id="btn-print-summary">🖨 Print Summary</button>`,
+              <button class="btn btn-secondary btn-sm no-print" id="chart-search-toggle"> Search</button>
+              <button class="btn btn-secondary btn-sm no-print" id="btn-print-summary"> Print Summary</button>`,
   });
   setActiveNav('dashboard');
 
@@ -299,7 +299,7 @@ function buildSearchPanel(patientId) {
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'chart-search-close';
-  closeBtn.textContent = '✕';
+  closeBtn.textContent = '';
   closeBtn.setAttribute('aria-label', 'Close search');
   closeBtn.addEventListener('click', () => {
     panel.classList.add('hidden');
@@ -779,7 +779,7 @@ function _buildEncNotesContent(container, patientId, visitType) {
   container.appendChild(headerWrap);
 
   if (allEncs.length === 0) {
-    container.appendChild(buildEmptyState('📋',
+    container.appendChild(buildEmptyState('',
       'No ' + visitType.toLowerCase() + ' encounters',
       'Create a new ' + visitType.toLowerCase() + ' encounter to get started.'));
     return;
@@ -851,7 +851,7 @@ function _buildDischargeContent(container, patientId) {
     .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
 
   if (inpatientEncs.length === 0) {
-    container.appendChild(buildEmptyState('🏥', 'No inpatient encounters', 'Create an inpatient encounter to use discharge.'));
+    container.appendChild(buildEmptyState('', 'No inpatient encounters', 'Create an inpatient encounter to use discharge.'));
     return;
   }
 
@@ -1182,7 +1182,7 @@ function buildAllergiesCard(patientId) {
   card.querySelector('.card-header').insertBefore(countEl, addBtn);
 
   if (allergies.length === 0) {
-    card.appendChild(buildEmptyState('🚫', 'No allergies recorded',
+    card.appendChild(buildEmptyState('', 'No allergies recorded',
       'Add known drug, food, or environmental allergies.'));
     return card;
   }
@@ -1247,7 +1247,7 @@ function buildSocialHistoryCard(patientId) {
   card.id = 'section-social-history';
 
   if (!sh) {
-    card.appendChild(buildEmptyState('👤', 'No social history',
+    card.appendChild(buildEmptyState('', 'No social history',
       'Add tobacco, alcohol, occupation, and lifestyle details.'));
     return card;
   }
@@ -1312,7 +1312,7 @@ function buildPMHCard(patientId) {
   card.id = 'section-pmh';
 
   if (diagnoses.length === 0) {
-    card.appendChild(buildEmptyState('🩺', 'No diagnoses on record',
+    card.appendChild(buildEmptyState('', 'No diagnoses on record',
       'Add past and current medical diagnoses.'));
     return card;
   }
@@ -1399,7 +1399,7 @@ function buildPMHCard(patientId) {
     evSaveBtn.onclick = () => {
       savePatientDiagnosis({ id: diag.id, patientId, evidenceNotes: evTextarea.value });
       evSaveIndicator.className = 'autosave-indicator saved';
-      evSaveIndicator.textContent = '✓ Saved';
+      evSaveIndicator.textContent = ' Saved';
       evidenceDot.className = 'pmh-evidence-dot' + (evTextarea.value ? ' has-evidence' : '');
       setTimeout(() => {
         evSaveIndicator.textContent = '';
@@ -1446,7 +1446,7 @@ function buildFamilyHistoryCard(patientId) {
   card.id = 'section-family-history';
 
   if (!fh) {
-    card.appendChild(buildEmptyState('👨‍👩‍👧', 'No family history recorded',
+    card.appendChild(buildEmptyState('', 'No family history recorded',
       'Add known hereditary conditions and family medical history.'));
     return card;
   }
@@ -1463,7 +1463,7 @@ function buildFamilyHistoryCard(patientId) {
 
   const hasAny = FH_FIELDS.some(([key]) => fh[key]);
   if (!hasAny) {
-    card.appendChild(buildEmptyState('👨‍👩‍👧', 'No family history recorded',
+    card.appendChild(buildEmptyState('', 'No family history recorded',
       'Add known hereditary conditions and family medical history.'));
     return card;
   }
@@ -1554,7 +1554,7 @@ function buildMedicationsCard(patientId, setting) {
   const past    = meds.filter(m => m.status === 'Past');
 
   if (meds.length === 0) {
-    card.appendChild(buildEmptyState('💊', 'No ' + (setting ? setting.toLowerCase() + ' ' : '') + 'medications recorded',
+    card.appendChild(buildEmptyState('', 'No ' + (setting ? setting.toLowerCase() + ' ' : '') + 'medications recorded',
       'Add medications using the button above.'));
     return card;
   }
@@ -1739,7 +1739,7 @@ function buildSurgeriesCard(patientId) {
   card.id = 'section-surgeries';
 
   if (surgeries.length === 0) {
-    card.appendChild(buildEmptyState('🏥', 'No surgical history',
+    card.appendChild(buildEmptyState('', 'No surgical history',
       'Add past procedures and surgeries.'));
     return card;
   }
@@ -1825,7 +1825,7 @@ function buildVitalsTrendCard(patientId) {
   rows.sort((a, b) => new Date(b.enc.dateTime) - new Date(a.enc.dateTime));
 
   if (rows.length === 0) {
-    card.appendChild(buildEmptyState('📊', 'No vitals recorded', 'Vitals will appear here as encounters are created.'));
+    card.appendChild(buildEmptyState('', 'No vitals recorded', 'Vitals will appear here as encounters are created.'));
     return card;
   }
 
@@ -1899,7 +1899,7 @@ function buildProblemsCard(patientId) {
   card.id = 'section-problems';
 
   if (problems.length === 0) {
-    card.appendChild(buildEmptyState('🩺', 'No active problems', 'Add problems to the patient problem list.'));
+    card.appendChild(buildEmptyState('', 'No active problems', 'Add problems to the patient problem list.'));
     return card;
   }
 
@@ -2008,7 +2008,7 @@ function buildPreventiveCareCard(patient, patientId) {
   card.id = 'section-preventive-care';
 
   if (applicable.length === 0) {
-    card.appendChild(buildEmptyState('🛡', 'No applicable screenings', 'No age/sex-appropriate screenings found.'));
+    card.appendChild(buildEmptyState('', 'No applicable screenings', 'No age/sex-appropriate screenings found.'));
     return card;
   }
 
@@ -2194,7 +2194,7 @@ function buildLabResultsCard(patientId) {
   card.appendChild(hdr);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('🧪', 'No lab results', 'Add lab results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No lab results', 'Add lab results for this patient.'));
     return card;
   }
 
@@ -2542,7 +2542,7 @@ function buildImagingResultsCard(patientId) {
   const card = chartCard('Imaging Results', addBtn);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('📷', 'No imaging results', 'Add imaging results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No imaging results', 'Add imaging results for this patient.'));
     return card;
   }
 
@@ -2609,7 +2609,7 @@ function buildMicroResultsCard(patientId) {
   const card = chartCard('Microbiology Results', addBtn);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('🦠', 'No microbiology results', 'Add micro results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No microbiology results', 'Add micro results for this patient.'));
     return card;
   }
 
@@ -2684,7 +2684,7 @@ function buildPathResultsCard(patientId) {
   const card = chartCard('Pathology Results', addBtn);
 
   if (results.length === 0) {
-    card.appendChild(buildEmptyState('🔬', 'No pathology results', 'Add pathology results for this patient.'));
+    card.appendChild(buildEmptyState('', 'No pathology results', 'Add pathology results for this patient.'));
     return card;
   }
 
@@ -2753,7 +2753,7 @@ function buildImmunizationsCard(patientId) {
   card.id = 'section-immunizations';
 
   if (imms.length === 0) {
-    card.appendChild(buildEmptyState('💉', 'No immunizations recorded', 'Add vaccine records for this patient.'));
+    card.appendChild(buildEmptyState('', 'No immunizations recorded', 'Add vaccine records for this patient.'));
     return card;
   }
 
@@ -2807,7 +2807,7 @@ function buildReferralsCard(patientId) {
   card.id = 'section-referrals';
 
   if (referrals.length === 0) {
-    card.appendChild(buildEmptyState('📤', 'No referrals', 'Add referrals to specialty care.'));
+    card.appendChild(buildEmptyState('', 'No referrals', 'Add referrals to specialty care.'));
     return card;
   }
 
@@ -2881,7 +2881,7 @@ function buildDocumentsCard(patientId) {
   card.id = 'section-documents';
 
   if (docs.length === 0) {
-    card.appendChild(buildEmptyState('📄', 'No documents', 'Upload clinical documents for this patient.'));
+    card.appendChild(buildEmptyState('', 'No documents', 'Upload clinical documents for this patient.'));
     return card;
   }
 
@@ -3037,7 +3037,7 @@ function buildChartOrdersCard(patientId) {
   card.querySelector('.card-header').insertBefore(countEl, placeBtn);
 
   if (allOrders.length === 0) {
-    card.appendChild(buildEmptyState('📋', 'No orders placed',
+    card.appendChild(buildEmptyState('', 'No orders placed',
       'Place orders through any open encounter.'));
     return card;
   }
@@ -3171,7 +3171,7 @@ function buildEncountersCard(patientId) {
   card.querySelector('.card-header').appendChild(countEl);
 
   if (encounters.length === 0) {
-    card.appendChild(buildEmptyState('📋', 'No encounters',
+    card.appendChild(buildEmptyState('', 'No encounters',
       'Create a new encounter to start a visit note.'));
     return card;
   }
@@ -3326,7 +3326,7 @@ function buildPastNotesCard(patientId) {
     });
 
     if (filtered.length === 0) {
-      cardsContainer.appendChild(buildEmptyState('📝', 'No notes match', 'Try adjusting your filters.'));
+      cardsContainer.appendChild(buildEmptyState('', 'No notes match', 'Try adjusting your filters.'));
       return;
     }
 

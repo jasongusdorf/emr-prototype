@@ -19,7 +19,7 @@ function buildChartOrdersCard(patientId) {
   card.querySelector('.card-header').insertBefore(countEl, placeBtn);
 
   if (allOrders.length === 0) {
-    card.appendChild(buildEmptyState('📋', 'No orders placed',
+    card.appendChild(buildEmptyState('', 'No orders placed',
       'Place orders through any open encounter.'));
     return card;
   }

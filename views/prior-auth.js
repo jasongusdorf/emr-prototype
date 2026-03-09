@@ -1174,7 +1174,7 @@ function openAppealModal(paId) {
     pa.appeals.forEach(function(a) {
       bodyHTML += '<div class="ai-finding" style="margin-bottom:8px;">' +
         '<div class="ai-finding-icon ' + (a.outcome === 'Approved' ? 'success' : a.outcome === 'Denied' ? 'critical' : 'info') + '">' +
-        (a.outcome === 'Approved' ? '✓' : a.outcome === 'Denied' ? '✕' : '⏳') + '</div>' +
+        (a.outcome === 'Approved' ? '' : a.outcome === 'Denied' ? '' : '⏳') + '</div>' +
         '<div class="ai-finding-body">' +
         '<div class="ai-finding-title">' + esc(a.type) + ' — ' + esc(a.outcome || 'Pending') + '</div>' +
         '<div class="ai-finding-desc">' + esc(a.rationale || '').slice(0, 100) +

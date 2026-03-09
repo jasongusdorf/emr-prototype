@@ -781,12 +781,12 @@ function showLogin() {
 function initLoginDarkToggle() {
   const btn = document.getElementById('login-dark-toggle');
   if (!btn) return;
-  btn.textContent = document.body.classList.contains('dark-mode') ? '🌙' : '☀️';
+  btn.textContent = document.body.classList.contains('dark-mode') ? '' : '';
   btn.addEventListener('click', () => {
     const isDark = document.body.classList.toggle('dark-mode');
     document.body.classList.toggle('light-mode', !isDark);
     localStorage.setItem('emr_dark_mode', isDark ? 'dark' : 'light');
-    btn.textContent = isDark ? '🌙' : '☀️';
+    btn.textContent = isDark ? '' : '';
   });
 }
 
@@ -1221,7 +1221,7 @@ function renderRecents() {
   if (items.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.innerHTML = '<div class="empty-state-icon">🕐</div><div class="empty-state-title">No recent patients</div><div class="empty-state-body">No patients viewed in the selected period.</div>';
+    empty.innerHTML = '<div class="empty-state-icon"></div><div class="empty-state-title">No recent patients</div><div class="empty-state-body">No patients viewed in the selected period.</div>';
     app.appendChild(empty);
     return;
   }
@@ -2639,7 +2639,7 @@ function initOrderQueue() {
   queue.innerHTML =
     '<div class="order-queue-bar" id="order-queue-bar">' +
       '<div class="order-queue-bar-left">' +
-        '<span class="order-queue-icon">📋</span>' +
+        '<span class="order-queue-icon"></span>' +
         '<span class="order-queue-label">Order Queue</span>' +
         '<span class="order-queue-badge" id="order-queue-badge">0</span>' +
       '</div>' +
@@ -2727,7 +2727,7 @@ function renderOrderQueueBody() {
       if (o.type === 'Medication') sub = [d.route, d.frequency, d.duration].filter(Boolean).join(', ');
       else if (o.type === 'Lab') sub = [d.frequency !== 'Once' ? d.frequency : '', d.urgency !== 'Routine' ? d.urgency : '', d.specimen].filter(Boolean).join(' · ');
 
-      var typeIcon = { Medication: '💊', Lab: '🧪', Imaging: '🩻', Consult: '👨‍⚕️' }[o.type] || '📄';
+      var typeIcon = { Medication: '', Lab: '', Imaging: '', Consult: '' }[o.type] || '';
       var priBadge = o.priority === 'STAT' ? ' <span class="oq-pri-stat">STAT</span>' :
                      o.priority === 'Urgent' ? ' <span class="oq-pri-urgent">Urgent</span>' : '';
 
@@ -2739,7 +2739,7 @@ function renderOrderQueueBody() {
       html += '</div></div>';
       html += '<div class="oq-order-actions">' +
         '<button class="btn btn-sm btn-primary oq-sign-btn" data-order-id="' + o.id + '">Sign</button>' +
-        '<button class="btn btn-sm btn-secondary oq-cancel-btn" data-order-id="' + o.id + '" title="Cancel order">✕</button>' +
+        '<button class="btn btn-sm btn-secondary oq-cancel-btn" data-order-id="' + o.id + '" title="Cancel order"></button>' +
         '</div>';
       html += '</div>';
     });

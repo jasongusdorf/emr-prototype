@@ -160,7 +160,7 @@ function buildImmunizationsCard(patientId) {
   card.id = 'section-immunizations';
 
   if (imms.length === 0) {
-    card.appendChild(buildEmptyState('💉', 'No immunizations recorded', 'Add vaccine records for this patient.'));
+    card.appendChild(buildEmptyState('', 'No immunizations recorded', 'Add vaccine records for this patient.'));
     return card;
   }
 
@@ -214,7 +214,7 @@ function buildReferralsCard(patientId) {
   card.id = 'section-referrals';
 
   if (referrals.length === 0) {
-    card.appendChild(buildEmptyState('📤', 'No referrals', 'Add referrals to specialty care.'));
+    card.appendChild(buildEmptyState('', 'No referrals', 'Add referrals to specialty care.'));
     return card;
   }
 
@@ -288,7 +288,7 @@ function buildDocumentsCard(patientId) {
   card.id = 'section-documents';
 
   if (docs.length === 0) {
-    card.appendChild(buildEmptyState('📄', 'No documents', 'Upload clinical documents for this patient.'));
+    card.appendChild(buildEmptyState('', 'No documents', 'Upload clinical documents for this patient.'));
     return card;
   }
 

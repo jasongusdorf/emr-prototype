@@ -162,7 +162,7 @@ function buildAllergiesCard(patientId) {
   card.querySelector('.card-header').insertBefore(countEl, addBtn);
 
   if (allergies.length === 0) {
-    card.appendChild(buildEmptyState('🚫', 'No allergies recorded',
+    card.appendChild(buildEmptyState('', 'No allergies recorded',
       'Add known drug, food, or environmental allergies.'));
     return card;
   }
@@ -227,7 +227,7 @@ function buildSocialHistoryCard(patientId) {
   card.id = 'section-social-history';
 
   if (!sh) {
-    card.appendChild(buildEmptyState('👤', 'No social history',
+    card.appendChild(buildEmptyState('', 'No social history',
       'Add tobacco, alcohol, occupation, and lifestyle details.'));
     return card;
   }
@@ -292,7 +292,7 @@ function buildPMHCard(patientId) {
   card.id = 'section-pmh';
 
   if (diagnoses.length === 0) {
-    card.appendChild(buildEmptyState('🩺', 'No diagnoses on record',
+    card.appendChild(buildEmptyState('', 'No diagnoses on record',
       'Add past and current medical diagnoses.'));
     return card;
   }
@@ -379,7 +379,7 @@ function buildPMHCard(patientId) {
     evSaveBtn.onclick = () => {
       savePatientDiagnosis({ id: diag.id, patientId, evidenceNotes: evTextarea.value });
       evSaveIndicator.className = 'autosave-indicator saved';
-      evSaveIndicator.textContent = '✓ Saved';
+      evSaveIndicator.textContent = ' Saved';
       evidenceDot.className = 'pmh-evidence-dot' + (evTextarea.value ? ' has-evidence' : '');
       setTimeout(() => {
         evSaveIndicator.textContent = '';
@@ -426,7 +426,7 @@ function buildFamilyHistoryCard(patientId) {
   card.id = 'section-family-history';
 
   if (!fh) {
-    card.appendChild(buildEmptyState('👨‍👩‍👧', 'No family history recorded',
+    card.appendChild(buildEmptyState('', 'No family history recorded',
       'Add known hereditary conditions and family medical history.'));
     return card;
   }
@@ -443,7 +443,7 @@ function buildFamilyHistoryCard(patientId) {
 
   const hasAny = FH_FIELDS.some(([key]) => fh[key]);
   if (!hasAny) {
-    card.appendChild(buildEmptyState('👨‍👩‍👧', 'No family history recorded',
+    card.appendChild(buildEmptyState('', 'No family history recorded',
       'Add known hereditary conditions and family medical history.'));
     return card;
   }
@@ -480,7 +480,7 @@ function buildSurgeriesCard(patientId) {
   card.id = 'section-surgeries';
 
   if (surgeries.length === 0) {
-    card.appendChild(buildEmptyState('🏥', 'No surgical history',
+    card.appendChild(buildEmptyState('', 'No surgical history',
       'Add past procedures and surgeries.'));
     return card;
   }
@@ -566,7 +566,7 @@ function buildVitalsTrendCard(patientId) {
   rows.sort((a, b) => new Date(b.enc.dateTime) - new Date(a.enc.dateTime));
 
   if (rows.length === 0) {
-    card.appendChild(buildEmptyState('📊', 'No vitals recorded', 'Vitals will appear here as encounters are created.'));
+    card.appendChild(buildEmptyState('', 'No vitals recorded', 'Vitals will appear here as encounters are created.'));
     return card;
   }
 
@@ -640,7 +640,7 @@ function buildProblemsCard(patientId) {
   card.id = 'section-problems';
 
   if (problems.length === 0) {
-    card.appendChild(buildEmptyState('🩺', 'No active problems', 'Add problems to the patient problem list.'));
+    card.appendChild(buildEmptyState('', 'No active problems', 'Add problems to the patient problem list.'));
     return card;
   }
 
@@ -749,7 +749,7 @@ function buildPreventiveCareCard(patient, patientId) {
   card.id = 'section-preventive-care';
 
   if (applicable.length === 0) {
-    card.appendChild(buildEmptyState('🛡', 'No applicable screenings', 'No age/sex-appropriate screenings found.'));
+    card.appendChild(buildEmptyState('', 'No applicable screenings', 'No age/sex-appropriate screenings found.'));
     return card;
   }
 

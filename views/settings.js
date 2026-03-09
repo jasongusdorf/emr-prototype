@@ -31,16 +31,16 @@ function renderSettings() {
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'btn btn-secondary btn-sm';
   const isDark = document.body.classList.contains('dark-mode');
-  toggleBtn.textContent = isDark ? '🌙 Dark' : '☀️ Light';
+  toggleBtn.textContent = isDark ? ' Dark' : ' Light';
 
   toggleBtn.addEventListener('click', () => {
     const nowDark = document.body.classList.toggle('dark-mode');
     document.body.classList.toggle('light-mode', !nowDark);
     localStorage.setItem('emr_dark_mode', nowDark ? 'dark' : 'light');
-    toggleBtn.textContent = nowDark ? '🌙 Dark' : '☀️ Light';
+    toggleBtn.textContent = nowDark ? ' Dark' : ' Light';
     // Sync login screen toggle
     const loginBtn = document.getElementById('login-dark-toggle');
-    if (loginBtn) loginBtn.textContent = nowDark ? '🌙' : '☀️';
+    if (loginBtn) loginBtn.textContent = nowDark ? '' : '';
   });
 
   row.appendChild(label);

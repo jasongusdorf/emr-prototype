@@ -232,7 +232,7 @@ function renderOrderSets() {
     });
 
     if (filtered.length === 0) {
-      grid.appendChild(buildEmptyState('📦', 'No order sets found', 'Try a different search or category.'));
+      grid.appendChild(buildEmptyState('', 'No order sets found', 'Try a different search or category.'));
       return;
     }
 
@@ -406,6 +406,6 @@ function openOrderSetPreview(set) {
 }
 
 function getOrderTypeIcon(type) {
-  var icons = { Medication: '💊', Lab: '🧪', Imaging: '🩻', Consult: '👨‍⚕️' };
-  return icons[type] || '📋';
+  var icons = { Medication: '', Lab: '', Imaging: '', Consult: '' };
+  return icons[type] || '';
 }

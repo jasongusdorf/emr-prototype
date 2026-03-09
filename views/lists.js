@@ -23,7 +23,7 @@ function renderPatientList(listId) {
     meta: list.patientIds.length + ' patient' + (list.patientIds.length !== 1 ? 's' : ''),
     actions: '<button class="btn btn-secondary btn-sm" id="list-add-patient">+ Add Patient</button>' +
       '<button class="btn btn-secondary btn-sm" id="list-print">Print</button>' +
-      '<button class="btn ' + (isPublic ? 'btn-success' : 'btn-secondary') + ' btn-sm" id="list-toggle-public">' + (isPublic ? '🔓 Public' : 'Make Public') + '</button>' +
+      '<button class="btn ' + (isPublic ? 'btn-success' : 'btn-secondary') + ' btn-sm" id="list-toggle-public">' + (isPublic ? ' Public' : 'Make Public') + '</button>' +
       '<button class="btn btn-secondary btn-sm" id="list-edit">Edit List</button>' +
       '<button class="btn btn-secondary btn-sm" id="list-back" style="margin-left:4px">Back</button>',
   });
@@ -42,7 +42,7 @@ function renderPatientList(listId) {
   card.className = 'card';
 
   if (list.patientIds.length === 0) {
-    card.appendChild(buildEmptyState('📋', 'No patients in this list', 'Add patients from the dashboard or click "+ Add Patient" above.'));
+    card.appendChild(buildEmptyState('', 'No patients in this list', 'Add patients from the dashboard or click "+ Add Patient" above.'));
   } else {
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
@@ -119,7 +119,7 @@ function renderPatientList(listId) {
       const handoffBtn = document.createElement('button');
       handoffBtn.className = 'btn btn-ghost btn-sm handoff-btn';
       const handoffCount = getHandoffNotes(listId, pid).length;
-      handoffBtn.textContent = '📝' + (handoffCount > 0 ? ' ' + handoffCount : '');
+      handoffBtn.textContent = '' + (handoffCount > 0 ? ' ' + handoffCount : '');
       handoffBtn.title = 'Handoff notes';
       handoffBtn.addEventListener('click', () => openHandoffPanel(listId, pid));
       tdHandoff.appendChild(handoffBtn);
@@ -691,7 +691,7 @@ function renderSmartList(listId) {
     meta: patients.length + ' patient' + (patients.length !== 1 ? 's' : '') + ' · Smart List — auto-updated',
     actions: '<button class="btn btn-secondary btn-sm" id="smart-edit-criteria">Edit Criteria</button>' +
       '<button class="btn btn-secondary btn-sm" id="smart-view-criteria">View Criteria</button>' +
-      '<button class="btn ' + (slIsPublic ? 'btn-success' : 'btn-secondary') + ' btn-sm" id="smart-toggle-public">' + (slIsPublic ? '🔓 Public' : 'Make Public') + '</button>' +
+      '<button class="btn ' + (slIsPublic ? 'btn-success' : 'btn-secondary') + ' btn-sm" id="smart-toggle-public">' + (slIsPublic ? ' Public' : 'Make Public') + '</button>' +
       '<button class="btn btn-danger btn-sm" id="smart-delete" style="margin-left:4px">Delete</button>' +
       '<button class="btn btn-secondary btn-sm" id="smart-back" style="margin-left:4px">Back</button>',
   });
@@ -701,7 +701,7 @@ function renderSmartList(listId) {
   card.className = 'card';
 
   if (patients.length === 0) {
-    card.appendChild(buildEmptyState('🔍', 'No patients match criteria', 'Edit criteria to broaden the filter.'));
+    card.appendChild(buildEmptyState('', 'No patients match criteria', 'Edit criteria to broaden the filter.'));
   } else {
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
@@ -841,7 +841,7 @@ function refreshSidebarLists() {
     a.href = '#list/' + l.id;
     a.className = 'nav-item nav-item-list';
     a.dataset.nav = 'list-' + l.id;
-    a.innerHTML = '<span class="list-icon">📋</span> ' + esc(l.name) +
+    a.innerHTML = '<span class="list-icon"></span> ' + esc(l.name) +
       '<span class="text-muted text-sm" style="margin-left:auto">' + l.patientIds.length + '</span>';
     a.addEventListener('contextmenu', e => {
       showContextMenu(e, [
@@ -869,7 +869,7 @@ function refreshSidebarLists() {
     a.href = '#list/' + srcList.id;
     a.className = 'nav-item nav-item-list';
     a.dataset.nav = 'list-' + srcList.id;
-    a.innerHTML = '<span class="list-icon">🔗</span> ' + esc(srcList.name) +
+    a.innerHTML = '<span class="list-icon"></span> ' + esc(srcList.name) +
       '<span class="text-muted text-sm" style="margin-left:auto">' + (owner ? esc(owner.lastName) : '') + '</span>';
     a.addEventListener('contextmenu', e => {
       showContextMenu(e, [
@@ -896,7 +896,7 @@ function refreshSidebarLists() {
       a.className = 'nav-item nav-item-list';
       a.dataset.nav = 'smart-' + sl.id;
       const count = evaluateSmartList(sl.id).length;
-      a.innerHTML = '<span class="list-icon">⚡</span> ' + esc(sl.name) +
+      a.innerHTML = '<span class="list-icon"></span> ' + esc(sl.name) +
         '<span class="text-muted text-sm" style="margin-left:auto">' + count + '</span>';
       a.addEventListener('contextmenu', e => {
         showContextMenu(e, [

@@ -134,7 +134,7 @@ function buildLabsInbox(card) {
   const labs = getFilteredLabsInbox();
 
   if (labs.length === 0) {
-    card.appendChild(buildEmptyState('🔬', 'No unreviewed labs', 'All lab results have been reviewed.'));
+    card.appendChild(buildEmptyState('', 'No unreviewed labs', 'All lab results have been reviewed.'));
     return;
   }
 
@@ -251,7 +251,7 @@ function buildNotesInbox(card) {
   const unsignedNotes = getFilteredNotesInbox();
 
   if (unsignedNotes.length === 0) {
-    card.appendChild(buildEmptyState('📝', 'No unsigned notes', 'All notes have been signed.'));
+    card.appendChild(buildEmptyState('', 'No unsigned notes', 'All notes have been signed.'));
     return;
   }
 
@@ -293,7 +293,7 @@ function buildOrdersInbox(card) {
   const pendingOrders = getFilteredOrdersInbox();
 
   if (pendingOrders.length === 0) {
-    card.appendChild(buildEmptyState('📋', 'No pending orders', 'All orders have been processed.'));
+    card.appendChild(buildEmptyState('', 'No pending orders', 'All orders have been processed.'));
     return;
   }
 
@@ -333,7 +333,7 @@ function buildRefillsInbox(card) {
   const refills = getFilteredRefillsInbox();
 
   if (refills.length === 0) {
-    card.appendChild(buildEmptyState('💊', 'No refill requests', 'All medication refills have been processed.'));
+    card.appendChild(buildEmptyState('', 'No refill requests', 'All medication refills have been processed.'));
     return;
   }
 
@@ -374,7 +374,7 @@ function buildReferralsInbox(card) {
     .sort((a, b) => new Date(b.referralDate) - new Date(a.referralDate));
 
   if (pendingRefs.length === 0) {
-    card.appendChild(buildEmptyState('🔗', 'No pending referrals', 'All referrals have been resolved.'));
+    card.appendChild(buildEmptyState('', 'No pending referrals', 'All referrals have been resolved.'));
     return;
   }
 
@@ -527,7 +527,7 @@ function buildMessagesInbox(card) {
   const threads = _getMessageThreads();
 
   if (threads.length === 0) {
-    card.appendChild(buildEmptyState('💬', 'No messages', 'Send a message to a patient to get started.'));
+    card.appendChild(buildEmptyState('', 'No messages', 'Send a message to a patient to get started.'));
     return;
   }
 

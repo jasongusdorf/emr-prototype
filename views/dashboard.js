@@ -59,7 +59,7 @@ function renderDashboard() {
     const cogBtn = document.createElement('button');
     cogBtn.className = 'btn-clinic-cog';
     cogBtn.title = 'Edit clinic location';
-    cogBtn.textContent = '⚙';
+    cogBtn.textContent = '';
     cogBtn.addEventListener('click', () => {
       const curType = localStorage.getItem(typeKey) || '';
       const curName = localStorage.getItem(nameKey) || '';
@@ -157,7 +157,7 @@ function renderDashboard() {
       // Not signed in — show sign-in form
       signInCard.innerHTML =
         '<div class="ip-signin-content">' +
-          '<div class="ip-signin-icon">🏥</div>' +
+          '<div class="ip-signin-icon"></div>' +
           '<div class="ip-signin-text">' +
             '<div class="ip-signin-title">Sign In to Service</div>' +
             '<div class="ip-signin-desc">Select your role to load your inpatient patient list.</div>' +
@@ -186,7 +186,7 @@ function renderDashboard() {
       // Already signed in — show status with sign-out
       signInCard.innerHTML =
         '<div class="ip-signin-content ip-signed-in">' +
-          '<div class="ip-signin-icon">✅</div>' +
+          '<div class="ip-signin-icon"></div>' +
           '<div class="ip-signin-text">' +
             '<div class="ip-signin-title">Signed In</div>' +
             '<div class="ip-signin-desc">Role: <strong>' + esc(signIn.role) + '</strong> · Since ' + formatDateTime(signIn.signedInAt) + '</div>' +
@@ -229,7 +229,7 @@ function renderDashboard() {
     apptCard.appendChild(apptHdr);
 
     if (upcomingAppts.length === 0) {
-      apptCard.appendChild(buildEmptyState('📅', 'No upcoming appointments', 'Schedule an appointment from the Schedule tab.'));
+      apptCard.appendChild(buildEmptyState('', 'No upcoming appointments', 'Schedule an appointment from the Schedule tab.'));
     } else {
       upcomingAppts.forEach(appt => {
         const patient = getPatient(appt.patientId);
@@ -316,7 +316,7 @@ function renderDashboard() {
       editBtn.className = 'btn-clinic-cog';
       editBtn.style.fontSize = '14px';
       editBtn.title = isInpatient ? 'Edit inpatient service' : 'Edit clinic information';
-      editBtn.textContent = '⚙';
+      editBtn.textContent = '';
       editBtn.addEventListener('click', () => {
         renderInfoForm();
       });
@@ -987,7 +987,7 @@ function openColumnCustomizerModal(providerId) {
       const col = PATIENT_COLUMNS.find(c => c.key === key);
       if (!col) return '';
       return '<div class="col-customizer-item" data-key="' + esc(key) + '" data-idx="' + idx + '">' +
-        '<span class="col-drag-handle" title="Drag to reorder">☰</span>' +
+        '<span class="col-drag-handle" title="Drag to reorder"></span>' +
         '<span class="col-customizer-label">' + esc(col.label) + '</span>' +
         '<button class="col-customizer-remove" data-key="' + esc(key) + '" title="Remove">&times;</button>' +
       '</div>';
@@ -1567,7 +1567,7 @@ function renderInpatientFlatList(app, patients) {
   const card = document.createElement('div');
   card.className = 'card';
   if (patients.length === 0) {
-    card.appendChild(buildEmptyState('🏥', 'No inpatient admissions', 'Admit a patient to get started.'));
+    card.appendChild(buildEmptyState('', 'No inpatient admissions', 'Admit a patient to get started.'));
   } else {
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';

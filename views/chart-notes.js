@@ -18,7 +18,7 @@ function buildEncountersCard(patientId) {
   card.querySelector('.card-header').appendChild(countEl);
 
   if (encounters.length === 0) {
-    card.appendChild(buildEmptyState('📋', 'No encounters',
+    card.appendChild(buildEmptyState('', 'No encounters',
       'Create a new encounter to start a visit note.'));
     return card;
   }
@@ -173,7 +173,7 @@ function buildPastNotesCard(patientId) {
     });
 
     if (filtered.length === 0) {
-      cardsContainer.appendChild(buildEmptyState('📝', 'No notes match', 'Try adjusting your filters.'));
+      cardsContainer.appendChild(buildEmptyState('', 'No notes match', 'Try adjusting your filters.'));
       return;
     }
 

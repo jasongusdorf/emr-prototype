@@ -330,7 +330,7 @@ function showCDSAlertsModal(alerts, onProceed) {
     bodyHTML += '<h3 class="cds-section-title cds-critical-title">Critical Alerts</h3>';
     criticals.forEach(function(a) {
       bodyHTML += '<div class="cds-alert-item cds-alert-critical">' +
-        '<span class="cds-alert-icon">⛔</span>' +
+        '<span class="cds-alert-icon"></span>' +
         '<div class="cds-alert-content">' +
         '<span class="cds-alert-type-badge cds-type-' + a.type + '">' + formatAlertType(a.type) + '</span>' +
         '<p class="cds-alert-msg">' + esc(a.message) + '</p>' +
@@ -344,7 +344,7 @@ function showCDSAlertsModal(alerts, onProceed) {
     bodyHTML += '<h3 class="cds-section-title cds-warning-title">Warnings</h3>';
     warnings.forEach(function(a) {
       bodyHTML += '<div class="cds-alert-item cds-alert-warning">' +
-        '<span class="cds-alert-icon">⚠️</span>' +
+        '<span class="cds-alert-icon"></span>' +
         '<div class="cds-alert-content">' +
         '<span class="cds-alert-type-badge cds-type-' + a.type + '">' + formatAlertType(a.type) + '</span>' +
         '<p class="cds-alert-msg">' + esc(a.message) + '</p>' +
@@ -538,7 +538,7 @@ function buildBPABanner(patientId) {
   var warnings = bpas.filter(function(b) { return b.severity === 'warning'; });
 
   var html = '<div class="bpa-banner-header">' +
-    '<span class="bpa-banner-icon">🔔</span>' +
+    '<span class="bpa-banner-icon"></span>' +
     '<strong>Best Practice Alerts (' + bpas.length + ')</strong>' +
     '<button class="bpa-dismiss-all" id="bpa-dismiss-btn">Dismiss All</button>' +
     '</div>';
@@ -548,7 +548,7 @@ function buildBPABanner(patientId) {
   if (criticals.length > 0) {
     criticals.forEach(function(b) {
       html += '<div class="bpa-item bpa-item-critical">' +
-        '<span class="bpa-item-icon">⛔</span>' +
+        '<span class="bpa-item-icon"></span>' +
         '<div class="bpa-item-content">' +
         '<span class="bpa-item-category">' + esc(b.category) + '</span>' +
         '<span class="bpa-item-msg">' + esc(b.message) + '</span>' +
@@ -559,7 +559,7 @@ function buildBPABanner(patientId) {
 
   warnings.forEach(function(b) {
     html += '<div class="bpa-item bpa-item-warning">' +
-      '<span class="bpa-item-icon">⚠️</span>' +
+      '<span class="bpa-item-icon"></span>' +
       '<div class="bpa-item-content">' +
       '<span class="bpa-item-category">' + esc(b.category) + '</span>' +
       '<span class="bpa-item-msg">' + esc(b.message) + '</span>' +

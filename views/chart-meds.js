@@ -68,7 +68,7 @@ function buildMedicationsCard(patientId, setting) {
   const past    = meds.filter(m => m.status === 'Past');
 
   if (meds.length === 0) {
-    card.appendChild(buildEmptyState('💊', 'No ' + (setting ? setting.toLowerCase() + ' ' : '') + 'medications recorded',
+    card.appendChild(buildEmptyState('', 'No ' + (setting ? setting.toLowerCase() + ' ' : '') + 'medications recorded',
       'Add medications using the button above.'));
     return card;
   }
