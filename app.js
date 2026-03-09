@@ -1593,10 +1593,27 @@ function initForcePasswordChange() {
 var _rightPanelOpen = false;
 
 function initRightPanel() {
-  const toggle = document.getElementById('right-panel-toggle');
-  const panel = document.getElementById('right-panel');
-  if (!toggle || !panel) return;
+  // Create the panel via JS to guarantee it exists in the DOM
+  var existing = document.getElementById('right-panel');
+  if (existing) existing.remove();
 
+  var panel = document.createElement('div');
+  panel.id = 'right-panel';
+  panel.className = 'right-panel';
+  panel.setAttribute('aria-label', 'Quick actions panel');
+  panel.innerHTML =
+    '<button id="right-panel-toggle" class="right-panel-toggle" aria-label="Toggle quick actions" title="Quick Actions">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polyline points="15 18 9 12 15 6"/>' +
+      '</svg>' +
+    '</button>' +
+    '<div class="right-panel-content" id="right-panel-content">' +
+      '<div class="right-panel-header"><h3>Quick Actions</h3></div>' +
+      '<div id="right-panel-body"></div>' +
+    '</div>';
+  document.body.appendChild(panel);
+
+  var toggle = document.getElementById('right-panel-toggle');
   toggle.addEventListener('click', function() {
     _rightPanelOpen = !_rightPanelOpen;
     panel.classList.toggle('open', _rightPanelOpen);
