@@ -600,6 +600,11 @@ function buildOverviewContent(app, patient, patientId) {
   wrap('profile', buildImmunizationsCard(patientId));
   wrap('profile', buildEncountersCard(patientId));
 
+  // AI Review section (if available)
+  if (typeof buildAIReviewChartSection === 'function') {
+    wrap('profile', buildAIReviewChartSection(patientId));
+  }
+
   // Medications category
   wrap('medications', buildMedicationsSection(patientId));
 

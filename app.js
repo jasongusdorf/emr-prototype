@@ -352,6 +352,10 @@ function route() {
         if (typeof renderCareGaps === 'function') renderCareGaps();
         else navigate('#dashboard');
         break;
+      case 'ai-review':
+        if (typeof renderAIReview === 'function') renderAIReview(param);
+        else navigate('#dashboard');
+        break;
       case 'reminders':
         if (typeof renderRemindersView === 'function') renderRemindersView();
         else navigate('#dashboard');

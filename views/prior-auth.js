@@ -132,6 +132,13 @@ function renderPriorAuth() {
   toolbar.appendChild(urgencySelect);
   toolbar.appendChild(newBtn);
   toolbar.appendChild(rulesBtn);
+
+  // Analytics button
+  const analyticsBtn = document.createElement('button');
+  analyticsBtn.className = 'btn btn-secondary';
+  analyticsBtn.textContent = 'Analytics';
+  analyticsBtn.addEventListener('click', function() { openPAAnalyticsModal(); });
+  toolbar.appendChild(analyticsBtn);
   app.appendChild(toolbar);
 
   /* ---------- Table ---------- */
@@ -512,6 +519,7 @@ function openPriorAuthDetailModal(paId) {
   } else if (pa.status === 'Approved') {
     footerHTML += '<button class="btn btn-secondary" id="pa-detail-expire">Mark Expired</button>';
   } else if (pa.status === 'Denied') {
+    footerHTML += '<button class="btn btn-warning" id="pa-detail-appeal">File Appeal</button>';
     footerHTML += '<button class="btn btn-primary" id="pa-detail-resubmit">Resubmit</button>';
     footerHTML += '<button class="btn btn-danger" id="pa-detail-delete">Delete</button>';
   }
@@ -617,6 +625,15 @@ function openPriorAuthDetailModal(paId) {
         closeModal();
         showToast('Prior authorization marked as expired.', 'warning');
         renderPriorAuth();
+      });
+    }
+
+    // Appeal
+    const appealBtn = document.getElementById('pa-detail-appeal');
+    if (appealBtn) {
+      appealBtn.addEventListener('click', function() {
+        closeModal();
+        openAppealModal(paId);
       });
     }
 
@@ -1083,4 +1100,256 @@ function _openRuleEditorModal(ruleId) {
       });
     }
   }, 50);
+}
+
+/* ============================================================
+   APPEAL MANAGEMENT MODAL
+   ============================================================ */
+function openAppealModal(paId) {
+  const pa = getPriorAuth(paId);
+  if (!pa) { showToast('PA not found', 'error'); return; }
+  const patient = loadAll(KEYS.patients).find(function(p) { return p.id === pa.patientId; });
+  const patientName = patient ? esc(patient.lastName + ', ' + patient.firstName) : 'Unknown';
+
+  let bodyHTML = '<div style="margin-bottom:16px;padding:12px;background:var(--bg-base);border-radius:var(--radius);">';
+  bodyHTML += '<strong>Patient:</strong> ' + patientName + ' &nbsp;|&nbsp; ';
+  bodyHTML += '<strong>Service:</strong> ' + esc(pa.serviceRequested || '') + ' &nbsp;|&nbsp; ';
+  bodyHTML += '<strong>Payer:</strong> ' + esc(pa.payerName || '') + ' &nbsp;|&nbsp; ';
+  bodyHTML += '<strong>Status:</strong> ' + esc(pa.status) + '</div>';
+
+  // Denial info
+  bodyHTML += '<div class="ai-section-title">Denial Information</div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Denial Reason</label>' +
+    '<select id="appeal-denial-reason" class="form-control">' +
+    '<option value="">Select reason...</option>' +
+    '<option value="medical-necessity">Medical Necessity Not Established</option>' +
+    '<option value="not-covered">Service Not Covered Under Plan</option>' +
+    '<option value="experimental">Experimental/Investigational</option>' +
+    '<option value="out-of-network">Out of Network Provider</option>' +
+    '<option value="incomplete-info">Incomplete Clinical Information</option>' +
+    '<option value="duplicate">Duplicate Request</option>' +
+    '<option value="frequency">Exceeds Frequency Limits</option>' +
+    '<option value="age-criteria">Does Not Meet Age/Gender Criteria</option>' +
+    '<option value="step-therapy">Step Therapy Required First</option>' +
+    '<option value="other">Other</option>' +
+    '</select></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Denial Details</label>' +
+    '<textarea id="appeal-denial-details" class="form-control" rows="2" placeholder="Specific denial details...">' + esc(pa.denialReason || '') + '</textarea></div>';
+
+  // Appeal info
+  bodyHTML += '<div class="ai-section-title">Appeal</div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Appeal Type</label>' +
+    '<select id="appeal-type" class="form-control">' +
+    '<option value="Level1">Level 1 - Internal Appeal</option>' +
+    '<option value="Level2">Level 2 - External Review</option>' +
+    '<option value="P2P">Peer-to-Peer Review</option>' +
+    '<option value="Expedited">Expedited Appeal</option>' +
+    '</select></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Clinical Rationale for Appeal</label>' +
+    '<textarea id="appeal-rationale" class="form-control" rows="4" placeholder="Provide clinical justification supporting the medical necessity of this service...">' +
+    esc(pa.appealRationale || '') + '</textarea></div>';
+
+  bodyHTML += '<div class="form-row">' +
+    '<div class="form-group"><label class="form-label">Peer-to-Peer Date/Time</label>' +
+    '<input type="datetime-local" id="appeal-p2p-date" class="form-control" value="' + esc(pa.p2pDate || '') + '" /></div>' +
+    '<div class="form-group"><label class="form-label">P2P Contact / Reviewer</label>' +
+    '<input type="text" id="appeal-p2p-contact" class="form-control" placeholder="Dr. Smith at UHC" value="' + esc(pa.p2pContact || '') + '" /></div>' +
+    '</div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Supporting Documentation Notes</label>' +
+    '<textarea id="appeal-docs" class="form-control" rows="2" placeholder="List clinical documents being submitted (e.g., op notes, labs, imaging)...">' +
+    esc(pa.appealDocs || '') + '</textarea></div>';
+
+  // Generate appeal letter
+  bodyHTML += '<div class="ai-section-title">Appeal Letter Preview</div>';
+  bodyHTML += '<div id="appeal-letter-preview" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.6;max-height:200px;overflow:auto;">';
+  bodyHTML += '<em>Click "Generate Letter" to preview the appeal letter.</em>';
+  bodyHTML += '</div>';
+
+  // Appeal history
+  if (pa.appeals && pa.appeals.length > 0) {
+    bodyHTML += '<div class="ai-section-title">Appeal History</div>';
+    pa.appeals.forEach(function(a) {
+      bodyHTML += '<div class="ai-finding" style="margin-bottom:8px;">' +
+        '<div class="ai-finding-icon ' + (a.outcome === 'Approved' ? 'success' : a.outcome === 'Denied' ? 'critical' : 'info') + '">' +
+        (a.outcome === 'Approved' ? '✓' : a.outcome === 'Denied' ? '✕' : '⏳') + '</div>' +
+        '<div class="ai-finding-body">' +
+        '<div class="ai-finding-title">' + esc(a.type) + ' — ' + esc(a.outcome || 'Pending') + '</div>' +
+        '<div class="ai-finding-desc">' + esc(a.rationale || '').slice(0, 100) +
+        (a.date ? ' &nbsp;|&nbsp; ' + formatDateTime(a.date) : '') + '</div></div></div>';
+    });
+  }
+
+  const footerHTML = '<button class="btn btn-secondary" id="appeal-gen-letter">Generate Letter</button>' +
+    '<button class="btn btn-primary" id="appeal-submit">Submit Appeal</button>' +
+    '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>';
+
+  openModal({ title: 'Appeal — ' + esc(pa.serviceRequested || 'PA'), bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  setTimeout(function() {
+    // Generate letter
+    document.getElementById('appeal-gen-letter').addEventListener('click', function() {
+      var reason = document.getElementById('appeal-denial-reason').value;
+      var rationale = document.getElementById('appeal-rationale').value.trim();
+      var provider = getSessionUser();
+      var providerName = provider.firstName + ' ' + provider.lastName + ', ' + (provider.degree || 'MD');
+      var preview = document.getElementById('appeal-letter-preview');
+      preview.innerHTML =
+        '<p><strong>Date:</strong> ' + new Date().toLocaleDateString() + '</p>' +
+        '<p><strong>To:</strong> ' + esc(pa.payerName || 'Insurance Company') + ' — Prior Authorization Department</p>' +
+        '<p><strong>Re:</strong> Appeal for ' + esc(pa.serviceRequested || 'service') + ' — Patient: ' + patientName + '</p>' +
+        '<p><strong>Auth Reference:</strong> ' + esc(pa.authNumber || pa.id.slice(0, 8)) + '</p><br/>' +
+        '<p>Dear Medical Director,</p>' +
+        '<p>I am writing to appeal the denial of prior authorization for ' + esc(pa.serviceRequested || 'the requested service') +
+        ' for the above-referenced patient. The denial was issued citing: <em>' + esc(reason || 'medical necessity not established') + '</em>.</p>' +
+        '<p><strong>Clinical Rationale:</strong></p>' +
+        '<p>' + esc(rationale || 'Please provide clinical rationale above.') + '</p>' +
+        '<p>Based on the clinical evidence presented, I respectfully request reconsideration of this denial. ' +
+        'The requested service is medically necessary and consistent with accepted standards of care.</p>' +
+        '<p>Please do not hesitate to contact me for additional information or to arrange a peer-to-peer review.</p>' +
+        '<p>Sincerely,<br/>' + esc(providerName) + '</p>';
+    });
+
+    // Submit appeal
+    document.getElementById('appeal-submit').addEventListener('click', function() {
+      var rationale = document.getElementById('appeal-rationale').value.trim();
+      if (!rationale) { showToast('Please provide a clinical rationale', 'error'); return; }
+
+      var all = loadAll(KEYS.priorAuths, true);
+      var idx = all.findIndex(function(p) { return p.id === paId; });
+      if (idx === -1) { showToast('PA not found', 'error'); return; }
+
+      if (!all[idx].appeals) all[idx].appeals = [];
+      all[idx].appeals.push({
+        id: generateId(),
+        type: document.getElementById('appeal-type').value,
+        denialReason: document.getElementById('appeal-denial-reason').value,
+        denialDetails: document.getElementById('appeal-denial-details').value.trim(),
+        rationale: rationale,
+        p2pDate: document.getElementById('appeal-p2p-date').value || null,
+        p2pContact: document.getElementById('appeal-p2p-contact').value.trim() || null,
+        docs: document.getElementById('appeal-docs').value.trim() || null,
+        outcome: 'Pending',
+        date: new Date().toISOString(),
+        submittedBy: getSessionUser().id,
+      });
+
+      all[idx].status = 'Under Review';
+      all[idx].denialReason = document.getElementById('appeal-denial-reason').value;
+      all[idx].appealRationale = rationale;
+      all[idx].p2pDate = document.getElementById('appeal-p2p-date').value || null;
+      all[idx].p2pContact = document.getElementById('appeal-p2p-contact').value.trim() || null;
+      all[idx].appealDocs = document.getElementById('appeal-docs').value.trim() || null;
+
+      saveAll(KEYS.priorAuths, all);
+      showToast('Appeal submitted successfully', 'success');
+      closeModal();
+      if (window.location.hash.startsWith('#prior-auth')) renderPriorAuth();
+    });
+  }, 50);
+}
+
+/* ============================================================
+   PA ANALYTICS DASHBOARD MODAL
+   ============================================================ */
+function openPAAnalyticsModal() {
+  const pas = getPriorAuths();
+  const now = Date.now();
+
+  var total = pas.length;
+  var approved = 0, denied = 0, pending = 0, expired = 0;
+  var turnaroundDays = [];
+  var byPayer = {};
+  var denialReasons = {};
+  var byUrgency = { Urgent: 0, Standard: 0 };
+
+  pas.forEach(function(pa) {
+    if (pa.status === 'Approved') approved++;
+    else if (pa.status === 'Denied') denied++;
+    else if (pa.status === 'Expired') expired++;
+    else pending++;
+
+    if (pa.status === 'Approved' && pa.submittedAt && pa.approvedAt) {
+      var days = Math.floor((new Date(pa.approvedAt).getTime() - new Date(pa.submittedAt).getTime()) / (1000 * 60 * 60 * 24));
+      if (days >= 0) turnaroundDays.push(days);
+    }
+
+    var payer = pa.payerName || 'Unknown';
+    if (!byPayer[payer]) byPayer[payer] = { total: 0, approved: 0, denied: 0, pending: 0 };
+    byPayer[payer].total++;
+    if (pa.status === 'Approved') byPayer[payer].approved++;
+    else if (pa.status === 'Denied') byPayer[payer].denied++;
+    else byPayer[payer].pending++;
+
+    if (pa.denialReason) {
+      denialReasons[pa.denialReason] = (denialReasons[pa.denialReason] || 0) + 1;
+    }
+
+    if (pa.urgency === 'Urgent') byUrgency.Urgent++;
+    else byUrgency.Standard++;
+  });
+
+  var approvalRate = total > 0 ? ((approved / total) * 100).toFixed(1) : '0.0';
+  var denialRate = total > 0 ? ((denied / total) * 100).toFixed(1) : '0.0';
+  var avgTurnaround = turnaroundDays.length > 0 ? Math.round(turnaroundDays.reduce(function(a, b) { return a + b; }, 0) / turnaroundDays.length) : 0;
+
+  // Expiring soon (within 30 days)
+  var expiringSoon = pas.filter(function(pa) {
+    if (pa.status !== 'Approved' || !pa.expirationDate) return false;
+    var exp = new Date(pa.expirationDate).getTime();
+    return exp > now && exp < now + (30 * 24 * 60 * 60 * 1000);
+  });
+
+  var body = '<div class="ai-summary-bar">';
+  body += '<div class="ai-stat-card success"><div class="ai-stat-value success">' + approvalRate + '%</div><div class="ai-stat-label">Approval Rate</div></div>';
+  body += '<div class="ai-stat-card ' + (parseFloat(denialRate) > 20 ? 'critical' : 'warning') + '"><div class="ai-stat-value ' + (parseFloat(denialRate) > 20 ? 'critical' : 'warning') + '">' + denialRate + '%</div><div class="ai-stat-label">Denial Rate</div></div>';
+  body += '<div class="ai-stat-card info"><div class="ai-stat-value info">' + avgTurnaround + '</div><div class="ai-stat-label">Avg Days to Approve</div></div>';
+  body += '<div class="ai-stat-card info"><div class="ai-stat-value info">' + pending + '</div><div class="ai-stat-label">Pending</div></div>';
+  body += '<div class="ai-stat-card ' + (expiringSoon.length > 0 ? 'warning' : 'success') + '"><div class="ai-stat-value ' + (expiringSoon.length > 0 ? 'warning' : 'success') + '">' + expiringSoon.length + '</div><div class="ai-stat-label">Expiring Soon</div></div>';
+  body += '</div>';
+
+  // By payer
+  body += '<div class="ai-section-title">By Payer</div>';
+  body += '<table class="table"><thead><tr><th>Payer</th><th>Total</th><th>Approved</th><th>Denied</th><th>Pending</th><th>Approval %</th></tr></thead><tbody>';
+  Object.keys(byPayer).sort().forEach(function(payer) {
+    var p = byPayer[payer];
+    var pct = p.total > 0 ? ((p.approved / p.total) * 100).toFixed(0) : '0';
+    body += '<tr><td>' + esc(payer) + '</td><td>' + p.total + '</td><td>' + p.approved + '</td>' +
+      '<td>' + p.denied + '</td><td>' + p.pending + '</td><td>' + pct + '%</td></tr>';
+  });
+  body += '</tbody></table>';
+
+  // Denial reasons
+  if (Object.keys(denialReasons).length > 0) {
+    body += '<div class="ai-section-title">Top Denial Reasons</div>';
+    var sortedReasons = Object.entries(denialReasons).sort(function(a, b) { return b[1] - a[1]; });
+    var maxReasonCount = sortedReasons[0][1] || 1;
+    sortedReasons.slice(0, 8).forEach(function(entry) {
+      var pct = (entry[1] / maxReasonCount) * 100;
+      body += '<div style="margin-bottom:8px;">' +
+        '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">' +
+        '<span>' + esc(entry[0]) + '</span><span style="font-weight:600;">' + entry[1] + '</span></div>' +
+        '<div class="progress-bar"><div class="progress-bar-fill danger" style="width:' + pct + '%;"></div></div></div>';
+    });
+  }
+
+  // Expiring soon list
+  if (expiringSoon.length > 0) {
+    body += '<div class="ai-section-title">Expiring Within 30 Days</div>';
+    expiringSoon.forEach(function(pa) {
+      var patient = loadAll(KEYS.patients).find(function(p) { return p.id === pa.patientId; });
+      var pName = patient ? esc(patient.lastName + ', ' + patient.firstName) : 'Unknown';
+      var daysLeft = Math.ceil((new Date(pa.expirationDate).getTime() - now) / (1000 * 60 * 60 * 24));
+      body += '<div class="ai-finding">' +
+        '<div class="ai-finding-icon warning">⏰</div>' +
+        '<div class="ai-finding-body">' +
+        '<div class="ai-finding-title">' + pName + ' — ' + esc(pa.serviceRequested || '') + '</div>' +
+        '<div class="ai-finding-desc">Expires in ' + daysLeft + ' days (' + esc(pa.expirationDate) + ') • Payer: ' + esc(pa.payerName || '') + '</div>' +
+        '</div></div>';
+    });
+  }
+
+  openModal({ title: 'Prior Auth Analytics', bodyHTML: body, footerHTML: '', size: 'xl' });
 }

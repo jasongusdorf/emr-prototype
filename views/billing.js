@@ -131,6 +131,20 @@ function renderBilling() {
   newClaimBtn.addEventListener('click', function() { openNewClaimModal(); });
   toolbar.appendChild(newClaimBtn);
 
+  // A/R Aging button
+  const arBtn = document.createElement('button');
+  arBtn.className = 'btn btn-secondary';
+  arBtn.textContent = 'A/R Aging';
+  arBtn.addEventListener('click', function() { openARAgingModal(); });
+  toolbar.appendChild(arBtn);
+
+  // Dashboard button
+  const dashBtn = document.createElement('button');
+  dashBtn.className = 'btn btn-secondary';
+  dashBtn.textContent = 'Revenue Dashboard';
+  dashBtn.addEventListener('click', function() { openBillingDashboardModal(); });
+  toolbar.appendChild(dashBtn);
+
   app.appendChild(toolbar);
 
   // ===== Claims table =====
@@ -309,6 +323,18 @@ function _renderBillingRows(tbody, paginationBar) {
         openClaimDetailModal(claim.id);
       });
       actionsCell.appendChild(viewBtn);
+
+      // Post Payment button
+      if (claim.status !== 'Draft' && claim.status !== 'Paid') {
+        var pmtBtn = document.createElement('button');
+        pmtBtn.className = 'btn btn-sm btn-primary';
+        pmtBtn.textContent = 'Pay';
+        pmtBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          openPaymentPostingModal(claim.id);
+        });
+        actionsCell.appendChild(pmtBtn);
+      }
 
       // Status change dropdown
       const statusOptions = _getStatusTransitions(claim.status);
@@ -1148,4 +1174,340 @@ function openSuperbillModal(encounterId) {
       renderBilling();
     }
   });
+}
+
+/* ============================================================
+   PAYMENT POSTING MODAL
+   ============================================================ */
+function openPaymentPostingModal(claimId) {
+  const claim = getClaim(claimId);
+  if (!claim) { showToast('Claim not found', 'error'); return; }
+  const patient = loadAll(KEYS.patients).find(function(p) { return p.id === claim.patientId; });
+  const patientName = patient ? esc(patient.lastName + ', ' + patient.firstName) : 'Unknown';
+  const balance = (parseFloat(claim.totalCharge) || 0) - (parseFloat(claim.totalPaid) || 0) - (parseFloat(claim.totalAdjustment) || 0);
+
+  let bodyHTML = '<div style="margin-bottom:16px;">' +
+    '<div style="display:flex;gap:24px;flex-wrap:wrap;">' +
+    '<div><strong>Patient:</strong> ' + patientName + '</div>' +
+    '<div><strong>Claim:</strong> ' + esc(claim.id.slice(0, 8)) + '</div>' +
+    '<div><strong>Charged:</strong> ' + _formatMoney(claim.totalCharge) + '</div>' +
+    '<div><strong>Paid:</strong> ' + _formatMoney(claim.totalPaid || 0) + '</div>' +
+    '<div><strong>Balance:</strong> ' + _formatMoney(balance) + '</div>' +
+    '</div></div>';
+
+  bodyHTML += '<h4 style="margin-bottom:8px;">Post Payment</h4>';
+  bodyHTML += '<div class="form-row">' +
+    '<div class="form-group"><label class="form-label">Payment Type</label>' +
+    '<select id="pmt-type" class="form-control"><option value="Insurance">Insurance (ERA/EOB)</option>' +
+    '<option value="Patient">Patient Payment</option><option value="Adjustment">Adjustment</option>' +
+    '<option value="WriteOff">Write-Off</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Amount</label>' +
+    '<input type="number" id="pmt-amount" class="form-control" step="0.01" min="0" placeholder="0.00" /></div>' +
+    '</div>';
+
+  bodyHTML += '<div class="form-row">' +
+    '<div class="form-group"><label class="form-label">Date</label>' +
+    '<input type="date" id="pmt-date" class="form-control" value="' + new Date().toISOString().slice(0, 10) + '" /></div>' +
+    '<div class="form-group"><label class="form-label">Reference / Check #</label>' +
+    '<input type="text" id="pmt-ref" class="form-control" placeholder="Check #, ERA trace" /></div>' +
+    '</div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Notes</label>' +
+    '<textarea id="pmt-notes" class="form-control" rows="2" placeholder="Payment notes..."></textarea></div>';
+
+  // Adjustment reason codes (shown for adjustments/write-offs)
+  bodyHTML += '<div id="pmt-reason-wrap" class="form-group hidden">' +
+    '<label class="form-label">Reason Code</label>' +
+    '<select id="pmt-reason" class="form-control">' +
+    '<option value="">Select reason...</option>' +
+    '<option value="CO-45">CO-45: Charge exceeds fee schedule</option>' +
+    '<option value="CO-97">CO-97: Payment adjusted (already paid)</option>' +
+    '<option value="PR-1">PR-1: Deductible amount</option>' +
+    '<option value="PR-2">PR-2: Coinsurance amount</option>' +
+    '<option value="PR-3">PR-3: Copay amount</option>' +
+    '<option value="OA-23">OA-23: Payment adjusted (auth not obtained)</option>' +
+    '<option value="WO">WO: Write-off (uncollectible)</option>' +
+    '<option value="Charity">Charity care</option>' +
+    '</select></div>';
+
+  // Payment history
+  const payments = (claim.payments || []);
+  if (payments.length > 0) {
+    bodyHTML += '<h4 style="margin:16px 0 8px;">Payment History</h4>';
+    bodyHTML += '<table class="table"><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Ref</th><th>Notes</th></tr></thead><tbody>';
+    payments.forEach(function(p) {
+      bodyHTML += '<tr><td>' + esc(p.date || '') + '</td><td>' + esc(p.type) + '</td>' +
+        '<td>' + _formatMoney(p.amount) + '</td><td>' + esc(p.reference || '') + '</td>' +
+        '<td>' + esc(p.notes || '') + '</td></tr>';
+    });
+    bodyHTML += '</tbody></table>';
+  }
+
+  const footerHTML = '<button class="btn btn-primary" id="pmt-save">Post Payment</button>' +
+    '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>';
+
+  openModal({ title: 'Payment Posting', bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  setTimeout(function() {
+    var typeSelect = document.getElementById('pmt-type');
+    var reasonWrap = document.getElementById('pmt-reason-wrap');
+    typeSelect.addEventListener('change', function() {
+      reasonWrap.classList.toggle('hidden', typeSelect.value !== 'Adjustment' && typeSelect.value !== 'WriteOff');
+    });
+
+    document.getElementById('pmt-save').addEventListener('click', function() {
+      var amount = parseFloat(document.getElementById('pmt-amount').value);
+      if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+
+      var payment = {
+        id: generateId(),
+        type: typeSelect.value,
+        amount: amount,
+        date: document.getElementById('pmt-date').value,
+        reference: document.getElementById('pmt-ref').value.trim(),
+        notes: document.getElementById('pmt-notes').value.trim(),
+        reasonCode: document.getElementById('pmt-reason').value || null,
+        postedBy: getSessionUser().id,
+        postedAt: new Date().toISOString(),
+      };
+
+      var all = loadAll(KEYS.claims, true);
+      var idx = all.findIndex(function(c) { return c.id === claimId; });
+      if (idx === -1) { showToast('Claim not found', 'error'); return; }
+
+      if (!all[idx].payments) all[idx].payments = [];
+      all[idx].payments.push(payment);
+
+      // Update totals
+      if (payment.type === 'Insurance' || payment.type === 'Patient') {
+        all[idx].totalPaid = (parseFloat(all[idx].totalPaid) || 0) + amount;
+      } else {
+        all[idx].totalAdjustment = (parseFloat(all[idx].totalAdjustment) || 0) + amount;
+      }
+
+      // Auto-mark as Paid if balance <= 0
+      var newBalance = (parseFloat(all[idx].totalCharge) || 0) - (parseFloat(all[idx].totalPaid) || 0) - (parseFloat(all[idx].totalAdjustment) || 0);
+      if (newBalance <= 0.005) {
+        all[idx].status = 'Paid';
+        all[idx].paidAt = new Date().toISOString();
+      }
+
+      saveAll(KEYS.claims, all);
+      showToast('Payment of ' + _formatMoney(amount) + ' posted', 'success');
+      closeModal();
+      if (window.location.hash === '#billing') renderBilling();
+    });
+  }, 50);
+}
+
+/* ============================================================
+   A/R AGING REPORT MODAL
+   ============================================================ */
+function openARAgingModal() {
+  const claims = getClaims().filter(function(c) {
+    return c.status !== 'Paid' && c.status !== 'Draft';
+  });
+  const now = Date.now();
+
+  var buckets = {
+    current:   { label: '0-30 days',  claims: [], total: 0 },
+    days31_60: { label: '31-60 days', claims: [], total: 0 },
+    days61_90: { label: '61-90 days', claims: [], total: 0 },
+    over90:    { label: '90+ days',   claims: [], total: 0 },
+  };
+
+  claims.forEach(function(c) {
+    var created = new Date(c.createdAt || c.serviceDate || now).getTime();
+    var age = Math.floor((now - created) / (1000 * 60 * 60 * 24));
+    var balance = (parseFloat(c.totalCharge) || 0) - (parseFloat(c.totalPaid) || 0) - (parseFloat(c.totalAdjustment) || 0);
+    if (balance <= 0) return;
+    var item = { claim: c, age: age, balance: balance };
+    if (age <= 30) { buckets.current.claims.push(item); buckets.current.total += balance; }
+    else if (age <= 60) { buckets.days31_60.claims.push(item); buckets.days31_60.total += balance; }
+    else if (age <= 90) { buckets.days61_90.claims.push(item); buckets.days61_90.total += balance; }
+    else { buckets.over90.claims.push(item); buckets.over90.total += balance; }
+  });
+
+  var grandTotal = buckets.current.total + buckets.days31_60.total + buckets.days61_90.total + buckets.over90.total;
+
+  var body = '<div class="ai-summary-bar" style="margin-bottom:20px;">';
+  [buckets.current, buckets.days31_60, buckets.days61_90, buckets.over90].forEach(function(b, i) {
+    var cls = i === 0 ? 'info' : i === 1 ? 'warning' : 'critical';
+    body += '<div class="ai-stat-card ' + cls + '">' +
+      '<div class="ai-stat-value ' + cls + '">' + _formatMoney(b.total) + '</div>' +
+      '<div class="ai-stat-label">' + esc(b.label) + ' (' + b.claims.length + ')</div></div>';
+  });
+  body += '<div class="ai-stat-card"><div class="ai-stat-value">' + _formatMoney(grandTotal) + '</div>' +
+    '<div class="ai-stat-label">Total A/R</div></div>';
+  body += '</div>';
+
+  // A/R table
+  body += '<table class="table"><thead><tr><th>Claim</th><th>Patient</th><th>Status</th><th>Age (days)</th><th>Charged</th><th>Balance</th><th>Actions</th></tr></thead><tbody>';
+  var allItems = [];
+  Object.keys(buckets).forEach(function(k) { allItems = allItems.concat(buckets[k].claims); });
+  allItems.sort(function(a, b) { return b.age - a.age; });
+
+  allItems.slice(0, 50).forEach(function(item) {
+    var c = item.claim;
+    var patient = loadAll(KEYS.patients).find(function(p) { return p.id === c.patientId; });
+    var pName = patient ? esc(patient.lastName + ', ' + patient.firstName) : 'Unknown';
+    body += '<tr><td>' + esc(c.id.slice(0, 8)) + '</td><td>' + pName + '</td>' +
+      '<td>' + _claimStatusBadge(c.status) + '</td><td>' + item.age + '</td>' +
+      '<td>' + _formatMoney(c.totalCharge) + '</td><td style="font-weight:700;">' + _formatMoney(item.balance) + '</td>' +
+      '<td><button class="btn btn-sm btn-primary ar-post-btn" data-id="' + esc(c.id) + '">Post Payment</button></td></tr>';
+  });
+  body += '</tbody></table>';
+  if (allItems.length > 50) body += '<p class="text-muted" style="margin-top:8px;">Showing 50 of ' + allItems.length + ' claims</p>';
+
+  openModal({ title: 'Accounts Receivable Aging', bodyHTML: body, footerHTML: '', size: 'xl' });
+
+  setTimeout(function() {
+    document.querySelectorAll('.ar-post-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        closeModal();
+        openPaymentPostingModal(btn.dataset.id);
+      });
+    });
+  }, 50);
+}
+
+/* ============================================================
+   BILLING DASHBOARD / METRICS MODAL
+   ============================================================ */
+function openBillingDashboardModal() {
+  const claims = getClaims();
+  const now = Date.now();
+  const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+
+  // Metrics
+  var totalCharged = 0, totalPaid = 0, totalAdjusted = 0;
+  var deniedCount = 0, submittedCount = 0, paidCount = 0;
+  var daysToPay = [];
+  var payerBreakdown = {};
+
+  claims.forEach(function(c) {
+    totalCharged += parseFloat(c.totalCharge) || 0;
+    totalPaid += parseFloat(c.totalPaid) || 0;
+    totalAdjusted += parseFloat(c.totalAdjustment) || 0;
+
+    if (c.status === 'Denied') deniedCount++;
+    if (c.status === 'Submitted' || c.status === 'Accepted' || c.status === 'Paid' || c.status === 'Denied') submittedCount++;
+    if (c.status === 'Paid') {
+      paidCount++;
+      if (c.paidAt && c.submittedAt) {
+        var days = Math.floor((new Date(c.paidAt).getTime() - new Date(c.submittedAt).getTime()) / (1000 * 60 * 60 * 24));
+        if (days >= 0) daysToPay.push(days);
+      }
+    }
+
+    var payer = c.payerName || 'Self-Pay';
+    if (!payerBreakdown[payer]) payerBreakdown[payer] = { charged: 0, paid: 0, count: 0 };
+    payerBreakdown[payer].charged += parseFloat(c.totalCharge) || 0;
+    payerBreakdown[payer].paid += parseFloat(c.totalPaid) || 0;
+    payerBreakdown[payer].count++;
+  });
+
+  var avgDaysAR = daysToPay.length > 0 ? Math.round(daysToPay.reduce(function(a, b) { return a + b; }, 0) / daysToPay.length) : 0;
+  var denialRate = submittedCount > 0 ? ((deniedCount / submittedCount) * 100).toFixed(1) : '0.0';
+  var collectionRate = totalCharged > 0 ? ((totalPaid / totalCharged) * 100).toFixed(1) : '0.0';
+  var cleanClaimRate = submittedCount > 0 ? (((submittedCount - deniedCount) / submittedCount) * 100).toFixed(1) : '0.0';
+
+  var body = '<div class="ai-summary-bar">';
+  body += '<div class="ai-stat-card info"><div class="ai-stat-value info">' + avgDaysAR + '</div><div class="ai-stat-label">Avg Days in A/R</div></div>';
+  body += '<div class="ai-stat-card success"><div class="ai-stat-value success">' + collectionRate + '%</div><div class="ai-stat-label">Collection Rate</div></div>';
+  body += '<div class="ai-stat-card ' + (parseFloat(denialRate) > 10 ? 'critical' : 'warning') + '"><div class="ai-stat-value ' + (parseFloat(denialRate) > 10 ? 'critical' : 'warning') + '">' + denialRate + '%</div><div class="ai-stat-label">Denial Rate</div></div>';
+  body += '<div class="ai-stat-card success"><div class="ai-stat-value success">' + cleanClaimRate + '%</div><div class="ai-stat-label">Clean Claim Rate</div></div>';
+  body += '</div>';
+
+  // Revenue summary
+  body += '<div class="ai-section-title">Revenue Summary</div>';
+  body += '<table class="table"><tbody>';
+  body += '<tr><td><strong>Total Charged</strong></td><td style="text-align:right;font-weight:700">' + _formatMoney(totalCharged) + '</td></tr>';
+  body += '<tr><td><strong>Total Collected</strong></td><td style="text-align:right;font-weight:700;color:var(--success)">' + _formatMoney(totalPaid) + '</td></tr>';
+  body += '<tr><td><strong>Total Adjustments</strong></td><td style="text-align:right;font-weight:700;color:var(--warning)">' + _formatMoney(totalAdjusted) + '</td></tr>';
+  body += '<tr><td><strong>Outstanding Balance</strong></td><td style="text-align:right;font-weight:700;color:var(--danger)">' + _formatMoney(totalCharged - totalPaid - totalAdjusted) + '</td></tr>';
+  body += '</tbody></table>';
+
+  // Payer breakdown
+  body += '<div class="ai-section-title">Payer Breakdown</div>';
+  body += '<table class="table"><thead><tr><th>Payer</th><th>Claims</th><th>Charged</th><th>Paid</th><th>Collection %</th></tr></thead><tbody>';
+  Object.keys(payerBreakdown).sort().forEach(function(payer) {
+    var p = payerBreakdown[payer];
+    var pct = p.charged > 0 ? ((p.paid / p.charged) * 100).toFixed(1) : '0.0';
+    body += '<tr><td>' + esc(payer) + '</td><td>' + p.count + '</td><td>' + _formatMoney(p.charged) + '</td>' +
+      '<td>' + _formatMoney(p.paid) + '</td><td>' + pct + '%</td></tr>';
+  });
+  body += '</tbody></table>';
+
+  // Days to payment chart (simple bar)
+  if (daysToPay.length > 0) {
+    body += '<div class="ai-section-title">Payment Turnaround Distribution</div>';
+    var ranges = [
+      { label: '0-15d', min: 0, max: 15, count: 0 },
+      { label: '16-30d', min: 16, max: 30, count: 0 },
+      { label: '31-45d', min: 31, max: 45, count: 0 },
+      { label: '46-60d', min: 46, max: 60, count: 0 },
+      { label: '60+d', min: 61, max: 9999, count: 0 },
+    ];
+    daysToPay.forEach(function(d) {
+      ranges.forEach(function(r) { if (d >= r.min && d <= r.max) r.count++; });
+    });
+    var maxCount = Math.max.apply(null, ranges.map(function(r) { return r.count; })) || 1;
+    body += '<div style="display:flex;align-items:flex-end;gap:8px;height:80px;margin-top:8px;">';
+    ranges.forEach(function(r) {
+      var pct = Math.max(5, (r.count / maxCount) * 100);
+      body += '<div style="flex:1;text-align:center;">' +
+        '<div style="background:var(--accent-blue);height:' + pct + '%;border-radius:4px 4px 0 0;transition:height 0.3s;min-height:4px;"></div>' +
+        '<div style="font-size:11px;margin-top:4px;color:var(--text-muted);">' + r.label + '</div>' +
+        '<div style="font-size:12px;font-weight:600;">' + r.count + '</div></div>';
+    });
+    body += '</div>';
+  }
+
+  openModal({ title: 'Revenue Cycle Dashboard', bodyHTML: body, footerHTML: '', size: 'xl' });
+}
+
+/* ============================================================
+   PATIENT STATEMENT MODAL
+   ============================================================ */
+function openPatientStatementModal(patientId) {
+  const patient = loadAll(KEYS.patients).find(function(p) { return p.id === patientId; });
+  if (!patient) { showToast('Patient not found', 'error'); return; }
+
+  const claims = getClaimsByPatient(patientId).filter(function(c) { return c.status !== 'Draft'; });
+  var totalOwed = 0;
+
+  var body = '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;background:var(--bg-surface);">';
+  body += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">';
+  body += '<div><h3 style="margin-bottom:4px;">Patient Statement</h3><p style="color:var(--text-muted);font-size:12px;">Statement Date: ' + new Date().toLocaleDateString() + '</p></div>';
+  body += '<div style="text-align:right;"><strong>GusdorfEMR Clinic</strong><br/><span style="font-size:12px;color:var(--text-secondary);">123 Medical Center Dr<br/>Suite 100</span></div>';
+  body += '</div>';
+
+  body += '<div style="margin-bottom:16px;padding:12px;background:var(--bg-base);border-radius:var(--radius);">';
+  body += '<strong>' + esc(patient.lastName + ', ' + patient.firstName) + '</strong><br/>';
+  body += '<span style="font-size:12px;color:var(--text-secondary);">MRN: ' + esc(patient.mrn || '') + '</span>';
+  body += '</div>';
+
+  body += '<table class="table"><thead><tr><th>Date</th><th>Service</th><th>Charged</th><th>Insurance Paid</th><th>Adjustment</th><th>Patient Owes</th></tr></thead><tbody>';
+  claims.forEach(function(c) {
+    var insured = (parseFloat(c.totalPaid) || 0);
+    var adj = (parseFloat(c.totalAdjustment) || 0);
+    var ptOwe = Math.max(0, (parseFloat(c.totalCharge) || 0) - insured - adj);
+    totalOwed += ptOwe;
+    var desc = (c.charges || []).map(function(ch) { return ch.cptCode || ch.description || ''; }).join(', ') || 'Medical Services';
+    body += '<tr><td>' + esc((c.serviceDate || c.createdAt || '').slice(0, 10)) + '</td>' +
+      '<td>' + esc(desc.slice(0, 50)) + '</td>' +
+      '<td>' + _formatMoney(c.totalCharge) + '</td><td>' + _formatMoney(insured) + '</td>' +
+      '<td>' + _formatMoney(adj) + '</td><td style="font-weight:700">' + _formatMoney(ptOwe) + '</td></tr>';
+  });
+  body += '</tbody></table>';
+
+  body += '<div style="text-align:right;margin-top:12px;padding-top:12px;border-top:2px solid var(--border);">';
+  body += '<span style="font-size:18px;font-weight:800;">Total Due: ' + _formatMoney(totalOwed) + '</span>';
+  body += '</div></div>';
+
+  var footerHTML = '<button class="btn btn-primary" onclick="window.print()">Print Statement</button>' +
+    '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+
+  openModal({ title: 'Patient Statement — ' + esc(patient.lastName + ', ' + patient.firstName), bodyHTML: body, footerHTML: footerHTML, size: 'xl' });
 }
