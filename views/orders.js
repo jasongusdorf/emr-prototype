@@ -4,8 +4,8 @@
    Right: order entry form with 4 type selectors
    ============================================================ */
 
-const ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult'];
-const ORDER_TYPE_ICONS = { Medication: '', Lab: '', Imaging: '', Consult: '' };
+const ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult', 'Diet', 'Nursing', 'Activity'];
+const ORDER_TYPE_ICONS = { Medication: '', Lab: '', Imaging: '', Consult: '', Diet: '', Nursing: '', Activity: '' };
 const PRIORITIES = ['Routine', 'Urgent', 'STAT'];
 
 // Common lab panels
@@ -21,8 +21,31 @@ const MED_FREQS  = ['Once', 'BID', 'TID', 'QID', 'Q4h', 'Q6h', 'Q8h', 'Q12h', 'Q
 const CONSULT_SERVICES = [
   'Cardiology', 'Neurology', 'Pulmonology', 'Gastroenterology', 'Nephrology',
   'Endocrinology', 'Infectious Disease', 'Hematology/Oncology', 'Rheumatology',
-  'Orthopedics', 'Surgery', 'Psychiatry', 'Physical Therapy', 'Social Work', 'Other',
+  'Orthopedics', 'Surgery', 'Psychiatry', 'Physical Therapy', 'Social Work',
+  'MFM (Maternal-Fetal Medicine)', 'Neonatology', 'Genetic Counseling', 'Lactation Consultant',
+  'Speech-Language Pathology', 'Occupational Therapy', 'Palliative Care', 'Pain Management',
+  'Other',
 ];
+
+const DIET_TYPES = [
+  'Regular (IDDSI 7)', 'Easy to Chew (IDDSI 7)', 'Soft & Bite-Sized (IDDSI 6)',
+  'Minced & Moist (IDDSI 5)', 'Pureed (IDDSI 4)', 'Liquidised (IDDSI 3)',
+  'NPO', 'Clear Liquids', 'Full Liquids',
+  'Cardiac', 'Renal', 'Diabetic', 'Low Sodium', 'Low Fat',
+];
+const LIQUID_THICKNESS_OPTIONS = [
+  'Thin (IDDSI 0)', 'Slightly Thick (IDDSI 1)', 'Mildly Thick (IDDSI 2)',
+  'Moderately Thick (IDDSI 3)', 'Extremely Thick (IDDSI 4)',
+];
+
+const REHAB_FOCUS_AREAS = {
+  'Physical Therapy':            ['Mobility', 'Strength', 'Balance', 'Gait', 'ROM', 'Pain management'],
+  'Occupational Therapy':        ['ADLs', 'Fine motor', 'Cognition', 'Visual-perceptual', 'UE function'],
+  'Speech-Language Pathology':   ['Swallowing', 'Language', 'Cognition', 'Voice', 'Fluency'],
+};
+const REHAB_FREQUENCIES = ['Daily', 'BID', 'TID', '3x week', '5x week', 'PRN'];
+const ACTIVITY_LEVELS = ['Bedrest', 'BRP', 'Chair', 'Ambulate-assist', 'Independent'];
+const WEIGHT_BEARING_OPTIONS = ['Full', 'Partial', 'Non-weight-bearing', 'As Tolerated'];
 
 const ORDER_SETS = [
   { name: 'CHF Admission', orders: [
@@ -86,6 +109,7 @@ let _selectedType     = 'Medication';
 let _selectedPriority = 'Routine';
 let _ordersEncounterId = null;
 let _currentPatientId = null;
+let _showUnackedOnly = false;
 
 function renderOrders(encounterId) {
   if (typeof _stopAllAutosaves === 'function') _stopAllAutosaves();  // clear encounter autosave if navigating from encounter view
@@ -194,20 +218,47 @@ function renderOrderList(container, encounterId) {
 
   const header = document.createElement('div');
   header.className = 'card-header';
+  header.style.display = 'flex';
+  header.style.justifyContent = 'space-between';
+  header.style.alignItems = 'center';
   const title = document.createElement('span');
   title.className = 'card-title';
   title.textContent = 'Active Orders';
   header.appendChild(title);
+
+  // Unacknowledged-only filter toggle
+  const filterLabel = document.createElement('label');
+  filterLabel.style.display = 'flex';
+  filterLabel.style.alignItems = 'center';
+  filterLabel.style.gap = '6px';
+  filterLabel.style.fontSize = '12px';
+  filterLabel.style.cursor = 'pointer';
+  const filterCb = document.createElement('input');
+  filterCb.type = 'checkbox';
+  filterCb.checked = _showUnackedOnly;
+  filterCb.addEventListener('change', () => {
+    _showUnackedOnly = filterCb.checked;
+    refreshOrderList();
+  });
+  filterLabel.appendChild(filterCb);
+  filterLabel.appendChild(document.createTextNode('Unacknowledged only'));
+  header.appendChild(filterLabel);
+
   card.appendChild(header);
 
   const body = document.createElement('div');
   body.className = 'card-body';
   body.style.padding = '16px';
 
-  const orders = getOrdersByEncounter(encounterId);
+  let orders = getOrdersByEncounter(encounterId);
+
+  // Apply unacknowledged filter
+  if (_showUnackedOnly) {
+    orders = orders.filter(o => !o.acknowledgedBy);
+  }
 
   if (orders.length === 0) {
-    const empty = buildEmptyState('', 'No orders yet', 'Use the form to place an order.');
+    const empty = buildEmptyState('', _showUnackedOnly ? 'No unacknowledged orders' : 'No orders yet', _showUnackedOnly ? 'All orders have been acknowledged.' : 'Use the form to place an order.');
     body.appendChild(empty);
     card.appendChild(body);
     container.appendChild(card);
@@ -248,6 +299,7 @@ function renderOrderList(container, encounterId) {
       badges.style.display = 'flex';
       badges.style.gap = '4px';
       badges.style.alignItems = 'center';
+      badges.style.flexWrap = 'wrap';
 
       const prioBadge = document.createElement('span');
       prioBadge.className = 'badge badge-' + order.priority.toLowerCase();
@@ -260,24 +312,105 @@ function renderOrderList(container, encounterId) {
       badges.appendChild(prioBadge);
       badges.appendChild(statusBadge);
 
+      // Verbal/Telephone order badge & highlight
+      if (order.verbalOrder) {
+        const voBadge = document.createElement('span');
+        voBadge.className = 'badge';
+        voBadge.style.background = 'var(--badge-purple-text)';
+        voBadge.style.color = '#fff';
+        voBadge.style.fontSize = '10px';
+        voBadge.style.padding = '2px 6px';
+        voBadge.textContent = 'VO';
+        badges.appendChild(voBadge);
+
+        // Yellow highlight for unsigned verbal orders with countdown
+        if (order.coSignRequired && !order.coSigned) {
+          item.style.background = 'var(--badge-warning-bg)';
+          item.style.borderLeft = '4px solid var(--warning)';
+          if (order.coSignDeadline) {
+            const remaining = new Date(order.coSignDeadline) - Date.now();
+            if (remaining > 0) {
+              const hrs = Math.floor(remaining / 3600000);
+              const mins = Math.floor((remaining % 3600000) / 60000);
+              const countdownBadge = document.createElement('span');
+              countdownBadge.className = 'badge';
+              countdownBadge.style.background = remaining < 4 * 3600000 ? 'var(--danger)' : 'var(--warning)';
+              countdownBadge.style.color = '#fff';
+              countdownBadge.style.fontSize = '10px';
+              countdownBadge.style.padding = '2px 6px';
+              countdownBadge.textContent = 'Co-sign: ' + hrs + 'h ' + mins + 'm left';
+              badges.appendChild(countdownBadge);
+            } else {
+              const overdueBadge = document.createElement('span');
+              overdueBadge.className = 'badge';
+              overdueBadge.style.background = 'var(--danger)';
+              overdueBadge.style.color = '#fff';
+              overdueBadge.style.fontSize = '10px';
+              overdueBadge.style.padding = '2px 6px';
+              overdueBadge.textContent = 'Co-sign OVERDUE';
+              badges.appendChild(overdueBadge);
+              item.style.background = 'var(--badge-danger-bg)';
+              item.style.borderLeft = '4px solid var(--danger)';
+            }
+          }
+        }
+      }
+
+      // Unacknowledged indicator
+      if (!order.acknowledgedBy) {
+        const unackBadge = document.createElement('span');
+        unackBadge.className = 'badge';
+        unackBadge.style.background = 'var(--warning)';
+        unackBadge.style.color = '#fff';
+        unackBadge.style.fontSize = '10px';
+        unackBadge.style.padding = '2px 6px';
+        unackBadge.textContent = 'Unacked';
+        badges.appendChild(unackBadge);
+      }
+
       itemHeader.appendChild(nameEl);
       itemHeader.appendChild(badges);
 
       const metaEl = document.createElement('div');
       metaEl.className = 'order-item-meta';
-      metaEl.textContent = getOrderSubtext(order) + ' · ' + formatDateTime(order.dateTime);
+      let metaText = getOrderSubtext(order) + ' · ' + formatDateTime(order.dateTime);
+      if (order.acknowledgedBy) {
+        metaText += ' · Acked ' + formatDateTime(order.acknowledgedAt);
+      }
+      metaEl.textContent = metaText;
 
       const actionsEl = document.createElement('div');
       actionsEl.className = 'order-item-actions';
       actionsEl.style.marginTop = '6px';
+
+      // Ack button
+      if (!order.acknowledgedBy) {
+        const ackBtn = document.createElement('button');
+        ackBtn.className = 'btn btn-secondary btn-sm';
+        ackBtn.style.background = 'var(--warning)';
+        ackBtn.style.color = '#fff';
+        ackBtn.style.borderColor = 'var(--warning)';
+        ackBtn.textContent = 'Ack';
+        ackBtn.onclick = () => {
+          const user = getSessionUser();
+          const updatedOrder = getOrder(order.id);
+          if (updatedOrder) {
+            updatedOrder.acknowledgedBy = (user || {}).id || '';
+            updatedOrder.acknowledgedAt = new Date().toISOString();
+            saveOrder(updatedOrder);
+            showToast('Order acknowledged.', 'success');
+            refreshOrderList();
+          }
+        };
+        actionsEl.appendChild(ackBtn);
+      }
 
       if (order.status === 'Pending' || order.status === 'Active') {
         const completeBtn = document.createElement('button');
         completeBtn.className = 'btn btn-secondary btn-sm';
         completeBtn.textContent = 'Complete';
         completeBtn.onclick = () => {
-          updateOrderStatus(order.id, 'Completed');
-          refreshOrderList();
+          openCompletionModal(order);
         };
         actionsEl.appendChild(completeBtn);
       }
@@ -335,6 +468,188 @@ function renderOrderList(container, encounterId) {
 
   card.appendChild(body);
   container.appendChild(card);
+}
+
+/* ---------- Order Completion Documentation Modal (5d) ---------- */
+function openCompletionModal(order) {
+  const user = getSessionUser();
+  const userName = user ? (user.firstName + ' ' + user.lastName) : '';
+  const nowLocal = new Date().toISOString().slice(0, 16); // for datetime-local default
+
+  let fieldsHTML = '';
+
+  switch (order.type) {
+    case 'Lab':
+      fieldsHTML = `
+        <div class="form-group">
+          <label class="form-label">Specimen Collected Time *</label>
+          <input class="form-control" id="comp-lab-time" type="datetime-local" value="${nowLocal}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Collector Name *</label>
+          <input class="form-control" id="comp-lab-collector" type="text" placeholder="Name of collector" value="${esc(userName)}" />
+        </div>
+      `;
+      break;
+    case 'Nursing':
+      fieldsHTML = `
+        <div class="form-group">
+          <label class="form-label">Intervention Performed Notes *</label>
+          <textarea class="note-textarea" id="comp-nsg-notes" style="min-height:80px" placeholder="Describe what was performed"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Outcome</label>
+          <input class="form-control" id="comp-nsg-outcome" type="text" placeholder="Outcome of intervention" />
+        </div>
+      `;
+      break;
+    case 'Diet':
+      fieldsHTML = `
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="comp-diet-started" checked />
+          <label for="comp-diet-started" class="form-label" style="margin:0">Diet Started</label>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Started Time</label>
+          <input class="form-control" id="comp-diet-time" type="datetime-local" value="${nowLocal}" />
+        </div>
+      `;
+      break;
+    case 'Activity':
+      fieldsHTML = `
+        <div class="form-group">
+          <label class="form-label">Tolerance Notes</label>
+          <textarea class="note-textarea" id="comp-act-notes" style="min-height:80px" placeholder="Notes on patient tolerance"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Patient Response *</label>
+          <select class="form-control" id="comp-act-response">
+            <option>Tolerated Well</option>
+            <option>Partially Tolerated</option>
+            <option>Not Tolerated</option>
+          </select>
+        </div>
+      `;
+      break;
+    case 'Medication':
+      fieldsHTML = `
+        <div class="form-group">
+          <label class="form-label">Administered Time *</label>
+          <input class="form-control" id="comp-med-time" type="datetime-local" value="${nowLocal}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Administered By</label>
+          <input class="form-control" id="comp-med-by" type="text" value="${esc(userName)}" />
+        </div>
+      `;
+      break;
+    case 'Imaging':
+      fieldsHTML = `
+        <div class="form-group">
+          <label class="form-label">Performed Time *</label>
+          <input class="form-control" id="comp-img-time" type="datetime-local" value="${nowLocal}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Performing Tech</label>
+          <input class="form-control" id="comp-img-tech" type="text" placeholder="Technologist name" />
+        </div>
+      `;
+      break;
+    case 'Consult':
+      fieldsHTML = `
+        <div class="form-group">
+          <label class="form-label">Consultant Name *</label>
+          <input class="form-control" id="comp-con-name" type="text" placeholder="Consultant name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Consultation Date *</label>
+          <input class="form-control" id="comp-con-date" type="datetime-local" value="${nowLocal}" />
+        </div>
+      `;
+      break;
+    default:
+      fieldsHTML = '<p>No additional documentation needed for this order type.</p>';
+  }
+
+  const bodyHTML = '<div>' +
+    '<p style="margin-bottom:12px"><strong>' + esc(order.type) + ':</strong> ' + esc(getOrderDisplayName(order)) + '</p>' +
+    fieldsHTML +
+    '</div>';
+
+  const footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-success" id="comp-save-btn">Complete Order</button>';
+
+  openModal({ title: 'Complete Order — Documentation', bodyHTML, footerHTML });
+
+  document.getElementById('comp-save-btn').addEventListener('click', () => {
+    const updatedOrder = getOrder(order.id);
+    if (!updatedOrder) { showToast('Order not found.', 'error'); return; }
+
+    const completionDetail = {};
+
+    switch (order.type) {
+      case 'Lab': {
+        const time = document.getElementById('comp-lab-time')?.value;
+        const collector = document.getElementById('comp-lab-collector')?.value.trim();
+        if (!time || !collector) { showToast('Specimen collected time and collector name are required.', 'error'); return; }
+        completionDetail.specimenCollectedTime = time;
+        completionDetail.collectorName = collector;
+        break;
+      }
+      case 'Nursing': {
+        const notes = document.getElementById('comp-nsg-notes')?.value.trim();
+        if (!notes) { showToast('Intervention performed notes are required.', 'error'); return; }
+        completionDetail.interventionNotes = notes;
+        completionDetail.outcome = document.getElementById('comp-nsg-outcome')?.value.trim() || '';
+        break;
+      }
+      case 'Diet': {
+        completionDetail.dietStarted = document.getElementById('comp-diet-started')?.checked || false;
+        completionDetail.startedTime = document.getElementById('comp-diet-time')?.value || '';
+        break;
+      }
+      case 'Activity': {
+        const response = document.getElementById('comp-act-response')?.value;
+        if (!response) { showToast('Patient response is required.', 'error'); return; }
+        completionDetail.toleranceNotes = document.getElementById('comp-act-notes')?.value.trim() || '';
+        completionDetail.patientResponse = response;
+        break;
+      }
+      case 'Medication': {
+        const time = document.getElementById('comp-med-time')?.value;
+        if (!time) { showToast('Administered time is required.', 'error'); return; }
+        completionDetail.administeredTime = time;
+        completionDetail.administeredBy = document.getElementById('comp-med-by')?.value.trim() || '';
+        break;
+      }
+      case 'Imaging': {
+        const time = document.getElementById('comp-img-time')?.value;
+        if (!time) { showToast('Performed time is required.', 'error'); return; }
+        completionDetail.performedTime = time;
+        completionDetail.performingTech = document.getElementById('comp-img-tech')?.value.trim() || '';
+        break;
+      }
+      case 'Consult': {
+        const name = document.getElementById('comp-con-name')?.value.trim();
+        const date = document.getElementById('comp-con-date')?.value;
+        if (!name || !date) { showToast('Consultant name and consultation date are required.', 'error'); return; }
+        completionDetail.consultantName = name;
+        completionDetail.consultationDate = date;
+        break;
+      }
+    }
+
+    // Merge completion details into the order's detail object
+    updatedOrder.detail = Object.assign({}, updatedOrder.detail || {}, { completion: completionDetail });
+    updatedOrder.status = 'Completed';
+    updatedOrder.completedAt = new Date().toISOString();
+    updatedOrder.completedBy = (user || {}).id || '';
+    saveOrder(updatedOrder);
+
+    closeModal();
+    showToast(order.type + ' order completed.', 'success');
+    refreshOrderList();
+  });
 }
 
 function refreshOrderList(containerId) {
@@ -426,6 +741,34 @@ function renderOrderEntryForm(container, encounter, patient) {
     pillsContainer.appendChild(pill);
   });
   body.appendChild(pillsContainer);
+
+  // Verbal/Telephone Order section
+  const voSection = document.createElement('div');
+  voSection.id = 'verbal-order-section';
+  voSection.style.marginTop = '8px';
+  voSection.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="vo-checkbox" /> Verbal / Telephone Order
+      </label>
+    </div>
+    <div id="vo-fields" hidden style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;background:var(--bg-surface)">
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label">Order Given By (name) *</label>
+        <input class="form-control" id="vo-given-by" type="text" placeholder="Name of ordering provider" />
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="vo-readback" /> Read-back confirmed
+      </label>
+    </div>
+  `;
+  body.appendChild(voSection);
+
+  const voCb = voSection.querySelector('#vo-checkbox');
+  const voFields = voSection.querySelector('#vo-fields');
+  voCb.addEventListener('change', () => {
+    voFields.hidden = !voCb.checked;
+  });
 
   // Type-specific fields container
   const typeFieldsContainer = document.createElement('div');
@@ -782,6 +1125,7 @@ function renderTypeFields(container, type) {
           ${CONSULT_SERVICES.map(s => `<option>${esc(s)}</option>`).join('')}
         </select>
       </div>
+      <div id="rehab-fields-container"></div>
       <div class="form-group">
         <label class="form-label">Reason for Consult *</label>
         <textarea class="note-textarea" id="con-reason" style="min-height:80px"
@@ -793,6 +1137,118 @@ function renderTypeFields(container, type) {
           <option>Routine</option>
           <option>Urgent</option>
           <option>Emergent</option>
+        </select>
+      </div>
+    `;
+
+    // Show/hide rehab fields based on selected service
+    const conServiceSel = container.querySelector('#con-service');
+    const rehabContainer = container.querySelector('#rehab-fields-container');
+    function _updateRehabFields() {
+      const svc = conServiceSel.value;
+      if (REHAB_FOCUS_AREAS[svc]) {
+        const focusAreas = REHAB_FOCUS_AREAS[svc];
+        rehabContainer.innerHTML = `
+          <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin:8px 0;background:var(--bg-surface)">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px">Rehabilitation Details</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Frequency</label>
+                <select class="form-control" id="rehab-frequency">
+                  ${REHAB_FREQUENCIES.map(f => '<option>' + esc(f) + '</option>').join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Duration</label>
+                <input class="form-control" id="rehab-duration" type="text" placeholder="e.g. 4 weeks" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Precautions</label>
+              <textarea class="note-textarea" id="rehab-precautions" style="min-height:60px"
+                placeholder="Weight-bearing, fall risk, aspiration, etc."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Focus Areas</label>
+              <div id="rehab-focus-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+                ${focusAreas.map(fa => '<label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" class="rehab-focus-cb" value="' + esc(fa) + '" /> ' + esc(fa) + '</label>').join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        rehabContainer.innerHTML = '';
+      }
+    }
+    conServiceSel.addEventListener('change', _updateRehabFields);
+    _updateRehabFields();
+  }
+
+  else if (type === 'Diet') {
+    container.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Diet Type *</label>
+        <select class="form-control" id="diet-type">
+          ${DIET_TYPES.map(d => `<option>${esc(d)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Liquid Thickness</label>
+        <select class="form-control" id="diet-liquid-thickness">
+          <option value="">— Select —</option>
+          ${LIQUID_THICKNESS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fluid Restriction (mL)</label>
+        <input class="form-control" id="diet-fluid-restriction" type="number" min="0" placeholder="e.g. 1500" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Instructions</label>
+        <textarea class="note-textarea" id="diet-instructions" style="min-height:80px"
+          placeholder="Additional dietary instructions or notes"></textarea>
+      </div>
+    `;
+  }
+
+  else if (type === 'Nursing') {
+    container.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Intervention Description *</label>
+        <textarea class="note-textarea" id="nsg-intervention" style="min-height:80px"
+          placeholder="Describe the nursing intervention"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Frequency</label>
+        <select class="form-control" id="nsg-frequency">
+          ${MED_FREQS.map(f => `<option>${esc(f)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Instructions</label>
+        <textarea class="note-textarea" id="nsg-instructions" style="min-height:80px"
+          placeholder="Additional nursing instructions"></textarea>
+      </div>
+    `;
+  }
+
+  else if (type === 'Activity') {
+    container.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Activity Level *</label>
+        <select class="form-control" id="act-level">
+          ${ACTIVITY_LEVELS.map(l => `<option>${esc(l)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Restrictions</label>
+        <textarea class="note-textarea" id="act-restrictions" style="min-height:80px"
+          placeholder="Activity restrictions or precautions"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Weight-Bearing</label>
+        <select class="form-control" id="act-weight-bearing">
+          ${WEIGHT_BEARING_OPTIONS.map(w => `<option>${esc(w)}</option>`).join('')}
         </select>
       </div>
     `;
@@ -882,6 +1338,47 @@ function placeOrder(encounter, patient) {
       reason,
       urgency: document.getElementById('con-urgency')?.value,
     };
+    // Capture rehab fields if present
+    if (REHAB_FOCUS_AREAS[service]) {
+      detail.rehabFrequency = document.getElementById('rehab-frequency')?.value || '';
+      detail.rehabDuration  = document.getElementById('rehab-duration')?.value.trim() || '';
+      detail.precautions    = document.getElementById('rehab-precautions')?.value.trim() || '';
+      const focusCbs = document.querySelectorAll('.rehab-focus-cb');
+      const focusAreas = [];
+      focusCbs.forEach(cb => { if (cb.checked) focusAreas.push(cb.value); });
+      detail.focusAreas = focusAreas;
+    }
+  }
+
+  else if (type === 'Diet') {
+    const dietType = document.getElementById('diet-type')?.value;
+    if (!dietType) { showToast('Diet type is required.', 'error'); return; }
+    detail = {
+      dietType,
+      liquidThickness: document.getElementById('diet-liquid-thickness')?.value || '',
+      fluidRestriction: document.getElementById('diet-fluid-restriction')?.value || '',
+      instructions: document.getElementById('diet-instructions')?.value.trim() || '',
+    };
+  }
+
+  else if (type === 'Nursing') {
+    const intervention = document.getElementById('nsg-intervention')?.value.trim();
+    if (!intervention) { showToast('Intervention description is required.', 'error'); return; }
+    detail = {
+      intervention,
+      frequency: document.getElementById('nsg-frequency')?.value || '',
+      instructions: document.getElementById('nsg-instructions')?.value.trim() || '',
+    };
+  }
+
+  else if (type === 'Activity') {
+    const level = document.getElementById('act-level')?.value;
+    if (!level) { showToast('Activity level is required.', 'error'); return; }
+    detail = {
+      level,
+      restrictions: document.getElementById('act-restrictions')?.value.trim() || '',
+      weightBearing: document.getElementById('act-weight-bearing')?.value || '',
+    };
   }
 
   if (!valid) return;
@@ -919,24 +1416,46 @@ function placeOrder(encounter, patient) {
     }
   }
 
+  // Verbal/Telephone order fields
+  const voActive     = document.getElementById('vo-checkbox')?.checked || false;
+  const voGivenBy    = document.getElementById('vo-given-by')?.value.trim() || '';
+  const voReadback   = document.getElementById('vo-readback')?.checked || false;
+
+  if (voActive) {
+    if (!voGivenBy) { showToast('Verbal order: name of ordering provider is required.', 'error'); return; }
+    if (!voReadback) { showToast('Verbal order: read-back confirmation is required.', 'error'); return; }
+  }
+
   const doSave = () => {
-    saveOrder({
+    const orderData = {
       encounterId: encounter.id,
       patientId:   encounter.patientId,
-      orderedBy:   orderedBy || '',
+      orderedBy:   voActive ? voGivenBy : (orderedBy || ''),
       type,
       priority,
       status:  'Pending',
       detail,
       notes,
       dateTime: new Date().toISOString(),
-    });
+    };
+    if (voActive) {
+      orderData.verbalOrder       = true;
+      orderData.readBackConfirmed = true;
+      orderData.coSignRequired    = true;
+      orderData.coSignDeadline    = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    }
+    saveOrder(orderData);
     showToast(type + ' order added to queue — awaiting signature', 'success');
     if (typeof refreshOrderQueue === 'function') refreshOrderQueue(true);
     refreshOrderList();
     renderTypeFields(document.getElementById('type-fields'), type);
     const notesField = document.getElementById('ord-notes');
     if (notesField) notesField.value = '';
+    // Reset verbal order controls
+    const voCb2 = document.getElementById('vo-checkbox');
+    const voFields2 = document.getElementById('vo-fields');
+    if (voCb2) voCb2.checked = false;
+    if (voFields2) voFields2.hidden = true;
   };
 
   // Controlled substance check for Medication orders
@@ -1006,6 +1525,9 @@ function getOrderDisplayName(order) {
     case 'Lab':        return d.panel || 'Lab';
     case 'Imaging':    return (d.modality || '') + ' ' + (d.bodyPart || '');
     case 'Consult':    return (d.service || '') + ' Consult';
+    case 'Diet':       return d.dietType ? 'Diet: ' + d.dietType : 'Diet';
+    case 'Nursing':    return d.intervention ? 'Nursing: ' + (d.intervention.length > 40 ? d.intervention.slice(0, 40) + '…' : d.intervention) : 'Nursing';
+    case 'Activity':   return d.level ? 'Activity: ' + d.level : 'Activity';
     default:           return order.type;
   }
 }
@@ -1028,6 +1550,24 @@ function getOrderSubtext(order) {
     }
     case 'Imaging': return d.indication || '';
     case 'Consult': return d.reason ? d.reason.slice(0, 60) + (d.reason.length > 60 ? '…' : '') : '';
+    case 'Diet': {
+      const parts = [];
+      if (d.fluidRestriction) parts.push('Fluid restrict: ' + d.fluidRestriction + ' mL');
+      if (d.instructions) parts.push(d.instructions.slice(0, 50) + (d.instructions.length > 50 ? '…' : ''));
+      return parts.join(' · ') || '';
+    }
+    case 'Nursing': {
+      const parts = [];
+      if (d.frequency) parts.push(d.frequency);
+      if (d.instructions) parts.push(d.instructions.slice(0, 50) + (d.instructions.length > 50 ? '…' : ''));
+      return parts.join(' · ') || '';
+    }
+    case 'Activity': {
+      const parts = [];
+      if (d.weightBearing) parts.push('WB: ' + d.weightBearing);
+      if (d.restrictions) parts.push(d.restrictions.slice(0, 50) + (d.restrictions.length > 50 ? '…' : ''));
+      return parts.join(' · ') || '';
+    }
     default:        return '';
   }
 }
@@ -1158,20 +1698,35 @@ function _renderPharmacySection(sectionEl, patientId) {
 
 /* ---------- Continue after duplicate check (re-runs controlled substance + DDI + allergy) ---------- */
 function _continueAfterDupeCheck(encounter, patient, type, detail, priority, notes) {
+  const voActive2   = document.getElementById('vo-checkbox')?.checked || false;
+  const voGivenBy2  = document.getElementById('vo-given-by')?.value.trim() || '';
+
   const doSave = () => {
-    saveOrder({
+    const orderData = {
       encounterId: encounter.id,
       patientId:   encounter.patientId,
-      orderedBy:   getCurrentProvider() || (getSessionUser() || {}).id || '',
+      orderedBy:   voActive2 ? voGivenBy2 : (getCurrentProvider() || (getSessionUser() || {}).id || ''),
       type, priority, status: 'Pending', detail, notes,
       dateTime: new Date().toISOString(),
-    });
+    };
+    if (voActive2) {
+      orderData.verbalOrder       = true;
+      orderData.readBackConfirmed = true;
+      orderData.coSignRequired    = true;
+      orderData.coSignDeadline    = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    }
+    saveOrder(orderData);
     showToast(type + ' order added to queue — awaiting signature', 'success');
     if (typeof refreshOrderQueue === 'function') refreshOrderQueue(true);
     refreshOrderList();
     renderTypeFields(document.getElementById('type-fields'), type);
     const notesField = document.getElementById('ord-notes');
     if (notesField) notesField.value = '';
+    // Reset verbal order controls
+    const voCb3 = document.getElementById('vo-checkbox');
+    const voFields3 = document.getElementById('vo-fields');
+    if (voCb3) voCb3.checked = false;
+    if (voFields3) voFields3.hidden = true;
   };
 
   // Controlled substance check
@@ -1211,13 +1766,121 @@ function _proceedAfterDDI(type, detail, patient, doSave) {
   if (type === 'Medication' && patient) {
     const matches = _matchingAllergies(detail.drug || '', patient.id);
     if (matches.length > 0) {
+      // 7a: Check if any match is a hard-stop (direct allergy or critical cross-reactivity)
       const allergyText = matches.map(a => a.allergen + ' (' + a.severity + ' — ' + a.reaction + ')').join(', ');
-      confirmAction({
-        title: ' Allergy Alert — Override?',
-        message: 'Patient has a recorded allergy to: ' + allergyText + '. Are you sure you want to place this order?',
-        confirmLabel: 'Override & Place Order',
-        danger: true,
-        onConfirm: doSave,
+      const hasCriticalAllergy = matches.some(a => {
+        var allergenLower = (a.allergen || '').toLowerCase().trim();
+        var drugLower = (detail.drug || '').toLowerCase().trim();
+        // Direct match = hard block
+        if (allergenLower.indexOf(drugLower) >= 0 || drugLower.indexOf(allergenLower) >= 0) return true;
+        // Critical cross-reactivity = hard block
+        var isCriticalCross = false;
+        if (typeof ALLERGY_CROSS_REACTIVITY !== 'undefined') {
+          ALLERGY_CROSS_REACTIVITY.forEach(function(cr) {
+            if (cr.severity === 'warning') return; // only block critical
+            if (allergenLower.indexOf(cr.allergen) >= 0 || cr.allergen.indexOf(allergenLower) >= 0) {
+              cr.crossReacts.forEach(function(xr) {
+                if (drugLower.indexOf(xr) >= 0 || xr.indexOf(drugLower) >= 0) isCriticalCross = true;
+              });
+            }
+          });
+        }
+        return isCriticalCross;
+      });
+
+      if (hasCriticalAllergy) {
+        // Hard-stop allergy block — show red modal with override requiring reason
+        const bodyHTML = '<div style="background:var(--badge-danger-bg);border:2px solid var(--danger);border-radius:8px;padding:20px;margin-bottom:12px">' +
+          '<h3 style="color:var(--danger);margin:0 0 12px">ORDER BLOCKED</h3>' +
+          '<p style="color:var(--badge-danger-text);font-size:14px;line-height:1.6">Patient has documented allergy to: <strong>' + esc(allergyText) + '</strong>.</p>' +
+          '<p style="color:var(--badge-danger-text);font-size:14px">This medication (<strong>' + esc(detail.drug) + '</strong>) is contraindicated.</p>' +
+          '</div>' +
+          '<div id="allergy-override-section" style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:12px">' +
+          '<h4 style="margin:0 0 8px;font-size:14px">Override with Clinical Justification</h4>' +
+          '<div class="form-group">' +
+          '<label class="form-label">Override Reason (required) *</label>' +
+          '<textarea class="form-control" id="allergy-override-reason" rows="3" placeholder="Provide clinical justification for overriding this allergy block..."></textarea>' +
+          '</div>' +
+          '</div>';
+        const footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel Order</button>' +
+          '<button class="btn btn-danger" id="allergy-override-btn" disabled>Override with Reason</button>';
+
+        openModal({ title: 'Drug-Allergy Block', bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+        const reasonTA = document.getElementById('allergy-override-reason');
+        const overrideBtn = document.getElementById('allergy-override-btn');
+        reasonTA.addEventListener('input', function() {
+          overrideBtn.disabled = reasonTA.value.trim().length === 0;
+        });
+        overrideBtn.addEventListener('click', function() {
+          const reason = reasonTA.value.trim();
+          if (!reason) { showToast('Override reason is required.', 'error'); return; }
+          const user = getSessionUser();
+          // Wrap doSave to inject allergyOverride metadata
+          const originalDoSave = doSave;
+          const wrappedDoSave = function() {
+            // Temporarily patch detail to include override info
+            detail.allergyOverride = true;
+            detail.overrideReason = reason;
+            detail.overriddenBy = user ? user.id : '';
+            originalDoSave();
+          };
+          closeModal();
+          // Proceed to high-alert check after override
+          _proceedAfterAllergyCheck(type, detail, patient, wrappedDoSave);
+        });
+        return;
+      } else {
+        // Non-critical allergy: confirm but don't hard-block
+        confirmAction({
+          title: 'Allergy Alert',
+          message: 'Patient has a recorded allergy to: ' + allergyText + '. Are you sure you want to place this order?',
+          confirmLabel: 'Override & Place Order',
+          danger: true,
+          onConfirm: function() { _proceedAfterAllergyCheck(type, detail, patient, doSave); },
+        });
+        return;
+      }
+    }
+  }
+  _proceedAfterAllergyCheck(type, detail, patient, doSave);
+}
+
+/* ---------- 7b: High-alert medication double-check ---------- */
+function _proceedAfterAllergyCheck(type, detail, patient, doSave) {
+  if (type === 'Medication' && typeof HIGH_ALERT_MEDS !== 'undefined') {
+    var drugLower = (detail.drug || '').toLowerCase().trim();
+    var isHighAlert = HIGH_ALERT_MEDS.some(function(ham) {
+      return drugLower.indexOf(ham) >= 0 || ham.indexOf(drugLower) >= 0;
+    });
+    if (isHighAlert) {
+      var bodyHTML = '<div style="background:var(--badge-warning-bg);border:2px solid var(--warning);border-radius:8px;padding:20px;margin-bottom:12px">' +
+        '<h3 style="color:var(--badge-warning-text);margin:0 0 8px">HIGH-ALERT MEDICATION</h3>' +
+        '<p style="color:var(--badge-warning-text);font-size:14px;line-height:1.6"><strong>' + esc(detail.drug) + '</strong> is classified as a high-alert medication.</p>' +
+        '<p style="color:var(--badge-warning-text);font-size:13px">High-alert medications bear a heightened risk of causing significant patient harm when used in error.</p>' +
+        '</div>' +
+        '<div style="padding:12px;border:1px solid var(--border);border-radius:8px">' +
+        '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:14px;line-height:1.5">' +
+        '<input type="checkbox" id="high-alert-verify-cb" style="margin-top:4px" />' +
+        '<span>I have independently verified the <strong>dose</strong>, <strong>route</strong>, and <strong>rate</strong> for this high-alert medication.</span>' +
+        '</label>' +
+        '</div>';
+      var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel Order</button>' +
+        '<button class="btn btn-warning" id="high-alert-proceed-btn" disabled>Proceed with Order</button>';
+
+      openModal({ title: 'High-Alert Medication Verification', bodyHTML: bodyHTML, footerHTML: footerHTML });
+
+      var verifyCb = document.getElementById('high-alert-verify-cb');
+      var proceedBtn = document.getElementById('high-alert-proceed-btn');
+      verifyCb.addEventListener('change', function() {
+        proceedBtn.disabled = !verifyCb.checked;
+      });
+      proceedBtn.addEventListener('click', function() {
+        closeModal();
+        detail.highAlertVerified = true;
+        detail.highAlertVerifiedAt = new Date().toISOString();
+        detail.highAlertVerifiedBy = (getSessionUser() || {}).id || '';
+        doSave();
       });
       return;
     }

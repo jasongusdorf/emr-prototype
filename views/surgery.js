@@ -140,7 +140,10 @@ function buildSurgicalScheduleTab(card, patient) {
       '<td>' + esc(s.orRoom || '—') + '</td>' +
       '<td>' + esc(s.estimatedDuration || '—') + '</td>' +
       '<td><span class="badge ' + statusClass + '">' + esc(s.status) + '</span></td>' +
-      '<td><button class="btn btn-xs btn-secondary" data-sched-id="' + s.id + '">Edit</button></td>' +
+      '<td>' +
+        '<button class="btn btn-xs btn-secondary" data-sched-id="' + s.id + '">Edit</button> ' +
+        '<button class="btn btn-xs btn-info" data-consent-pid="' + s.patientId + '" data-consent-cid="' + s.id + '">Consent Form</button>' +
+      '</td>' +
       '</tr>';
   });
   table += '</tbody></table>';
@@ -148,13 +151,29 @@ function buildSurgicalScheduleTab(card, patient) {
   tableDiv.innerHTML = table;
   card.appendChild(tableDiv);
 
-  tableDiv.querySelectorAll('[data-sched-id]').forEach(function(btn) {
+  tableDiv.querySelectorAll('[data-sched-id]:not([data-consent-pid])').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var id = this.getAttribute('data-sched-id');
       var sched = schedules.find(function(s) { return s.id === id; });
       if (sched) openScheduleSurgeryModal(sched.patientId, sched);
     });
   });
+
+  tableDiv.querySelectorAll('[data-consent-pid]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var pid = this.getAttribute('data-consent-pid');
+      var cid = this.getAttribute('data-consent-cid');
+      openSurgicalConsentModal(pid, cid);
+    });
+  });
+
+  // Preference Cards button
+  var prefBtn = makeBtn('Preference Cards', 'btn btn-sm btn-secondary', function() {
+    var surgeonId = getSessionUser().id;
+    openSurgeonPrefModal(surgeonId);
+  });
+  prefBtn.style.marginTop = '12px';
+  card.appendChild(prefBtn);
 }
 
 function openScheduleSurgeryModal(patientId, existing) {
@@ -186,7 +205,24 @@ function openScheduleSurgeryModal(patientId, existing) {
         }).join('') +
       '</select></div>' +
     '</div>' +
-    '<div class="form-group"><label>Equipment Needs</label><textarea id="ss-equipment" class="form-control" rows="2" placeholder="Special equipment, implants...">' + esc(s.equipmentNeeds || '') + '</textarea></div>';
+    '<div class="form-group"><label>Equipment Needs</label><textarea id="ss-equipment" class="form-control" rows="2" placeholder="Special equipment, implants...">' + esc(s.equipmentNeeds || '') + '</textarea></div>' +
+    '<div class="form-row">' +
+      '<div class="form-group"><label>H&P Status</label><select id="ss-hp" class="form-control">' +
+        ['Pending', 'Completed', 'Not Required'].map(function(v) {
+          return '<option' + (s.hpStatus === v ? ' selected' : '') + '>' + v + '</option>';
+        }).join('') +
+      '</select></div>' +
+      '<div class="form-group"><label>Cardiac Clearance</label><select id="ss-cardiac" class="form-control">' +
+        ['Pending', 'Completed', 'Not Required'].map(function(v) {
+          return '<option' + (s.cardiacClearance === v ? ' selected' : '') + '>' + v + '</option>';
+        }).join('') +
+      '</select></div>' +
+      '<div class="form-group"><label>Anesthesia Eval</label><select id="ss-aneseval" class="form-control">' +
+        ['Pending', 'Completed', 'Not Required'].map(function(v) {
+          return '<option' + (s.anesthesiaEval === v ? ' selected' : '') + '>' + v + '</option>';
+        }).join('') +
+      '</select></div>' +
+    '</div>';
 
   openModal({
     title: (existing ? 'Edit' : 'Schedule') + ' Surgery',
@@ -199,16 +235,71 @@ function openScheduleSurgeryModal(patientId, existing) {
     var pid = document.getElementById('ss-patient').value;
     var procedure = document.getElementById('ss-procedure').value.trim();
     if (!procedure) { showToast('Procedure is required', 'error'); return; }
+
+    var newDateTime = document.getElementById('ss-datetime').value ? new Date(document.getElementById('ss-datetime').value).toISOString() : '';
+    var newOrRoom = document.getElementById('ss-or').value.trim();
+    var newDuration = document.getElementById('ss-duration').value.trim();
+
+    // Conflict detection: check for overlapping OR room + time
+    if (newDateTime && newOrRoom) {
+      var newStart = new Date(newDateTime);
+      // Parse estimated duration in minutes (accept formats like "2 hours", "90 min", "120")
+      var durationMinutes = 120; // default 2 hours
+      if (newDuration) {
+        var durMatch = newDuration.match(/(\d+)\s*(h|hour|hr)/i);
+        if (durMatch) {
+          durationMinutes = parseInt(durMatch[1], 10) * 60;
+          var minPart = newDuration.match(/(\d+)\s*(m|min)/i);
+          if (minPart) durationMinutes += parseInt(minPart[1], 10);
+        } else {
+          var minOnly = newDuration.match(/(\d+)/);
+          if (minOnly) durationMinutes = parseInt(minOnly[1], 10);
+        }
+      }
+      var newEnd = new Date(newStart.getTime() + durationMinutes * 60000);
+
+      var allSchedules = getSurgicalSchedules();
+      var conflict = allSchedules.some(function(sched) {
+        if (existing && sched.id === existing.id) return false;
+        if (sched.status === 'Cancelled') return false;
+        if (!sched.orRoom || sched.orRoom.trim().toLowerCase() !== newOrRoom.toLowerCase()) return false;
+        if (!sched.dateTime) return false;
+        var schedStart = new Date(sched.dateTime);
+        var schedDurMin = 120;
+        if (sched.estimatedDuration) {
+          var sdm = sched.estimatedDuration.match(/(\d+)\s*(h|hour|hr)/i);
+          if (sdm) {
+            schedDurMin = parseInt(sdm[1], 10) * 60;
+            var smp = sched.estimatedDuration.match(/(\d+)\s*(m|min)/i);
+            if (smp) schedDurMin += parseInt(smp[1], 10);
+          } else {
+            var smo = sched.estimatedDuration.match(/(\d+)/);
+            if (smo) schedDurMin = parseInt(smo[1], 10);
+          }
+        }
+        var schedEnd = new Date(schedStart.getTime() + schedDurMin * 60000);
+        return newStart < schedEnd && newEnd > schedStart;
+      });
+
+      if (conflict) {
+        showToast('Scheduling conflict: OR ' + esc(newOrRoom) + ' has an overlapping case at that time', 'warning');
+        return;
+      }
+    }
+
     saveSurgicalSchedule({
       id: existing ? existing.id : undefined,
       patientId: pid,
       procedure: procedure,
       surgeon: document.getElementById('ss-surgeon').value,
-      dateTime: document.getElementById('ss-datetime').value ? new Date(document.getElementById('ss-datetime').value).toISOString() : '',
-      orRoom: document.getElementById('ss-or').value,
-      estimatedDuration: document.getElementById('ss-duration').value,
+      dateTime: newDateTime,
+      orRoom: newOrRoom,
+      estimatedDuration: newDuration,
       equipmentNeeds: document.getElementById('ss-equipment').value,
-      status: document.getElementById('ss-status').value
+      status: document.getElementById('ss-status').value,
+      hpStatus: document.getElementById('ss-hp').value,
+      cardiacClearance: document.getElementById('ss-cardiac').value,
+      anesthesiaEval: document.getElementById('ss-aneseval').value
     });
     closeModal();
     showToast('Surgery ' + (existing ? 'updated' : 'scheduled'), 'success');
@@ -278,27 +369,92 @@ function buildChecklistPhaseHTML(title, items, data, complete) {
 
 function openPreOpChecklistModal(patientId, existing) {
   var cl = existing || { signIn: {}, timeOut: {}, signOut: {} };
+  var schedules = getSurgicalSchedules(patientId);
 
-  function buildPhaseInputs(title, items, data, prefix) {
-    var html = '<fieldset class="checklist-fieldset"><legend>' + title + '</legend>';
+  function buildPhaseInputs(title, items, data, prefix, disabled) {
+    var html = '<fieldset class="checklist-fieldset" id="fieldset-' + prefix + '"' + (disabled ? ' disabled' : '') + '><legend>' + title +
+      (disabled ? ' <span class="badge badge-secondary" id="gate-badge-' + prefix + '">Locked — complete previous phase</span>' : '') +
+      '</legend>';
     items.forEach(function(item) {
-      html += '<div class="checkbox-group"><input type="checkbox" id="' + prefix + '-' + item.key + '"' + (data[item.key] ? ' checked' : '') + ' />' +
+      html += '<div class="checkbox-group"><input type="checkbox" class="phase-check-' + prefix + '" id="' + prefix + '-' + item.key + '"' + (data[item.key] ? ' checked' : '') + ' />' +
         '<label for="' + prefix + '-' + item.key + '">' + esc(item.label) + '</label></div>';
     });
     html += '</fieldset>';
     return html;
   }
 
+  var signInComplete = WHO_SIGN_IN.every(function(item) { return cl.signIn && cl.signIn[item.key]; });
+  var timeOutComplete = WHO_TIME_OUT.every(function(item) { return cl.timeOut && cl.timeOut[item.key]; });
+
+  var caseOpts = '<option value="">— Select surgical case —</option>' + schedules.map(function(s) {
+    return '<option value="' + s.id + '"' + (cl.surgicalCaseId === s.id ? ' selected' : '') + '>' + esc(s.procedure + ' — ' + (s.dateTime ? formatDateTime(s.dateTime) : 'TBD')) + '</option>';
+  }).join('');
+
   var bodyHTML =
-    buildPhaseInputs('Sign In', WHO_SIGN_IN, cl.signIn || {}, 'si') +
-    buildPhaseInputs('Time Out', WHO_TIME_OUT, cl.timeOut || {}, 'to') +
-    buildPhaseInputs('Sign Out', WHO_SIGN_OUT, cl.signOut || {}, 'so');
+    '<div class="form-group"><label>Surgical Case</label><select id="preop-case" class="form-control">' + caseOpts + '</select></div>' +
+    buildPhaseInputs('Sign In', WHO_SIGN_IN, cl.signIn || {}, 'si', false) +
+    buildPhaseInputs('Time Out', WHO_TIME_OUT, cl.timeOut || {}, 'to', !signInComplete) +
+    buildPhaseInputs('Sign Out', WHO_SIGN_OUT, cl.signOut || {}, 'so', !timeOutComplete);
 
   openModal({
     title: 'WHO Surgical Safety Checklist',
     bodyHTML: bodyHTML,
     footerHTML: '<button class="btn btn-success" id="save-preop-btn">Save</button>',
     size: 'lg'
+  });
+
+  function updatePhaseGating() {
+    var allSignIn = WHO_SIGN_IN.every(function(item) {
+      var el = document.getElementById('si-' + item.key);
+      return el && el.checked;
+    });
+    var allTimeOut = WHO_TIME_OUT.every(function(item) {
+      var el = document.getElementById('to-' + item.key);
+      return el && el.checked;
+    });
+
+    var toFieldset = document.getElementById('fieldset-to');
+    var soFieldset = document.getElementById('fieldset-so');
+    var toBadge = document.getElementById('gate-badge-to');
+    var soBadge = document.getElementById('gate-badge-so');
+
+    if (allSignIn) {
+      toFieldset.removeAttribute('disabled');
+      if (toBadge) toBadge.remove();
+    } else {
+      toFieldset.setAttribute('disabled', 'disabled');
+      if (!toBadge) {
+        var b = document.createElement('span');
+        b.className = 'badge badge-secondary';
+        b.id = 'gate-badge-to';
+        b.textContent = 'Locked — complete previous phase';
+        toFieldset.querySelector('legend').appendChild(b);
+      }
+    }
+
+    if (allTimeOut && allSignIn) {
+      soFieldset.removeAttribute('disabled');
+      if (soBadge) soBadge.remove();
+    } else {
+      soFieldset.setAttribute('disabled', 'disabled');
+      if (!soBadge) {
+        var b2 = document.createElement('span');
+        b2.className = 'badge badge-secondary';
+        b2.id = 'gate-badge-so';
+        b2.textContent = 'Locked — complete previous phase';
+        soFieldset.querySelector('legend').appendChild(b2);
+      }
+    }
+  }
+
+  // Attach change listeners for gating
+  WHO_SIGN_IN.forEach(function(item) {
+    var el = document.getElementById('si-' + item.key);
+    if (el) el.addEventListener('change', updatePhaseGating);
+  });
+  WHO_TIME_OUT.forEach(function(item) {
+    var el = document.getElementById('to-' + item.key);
+    if (el) el.addEventListener('change', updatePhaseGating);
   });
 
   document.getElementById('save-preop-btn').addEventListener('click', function() {
@@ -310,18 +466,95 @@ function openPreOpChecklistModal(patientId, existing) {
       });
       return data;
     }
+
+    var signInData = collectPhase(WHO_SIGN_IN, 'si');
+    var timeOutData = collectPhase(WHO_TIME_OUT, 'to');
+    var signOutData = collectPhase(WHO_SIGN_OUT, 'so');
+    var now = new Date().toISOString();
+    var userId = getSessionUser().id;
+
+    var signInAllChecked = WHO_SIGN_IN.every(function(item) { return signInData[item.key]; });
+    var timeOutAllChecked = WHO_TIME_OUT.every(function(item) { return timeOutData[item.key]; });
+    var signOutAllChecked = WHO_SIGN_OUT.every(function(item) { return signOutData[item.key]; });
+
+    // Phase timestamps: set completedAt/By when phase first completed
+    var signInCompletedAt = cl.signInCompletedAt || (signInAllChecked ? now : '');
+    var signInCompletedBy = cl.signInCompletedBy || (signInAllChecked ? userId : '');
+    var timeOutCompletedAt = cl.timeOutCompletedAt || (timeOutAllChecked ? now : '');
+    var timeOutCompletedBy = cl.timeOutCompletedBy || (timeOutAllChecked ? userId : '');
+    var signOutCompletedAt = cl.signOutCompletedAt || (signOutAllChecked ? now : '');
+    var signOutCompletedBy = cl.signOutCompletedBy || (signOutAllChecked ? userId : '');
+
     savePreOpChecklist({
       id: existing ? existing.id : undefined,
       patientId: patientId,
-      signIn: collectPhase(WHO_SIGN_IN, 'si'),
-      timeOut: collectPhase(WHO_TIME_OUT, 'to'),
-      signOut: collectPhase(WHO_SIGN_OUT, 'so'),
-      completedBy: getSessionUser().id,
-      completedAt: new Date().toISOString()
+      surgicalCaseId: document.getElementById('preop-case').value,
+      signIn: signInData,
+      timeOut: timeOutData,
+      signOut: signOutData,
+      signInCompletedAt: signInCompletedAt,
+      signInCompletedBy: signInCompletedBy,
+      timeOutCompletedAt: timeOutCompletedAt,
+      timeOutCompletedBy: timeOutCompletedBy,
+      signOutCompletedAt: signOutCompletedAt,
+      signOutCompletedBy: signOutCompletedBy,
+      completedBy: userId,
+      completedAt: now
     });
     closeModal();
     showToast('Checklist saved', 'success');
     renderSurgery(patientId);
+  });
+}
+
+/* ============================================================
+   Surgical Consent Form (2d)
+   ============================================================ */
+function openSurgicalConsentModal(patientId, caseId) {
+  // Check for existing consent for this case
+  var existingConsents = getSurgicalConsents(patientId).filter(function(c) { return c.surgicalCaseId === caseId; });
+  var existing = existingConsents.length > 0 ? existingConsents[0] : null;
+  var c = existing || {};
+
+  var sched = getSurgicalSchedules(patientId).find(function(s) { return s.id === caseId; });
+  var procName = (sched ? sched.procedure : '') || '';
+
+  var bodyHTML =
+    '<div class="form-group"><label>Procedure Name</label><input id="sc-procedure" class="form-control" value="' + esc(c.procedureName || procName) + '" /></div>' +
+    '<div class="form-group"><label>Risks Discussed</label><textarea id="sc-risks" class="form-control" rows="3" placeholder="List risks discussed with patient...">' + esc(c.risksDiscussed || '') + '</textarea></div>' +
+    '<div class="form-group"><label>Alternatives Discussed</label><textarea id="sc-alternatives" class="form-control" rows="3" placeholder="List alternatives discussed with patient...">' + esc(c.alternativesDiscussed || '') + '</textarea></div>' +
+    '<div class="checkbox-group"><input type="checkbox" id="sc-acknowledge"' + (c.patientAcknowledgment ? ' checked' : '') + ' />' +
+      '<label for="sc-acknowledge">Patient acknowledges understanding of procedure, risks, and alternatives</label></div>' +
+    '<div class="form-group"><label>Witness Name</label><input id="sc-witness" class="form-control" value="' + esc(c.witnessName || '') + '" placeholder="Name of witness" /></div>' +
+    '<div class="form-group"><label>Date/Time</label><input id="sc-datetime" type="datetime-local" class="form-control" value="' + (c.consentDateTime ? c.consentDateTime.slice(0, 16) : new Date().toISOString().slice(0, 16)) + '" /></div>';
+
+  openModal({
+    title: 'Surgical Consent Form',
+    bodyHTML: bodyHTML,
+    footerHTML: '<button class="btn btn-success" id="save-sc-btn">Save Consent</button>',
+    size: 'lg'
+  });
+
+  document.getElementById('save-sc-btn').addEventListener('click', function() {
+    var ack = document.getElementById('sc-acknowledge').checked;
+    if (!ack) { showToast('Patient acknowledgment is required', 'error'); return; }
+    var proc = document.getElementById('sc-procedure').value.trim();
+    if (!proc) { showToast('Procedure name is required', 'error'); return; }
+
+    saveSurgicalConsent({
+      id: existing ? existing.id : undefined,
+      patientId: patientId,
+      surgicalCaseId: caseId,
+      procedureName: proc,
+      risksDiscussed: document.getElementById('sc-risks').value,
+      alternativesDiscussed: document.getElementById('sc-alternatives').value,
+      patientAcknowledgment: ack,
+      witnessName: document.getElementById('sc-witness').value,
+      consentDateTime: document.getElementById('sc-datetime').value ? new Date(document.getElementById('sc-datetime').value).toISOString() : new Date().toISOString(),
+      completedBy: getSessionUser().id
+    });
+    closeModal();
+    showToast('Surgical consent saved', 'success');
   });
 }
 
@@ -357,11 +590,17 @@ function buildOpNoteTab(card, patient) {
         '<p><strong>Post-op Dx:</strong> ' + esc(n.postopDiagnosis || '—') + '</p>' +
         '<p><strong>Procedure:</strong> ' + esc(n.procedure || '—') + '</p>' +
         '<p><strong>Surgeon:</strong> ' + (prov ? esc(prov.firstName + ' ' + prov.lastName) : esc(n.surgeon || '—')) + '</p>' +
+        '<p><strong>Co-Surgeon:</strong> ' + esc(n.coSurgeon || '—') + '</p>' +
         '<p><strong>Assistant:</strong> ' + esc(n.assistant || '—') + '</p>' +
         '<p><strong>Anesthesia:</strong> ' + esc(n.anesthesiaType || '—') + '</p>' +
+        '<p><strong>Positioning:</strong> ' + esc(n.positioning || '—') + '</p>' +
+        '<p><strong>Incision Time:</strong> ' + (n.incisionTime ? formatDateTime(n.incisionTime) : '—') + '</p>' +
+        '<p><strong>Closure Time:</strong> ' + (n.closureTime ? formatDateTime(n.closureTime) : '—') + '</p>' +
+        '<p><strong>Skin Closure:</strong> ' + esc(n.skinClosure || '—') + '</p>' +
         '<p><strong>Findings:</strong> ' + esc(n.findings || '—') + '</p>' +
         '<p><strong>EBL:</strong> ' + esc(n.ebl || '—') + ' mL</p>' +
         '<p><strong>Complications:</strong> ' + esc(n.complications || 'None') + '</p>' +
+        '<p><strong>Implants:</strong> ' + esc(n.implants || 'None') + '</p>' +
         '<p><strong>Specimens:</strong> ' + esc(n.specimens || 'None') + '</p>' +
         '<p><strong>Drains:</strong> ' + esc(n.drains || 'None') + '</p>' +
         '<p><strong>Disposition:</strong> ' + esc(n.disposition || '—') + '</p>' +
@@ -394,12 +633,28 @@ function openOpNoteModal(patientId, existing) {
       '<div class="form-group"><label>Surgeon</label><select id="on-surgeon" class="form-control"><option value="">Select</option>' + surgeonOpts + '</select></div>' +
       '<div class="form-group"><label>Assistant</label><input id="on-assistant" class="form-control" value="' + esc(n.assistant || '') + '" /></div>' +
     '</div>' +
+    '<div class="form-group"><label>Co-Surgeon</label><input id="on-cosurgeon" class="form-control" value="' + esc(n.coSurgeon || '') + '" placeholder="Co-surgeon name" /></div>' +
     '<div class="form-group"><label>Anesthesia Type</label><select id="on-anesthesia" class="form-control">' + anesOpts + '</select></div>' +
+    '<div class="form-group"><label>Positioning</label><select id="on-positioning" class="form-control">' +
+      ['', 'Supine', 'Prone', 'Lateral Decubitus', 'Lithotomy', 'Trendelenburg', 'Reverse Trendelenburg', 'Sitting'].map(function(pos) {
+        return '<option value="' + pos + '"' + (n.positioning === pos ? ' selected' : '') + '>' + (pos || 'Select positioning') + '</option>';
+      }).join('') +
+    '</select></div>' +
+    '<div class="form-row">' +
+      '<div class="form-group"><label>Incision Time</label><input id="on-incisiontime" type="datetime-local" class="form-control" value="' + (n.incisionTime ? n.incisionTime.slice(0, 16) : '') + '" /></div>' +
+      '<div class="form-group"><label>Closure Time</label><input id="on-closuretime" type="datetime-local" class="form-control" value="' + (n.closureTime ? n.closureTime.slice(0, 16) : '') + '" /></div>' +
+    '</div>' +
+    '<div class="form-group"><label>Skin Closure</label><select id="on-skinclosure" class="form-control">' +
+      ['', 'Staples', 'Sutures', 'Adhesive', 'Steri-Strips', 'None'].map(function(sc) {
+        return '<option value="' + sc + '"' + (n.skinClosure === sc ? ' selected' : '') + '>' + (sc || 'Select skin closure') + '</option>';
+      }).join('') +
+    '</select></div>' +
     '<div class="form-group"><label>Findings</label><textarea id="on-findings" class="form-control" rows="4">' + esc(n.findings || '') + '</textarea></div>' +
     '<div class="form-row">' +
       '<div class="form-group"><label>EBL (mL)</label><input id="on-ebl" class="form-control" value="' + esc(n.ebl || '') + '" /></div>' +
       '<div class="form-group"><label>Complications</label><input id="on-complications" class="form-control" value="' + esc(n.complications || '') + '" /></div>' +
     '</div>' +
+    '<div class="form-group"><label>Implants</label><textarea id="on-implants" class="form-control" rows="2" placeholder="List implants used...">' + esc(n.implants || '') + '</textarea></div>' +
     '<div class="form-row">' +
       '<div class="form-group"><label>Specimens</label><input id="on-specimens" class="form-control" value="' + esc(n.specimens || '') + '" /></div>' +
       '<div class="form-group"><label>Drains</label><input id="on-drains" class="form-control" value="' + esc(n.drains || '') + '" /></div>' +
@@ -426,10 +681,16 @@ function openOpNoteModal(patientId, existing) {
       procedure: document.getElementById('on-procedure').value,
       surgeon: document.getElementById('on-surgeon').value,
       assistant: document.getElementById('on-assistant').value,
+      coSurgeon: document.getElementById('on-cosurgeon').value,
       anesthesiaType: document.getElementById('on-anesthesia').value,
+      positioning: document.getElementById('on-positioning').value,
+      incisionTime: document.getElementById('on-incisiontime').value ? new Date(document.getElementById('on-incisiontime').value).toISOString() : '',
+      closureTime: document.getElementById('on-closuretime').value ? new Date(document.getElementById('on-closuretime').value).toISOString() : '',
+      skinClosure: document.getElementById('on-skinclosure').value,
       findings: document.getElementById('on-findings').value,
       ebl: document.getElementById('on-ebl').value,
       complications: document.getElementById('on-complications').value,
+      implants: document.getElementById('on-implants').value,
       specimens: document.getElementById('on-specimens').value,
       drains: document.getElementById('on-drains').value,
       disposition: document.getElementById('on-disposition').value
@@ -505,8 +766,8 @@ function openAnesthesiaModal(patientId, existing) {
     '<div class="form-group"><label>Fluids</label><input id="ar-fluids" class="form-control" value="' + esc(r.fluids || '') + '" placeholder="e.g., LR 1500 mL" /></div>' +
     '<div class="form-group"><label>Medications</label><textarea id="ar-meds" class="form-control" rows="2">' + esc(r.medications || '') + '</textarea></div>' +
     '<div class="form-group"><label>Emergence</label><textarea id="ar-emergence" class="form-control" rows="2">' + esc(r.emergence || '') + '</textarea></div>' +
-    '<fieldset style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:6px;">' +
-      '<legend style="font-weight:600;font-size:13px;">Intraoperative Vitals</legend>' +
+    '<fieldset class="form-fieldset" style="margin-top:12px;">' +
+      '<legend>Intraoperative Vitals</legend>' +
       '<div id="ar-vitals-list"></div>' +
       '<button type="button" class="btn btn-sm btn-secondary" id="ar-add-vitals">+ Add Time Point</button>' +
     '</fieldset>';
@@ -611,7 +872,17 @@ function buildPostOpTab(card, patient) {
 
 function openPostOpModal(patientId, existing) {
   var o = existing || {};
+
+  // Build encounter selector — use most recent encounter for that patient as default
+  var encounters = typeof getEncountersByPatient === 'function' ? getEncountersByPatient(patientId) : [];
+  var defaultEncId = o.encounterId || (encounters.length > 0 ? encounters[0].id : '');
+  var encOpts = '<option value="">— Select encounter —</option>' + encounters.map(function(enc) {
+    var label = (enc.dateTime ? formatDateTime(enc.dateTime) : 'Unknown date') + (enc.chiefComplaint ? ' — ' + enc.chiefComplaint : '');
+    return '<option value="' + enc.id + '"' + (enc.id === defaultEncId ? ' selected' : '') + '>' + esc(label) + '</option>';
+  }).join('');
+
   var bodyHTML =
+    '<div class="form-group"><label>Encounter</label><select id="po-encounter" class="form-control">' + encOpts + '</select></div>' +
     '<div class="form-group"><label>Pain Management Protocol</label><textarea id="po-pain" class="form-control" rows="3" placeholder="PCA, oral analgesics, nerve block, multimodal...">' + esc(o.painManagement || '') + '</textarea></div>' +
     '<div class="form-group"><label>VTE Prophylaxis</label><select id="po-vte" class="form-control">' +
       ['SCDs + early ambulation', 'Enoxaparin 40mg SQ daily', 'Heparin 5000u SQ q8h', 'Mechanical only (SCDs)', 'None (ambulatory same-day)'].map(function(v) {
@@ -635,19 +906,193 @@ function openPostOpModal(patientId, existing) {
   });
 
   document.getElementById('save-po-btn').addEventListener('click', function() {
+    var encounterId = document.getElementById('po-encounter').value;
+    if (!encounterId) {
+      showToast('An encounter is required for post-op orders', 'error');
+      return;
+    }
+
+    var dietVal = document.getElementById('po-diet').value;
+    var painVal = document.getElementById('po-pain').value.trim();
+    var vteVal = document.getElementById('po-vte').value;
+    var activityVal = document.getElementById('po-activity').value.trim();
+
     savePostOpOrder({
       id: existing ? existing.id : undefined,
       patientId: patientId,
-      painManagement: document.getElementById('po-pain').value,
-      vteProphylaxis: document.getElementById('po-vte').value,
-      diet: document.getElementById('po-diet').value,
-      activity: document.getElementById('po-activity').value,
+      encounterId: encounterId,
+      painManagement: painVal,
+      vteProphylaxis: vteVal,
+      diet: dietVal,
+      activity: activityVal,
       woundCare: document.getElementById('po-wound').value,
       followUp: document.getElementById('po-followup').value
     });
+
+    // CPOE integration: create structured orders via saveOrder()
+    var orderErrors = [];
+
+    // Diet order
+    if (dietVal && dietVal !== 'NPO') {
+      var dietResult = saveOrder({
+        encounterId: encounterId,
+        patientId: patientId,
+        type: 'Diet',
+        priority: 'Routine',
+        status: 'Ordered',
+        detail: { dietType: dietVal }
+      });
+      if (dietResult && dietResult.error) orderErrors.push('Diet: ' + dietResult.errors.join(', '));
+    }
+
+    // Pain meds order
+    if (painVal) {
+      var painResult = saveOrder({
+        encounterId: encounterId,
+        patientId: patientId,
+        type: 'Medication',
+        priority: 'Routine',
+        status: 'Ordered',
+        detail: { drug: painVal, indication: 'Post-operative pain management' }
+      });
+      if (painResult && painResult.error) orderErrors.push('Pain meds: ' + painResult.errors.join(', '));
+    }
+
+    // VTE prophylaxis order (only for medication-based options)
+    if (vteVal && vteVal.indexOf('Enoxaparin') >= 0) {
+      var vteResult = saveOrder({
+        encounterId: encounterId,
+        patientId: patientId,
+        type: 'Medication',
+        priority: 'Routine',
+        status: 'Ordered',
+        detail: { drug: 'Enoxaparin 40mg SQ daily', indication: 'VTE prophylaxis' }
+      });
+      if (vteResult && vteResult.error) orderErrors.push('VTE: ' + vteResult.errors.join(', '));
+    } else if (vteVal && vteVal.indexOf('Heparin') >= 0) {
+      var vteResult2 = saveOrder({
+        encounterId: encounterId,
+        patientId: patientId,
+        type: 'Medication',
+        priority: 'Routine',
+        status: 'Ordered',
+        detail: { drug: 'Heparin 5000u SQ q8h', indication: 'VTE prophylaxis' }
+      });
+      if (vteResult2 && vteResult2.error) orderErrors.push('VTE: ' + vteResult2.errors.join(', '));
+    }
+
+    // Activity order
+    if (activityVal) {
+      var actResult = saveOrder({
+        encounterId: encounterId,
+        patientId: patientId,
+        type: 'Activity',
+        priority: 'Routine',
+        status: 'Ordered',
+        detail: { level: activityVal }
+      });
+      if (actResult && actResult.error) orderErrors.push('Activity: ' + actResult.errors.join(', '));
+    }
+
     closeModal();
-    showToast('Post-op orders saved', 'success');
+    if (orderErrors.length > 0) {
+      showToast('Post-op orders saved but some CPOE orders failed: ' + orderErrors.join('; '), 'warning');
+    } else {
+      showToast('Post-op orders saved and CPOE orders placed', 'success');
+    }
     renderSurgery(patientId);
+  });
+}
+
+/* ============================================================
+   Surgeon Preference Cards (2f)
+   ============================================================ */
+function openSurgeonPrefModal(surgeonId) {
+  var prefs = getSurgeonPreferences(surgeonId);
+
+  var listHTML = '';
+  if (prefs.length > 0) {
+    listHTML = '<h4 style="margin-bottom:8px">Saved Preference Cards</h4>';
+    prefs.forEach(function(p) {
+      listHTML += '<div class="specialty-record-card" style="margin-bottom:8px;padding:10px;">' +
+        '<p><strong>Procedure:</strong> ' + esc(p.procedure || '—') + '</p>' +
+        '<p><strong>Equipment:</strong> ' + esc(p.equipment || '—') + '</p>' +
+        '<p><strong>Sutures:</strong> ' + esc(p.sutures || '—') + '</p>' +
+        '<p><strong>Positioning:</strong> ' + esc(p.positioning || '—') + '</p>' +
+        '<button class="btn btn-xs btn-secondary sp-edit-btn" data-pref-id="' + p.id + '">Edit</button> ' +
+        '<button class="btn btn-xs btn-danger sp-del-btn" data-pref-id="' + p.id + '">Delete</button>' +
+        '</div>';
+    });
+  } else {
+    listHTML = '<p class="text-muted">No preference cards on file.</p>';
+  }
+
+  var bodyHTML =
+    '<div id="sp-list">' + listHTML + '</div>' +
+    '<hr style="margin:12px 0" />' +
+    '<h4 style="margin-bottom:8px" id="sp-form-title">New Preference Card</h4>' +
+    '<div class="form-group"><label>Procedure</label><input id="sp-procedure" class="form-control" placeholder="e.g., Total knee arthroplasty" /></div>' +
+    '<div class="form-group"><label>Equipment</label><textarea id="sp-equipment" class="form-control" rows="2" placeholder="List preferred equipment..."></textarea></div>' +
+    '<div class="form-group"><label>Sutures</label><textarea id="sp-sutures" class="form-control" rows="2" placeholder="List preferred sutures..."></textarea></div>' +
+    '<div class="form-group"><label>Positioning</label><select id="sp-positioning" class="form-control">' +
+      ['', 'Supine', 'Prone', 'Lateral Decubitus', 'Lithotomy', 'Trendelenburg', 'Reverse Trendelenburg', 'Sitting'].map(function(pos) {
+        return '<option value="' + pos + '">' + (pos || 'Select positioning') + '</option>';
+      }).join('') +
+    '</select></div>' +
+    '<input type="hidden" id="sp-edit-id" value="" />';
+
+  openModal({
+    title: 'Surgeon Preference Cards',
+    bodyHTML: bodyHTML,
+    footerHTML: '<button class="btn btn-success" id="save-sp-btn">Save Preference</button>',
+    size: 'lg'
+  });
+
+  // Edit existing preference
+  document.querySelectorAll('.sp-edit-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var prefId = this.getAttribute('data-pref-id');
+      var pref = prefs.find(function(p) { return p.id === prefId; });
+      if (!pref) return;
+      document.getElementById('sp-procedure').value = pref.procedure || '';
+      document.getElementById('sp-equipment').value = pref.equipment || '';
+      document.getElementById('sp-sutures').value = pref.sutures || '';
+      document.getElementById('sp-positioning').value = pref.positioning || '';
+      document.getElementById('sp-edit-id').value = pref.id;
+      document.getElementById('sp-form-title').textContent = 'Edit Preference Card';
+    });
+  });
+
+  // Delete preference
+  document.querySelectorAll('.sp-del-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var prefId = this.getAttribute('data-pref-id');
+      if (typeof softDeleteRecord === 'function') {
+        softDeleteRecord('surgeonPreferences', prefId);
+      }
+      showToast('Preference card deleted', 'success');
+      closeModal();
+      openSurgeonPrefModal(surgeonId);
+    });
+  });
+
+  document.getElementById('save-sp-btn').addEventListener('click', function() {
+    var proc = document.getElementById('sp-procedure').value.trim();
+    if (!proc) { showToast('Procedure is required', 'error'); return; }
+
+    var editId = document.getElementById('sp-edit-id').value;
+
+    saveSurgeonPreference({
+      id: editId || undefined,
+      surgeonId: surgeonId,
+      procedure: proc,
+      equipment: document.getElementById('sp-equipment').value,
+      sutures: document.getElementById('sp-sutures').value,
+      positioning: document.getElementById('sp-positioning').value
+    });
+    closeModal();
+    showToast('Preference card saved', 'success');
+    openSurgeonPrefModal(surgeonId);
   });
 }
 

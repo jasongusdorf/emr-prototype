@@ -72,6 +72,22 @@ var DOSE_RANGES = {
   'warfarin': { maxSingleDose: 15, maxDailyDose: 15, unit: 'mg', warningMsg: 'Warfarin: Doses >10mg unusual. Verify indication.' },
 };
 
+/* ---------- High-Alert Medications (7b) ---------- */
+var HIGH_ALERT_MEDS = ['insulin', 'heparin', 'warfarin', 'morphine', 'fentanyl', 'hydromorphone', 'oxycodone', 'methadone', 'succinylcholine', 'rocuronium', 'vecuronium', 'potassium chloride', 'magnesium sulfate'];
+
+/* ---------- Critical Lab Values (7d) ---------- */
+var CRITICAL_VALUES = {
+  'potassium': { low: 2.5, high: 6.0, unit: 'mEq/L' },
+  'sodium': { low: 120, high: 160, unit: 'mEq/L' },
+  'glucose': { low: 40, high: 500, unit: 'mg/dL' },
+  'hemoglobin': { low: 7.0, high: null, unit: 'g/dL' },
+  'platelets': { low: 20, high: null, unit: 'K/uL' },
+  'wbc': { low: 1.0, high: 30.0, unit: 'K/uL' },
+  'creatinine': { low: null, high: 10.0, unit: 'mg/dL' },
+  'inr': { low: null, high: 5.0, unit: '' },
+  'troponin': { low: null, high: 0.04, unit: 'ng/mL' },
+};
+
 /* ---------- Renal Dose Adjustments ---------- */
 var RENAL_DOSE_ALERTS = {
   'metformin': { creatinineThreshold: 1.5, egfrThreshold: 30, message: 'Metformin: Contraindicated if eGFR <30. Reduce dose if eGFR 30-45.' },
@@ -80,6 +96,15 @@ var RENAL_DOSE_ALERTS = {
   'vancomycin': { creatinineThreshold: 1.3, egfrThreshold: 50, message: 'Vancomycin: Requires renal dose adjustment and trough monitoring.' },
   'digoxin': { creatinineThreshold: 1.3, egfrThreshold: 50, message: 'Digoxin: Primarily renally cleared. Reduce dose in renal impairment.' },
   'lithium': { creatinineThreshold: 1.3, egfrThreshold: 60, message: 'Lithium: Renally cleared. Reduce dose and monitor levels in CKD.' },
+  'ibuprofen': { creatinineThreshold: 1.5, egfrThreshold: 45, message: 'Ibuprofen: Avoid in CKD Stage 3b-5 (eGFR <45). Risk of AKI and GI bleeding.' },
+  'naproxen': { creatinineThreshold: 1.5, egfrThreshold: 45, message: 'Naproxen: Avoid in CKD Stage 3b-5 (eGFR <45). Risk of AKI and GI bleeding.' },
+  'ketorolac': { creatinineThreshold: 1.3, egfrThreshold: 45, message: 'Ketorolac: Contraindicated in renal impairment (eGFR <45). Max 5 days use.' },
+  'gentamicin': { creatinineThreshold: 1.3, egfrThreshold: 60, message: 'Gentamicin: Extended-interval dosing recommended. Monitor trough levels in renal impairment.' },
+  'tobramycin': { creatinineThreshold: 1.3, egfrThreshold: 60, message: 'Tobramycin: Extended-interval dosing recommended. Monitor trough levels in renal impairment.' },
+  'amikacin': { creatinineThreshold: 1.3, egfrThreshold: 60, message: 'Amikacin: Extended-interval dosing recommended. Monitor trough levels in renal impairment.' },
+  'apixaban': { creatinineThreshold: 1.5, egfrThreshold: 25, message: 'Apixaban: Reduce to 2.5mg BID if CrCl 15-25 mL/min or if 2 of: age\u226580, weight\u226460kg, Cr\u22651.5.' },
+  'rivaroxaban': { creatinineThreshold: 1.5, egfrThreshold: 50, message: 'Rivaroxaban: Avoid if CrCl <15. Reduce dose for CrCl 15-50 based on indication.' },
+  'dabigatran': { creatinineThreshold: 1.5, egfrThreshold: 30, message: 'Dabigatran: Reduce to 75mg BID if CrCl 15-30. Contraindicated if CrCl <15.' },
 };
 
 /* ---------- CDS Alert History ---------- */
@@ -140,12 +165,14 @@ function checkCDS(order, patientId) {
       var allergenLower = (allergy.allergen || '').toLowerCase().trim();
       if (allergenLower === 'nkda' || allergenLower === '') return;
 
-      // Direct match
+      // Direct match — hard-stop blocked (7a)
       if (drugName.indexOf(allergenLower) >= 0 || allergenLower.indexOf(drugName) >= 0) {
         alerts.push({
           severity: 'critical',
-          type: 'allergy',
-          message: 'ALLERGY ALERT: Patient is allergic to "' + allergy.allergen + '". ' + (order.detail.drug) + ' matches this allergy. Reaction: ' + (allergy.reaction || 'Unknown'),
+          type: 'allergy-block',
+          message: 'ORDER BLOCKED: Patient has documented allergy to "' + allergy.allergen + '". ' + (order.detail.drug) + ' is contraindicated. Reaction: ' + (allergy.reaction || 'Unknown'),
+          blocked: true,
+          allergen: allergy.allergen,
         });
       }
 
@@ -154,10 +181,16 @@ function checkCDS(order, patientId) {
         if (allergenLower.indexOf(cr.allergen) >= 0 || cr.allergen.indexOf(allergenLower) >= 0) {
           cr.crossReacts.forEach(function(xr) {
             if (drugName.indexOf(xr) >= 0 || xr.indexOf(drugName) >= 0) {
+              var crossSeverity = cr.severity || 'critical';
+              var isBlocked = crossSeverity === 'critical';
               alerts.push({
-                severity: cr.severity || 'critical',
-                type: 'allergy-cross',
-                message: cr.message.replace('{drug}', order.detail.drug),
+                severity: crossSeverity,
+                type: isBlocked ? 'allergy-block' : 'allergy-cross',
+                message: isBlocked
+                  ? 'ORDER BLOCKED: ' + cr.message.replace('{drug}', order.detail.drug) + ' This medication is contraindicated.'
+                  : cr.message.replace('{drug}', order.detail.drug),
+                blocked: isBlocked,
+                allergen: allergy.allergen,
               });
             }
           });
@@ -289,6 +322,19 @@ function checkCDS(order, patientId) {
         });
       }
     }
+
+    // 6. High-alert medication check (7b)
+    var isHighAlert = HIGH_ALERT_MEDS.some(function(ham) {
+      return drugName.indexOf(ham) >= 0 || ham.indexOf(drugName) >= 0;
+    });
+    if (isHighAlert) {
+      alerts.push({
+        severity: 'warning',
+        type: 'high-alert',
+        message: 'HIGH-ALERT MEDICATION: ' + order.detail.drug + ' requires independent double-check verification.',
+        requiresDoubleCheck: true,
+      });
+    }
   }
 
   // Check Lab orders for duplicates
@@ -377,11 +423,18 @@ function showCDSAlertsBeforePlacing(alerts, onProceed) {
 function formatAlertType(type) {
   var labels = {
     'allergy': 'Allergy',
+    'allergy-block': 'Allergy Block',
     'allergy-cross': 'Cross-Reactivity',
     'drug-interaction': 'Drug Interaction',
     'duplicate': 'Duplicate',
     'dose-range': 'Dose Range',
+    'high-alert': 'High-Alert Med',
+    'critical-value': 'Critical Value',
     'renal-adjustment': 'Renal Dose',
+    'bpa-anticoag': 'Anticoagulation',
+    'bpa-dismissed': 'Dismissed',
+    'stroke-slp': 'Stroke / SLP',
+    'diet-slp': 'Diet / SLP',
   };
   return labels[type] || type;
 }
@@ -522,7 +575,169 @@ function getBPAs(patientId) {
     }
   }
 
+  // 6. Atrial Fibrillation without anticoagulation
+  var afibTerms = ['afib', 'atrial fibrillation', 'a-fib'];
+  var hasAfib = problems.some(function(p) {
+    var name = ((p.name || '') + ' ' + (p.icd10 || '')).toLowerCase();
+    return afibTerms.some(function(term) { return name.indexOf(term) >= 0; });
+  }) || diagnoses.some(function(d) {
+    var name = ((d.name || d.description || '') + ' ' + (d.icd10 || '')).toLowerCase();
+    return afibTerms.some(function(term) { return name.indexOf(term) >= 0; });
+  });
+
+  if (hasAfib) {
+    var anticoagulants = ['warfarin', 'apixaban', 'rivaroxaban', 'dabigatran', 'edoxaban', 'enoxaparin', 'heparin'];
+    var hasAnticoag = orders.some(function(o) {
+      if (o.status === 'Cancelled') return false;
+      var drug = ((o.detail || {}).drug || '').toLowerCase();
+      return anticoagulants.some(function(ac) { return drug.indexOf(ac) >= 0; });
+    });
+    // Also check patient medications list
+    if (!hasAnticoag) {
+      hasAnticoag = meds.some(function(m) {
+        if (m.status !== 'Current' && m.status !== 'Active') return false;
+        var drug = (m.name || m.drug || '').toLowerCase();
+        return anticoagulants.some(function(ac) { return drug.indexOf(ac) >= 0; });
+      });
+    }
+    if (!hasAnticoag) {
+      bpas.push({
+        id: 'bpa-afib-anticoag',
+        severity: 'warning',
+        category: 'Anticoagulation',
+        message: 'Patient has Atrial Fibrillation without active anticoagulation. Consider CHA2DS2-VASc scoring and anticoagulation.',
+        action: 'Review Anticoagulation',
+      });
+    }
+  }
+
+  // 7. Stroke without SLP consult
+  var strokeTerms = ['stroke', 'cva', 'cerebrovascular', 'cerebral infarction'];
+  var hasStroke = problems.some(function(p) {
+    var name = ((p.name || '') + ' ' + (p.icd10 || '')).toLowerCase();
+    return strokeTerms.some(function(term) { return name.indexOf(term) >= 0; });
+  }) || diagnoses.some(function(d) {
+    var name = ((d.name || d.description || '') + ' ' + (d.icd10 || '')).toLowerCase();
+    return strokeTerms.some(function(term) { return name.indexOf(term) >= 0; });
+  });
+
+  if (hasStroke) {
+    var hasSLPConsult = orders.some(function(o) {
+      if (o.status === 'Cancelled') return false;
+      return o.type === 'Consult' && ((o.detail || {}).service || '').toLowerCase().indexOf('speech') >= 0;
+    });
+    if (!hasSLPConsult) {
+      bpas.push({
+        id: 'bpa-stroke-slp',
+        severity: 'warning',
+        category: 'Stroke Care',
+        message: 'AHA Guidelines: Dysphagia screening required within 24 hours of stroke admission. Order Speech-Language Pathology consult.',
+        action: 'Order SLP Consult',
+      });
+    }
+  }
+
+  // 8. Texture-modified diet without SLP evaluation
+  var dietOrders = orders.filter(function(o) {
+    if (o.type !== 'Diet' || o.status === 'Cancelled') return false;
+    var dt = ((o.detail || {}).dietType || '').toLowerCase();
+    var lt = ((o.detail || {}).liquidThickness || '');
+    // Check for IDDSI level < 7
+    var iddsiMatch = dt.match(/iddsi\s*(\d)/);
+    if (iddsiMatch && parseInt(iddsiMatch[1]) < 7) return true;
+    // Check for texture-modified keywords
+    if (dt.indexOf('pureed') >= 0 || dt.indexOf('minced') >= 0 ||
+        dt.indexOf('soft & bite') >= 0 || dt.indexOf('liquidised') >= 0) return true;
+    // Check liquid thickness (anything other than Thin or empty)
+    if (lt && lt.toLowerCase().indexOf('thin (iddsi 0)') < 0) return true;
+    return false;
+  });
+
+  if (dietOrders.length > 0) {
+    var hasSLPEval = orders.some(function(o) {
+      if (o.status === 'Cancelled') return false;
+      return o.type === 'Consult' &&
+        ((o.detail || {}).service || '').toLowerCase().indexOf('speech') >= 0 &&
+        (o.status === 'Completed');
+    });
+    if (!hasSLPEval) {
+      bpas.push({
+        id: 'bpa-diet-slp',
+        severity: 'warning',
+        category: 'Diet Safety',
+        message: 'Texture-modified diet ordered without SLP evaluation on file. Consider SLP consult for formal dysphagia assessment.',
+        action: 'Order SLP Consult',
+      });
+    }
+  }
+
+  // 7d: Critical value alerts
+  var criticalVals = checkCriticalValues(patientId);
+  criticalVals.forEach(function(cv) {
+    bpas.push({
+      id: 'bpa-critical-' + cv.testName.toLowerCase().replace(/\s+/g, '-'),
+      severity: 'critical',
+      category: 'Critical Value',
+      message: 'CRITICAL VALUE: ' + cv.testName + ' = ' + cv.value + ' ' + cv.unit +
+        ' (' + (cv.direction === 'high' ? 'above ' : 'below ') + cv.threshold + ' ' + cv.unit + ')',
+      action: 'Review & Acknowledge',
+    });
+  });
+
+  // Filter out dismissed BPAs for the current encounter
+  var currentEncId = _getBPACurrentEncounterId(patientId);
+  if (currentEncId) {
+    bpas = bpas.filter(function(b) {
+      return !_isBPADismissed(b.id, currentEncId);
+    });
+  }
+
   return bpas;
+}
+
+/* ---------- BPA Dismissal Persistence ---------- */
+function _getBPACurrentEncounterId(patientId) {
+  // Find the most recent open encounter for this patient
+  try {
+    var encs = typeof getEncountersByPatient === 'function' ? getEncountersByPatient(patientId) : [];
+    var open = encs.filter(function(e) { return e.status === 'Open'; });
+    if (open.length > 0) {
+      open.sort(function(a, b) { return new Date(b.dateTime) - new Date(a.dateTime); });
+      return open[0].id;
+    }
+    // Fallback: most recent encounter
+    if (encs.length > 0) {
+      encs.sort(function(a, b) { return new Date(b.dateTime) - new Date(a.dateTime); });
+      return encs[0].id;
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function _isBPADismissed(alertId, encounterId) {
+  var all = loadAll(KEYS.cdsAlerts);
+  return all.some(function(a) {
+    return a.bpaDismissed === true &&
+           a.alertId === alertId &&
+           a.encounterId === encounterId;
+  });
+}
+
+function dismissBPA(alertId, encounterId, reason) {
+  var user = getSessionUser();
+  var entry = {
+    id: generateId(),
+    bpaDismissed: true,
+    alertId: alertId,
+    encounterId: encounterId || '',
+    dismissedBy: user ? user.id : '',
+    dismissedAt: new Date().toISOString(),
+    reason: reason || '',
+  };
+  var all = loadAll(KEYS.cdsAlerts, true);
+  all.push(entry);
+  saveAll(KEYS.cdsAlerts, all);
+  return entry;
 }
 
 /* ---------- BPA Banner for Chart ---------- */
@@ -570,12 +785,17 @@ function buildBPABanner(patientId) {
   html += '</div>';
   banner.innerHTML = html;
 
-  // Dismiss handler
+  // Dismiss handler — persists dismissals so they don't re-fire for same encounter
   setTimeout(function() {
     var dismissBtn = document.getElementById('bpa-dismiss-btn');
     if (dismissBtn) {
       dismissBtn.addEventListener('click', function() {
+        var encId = _getBPACurrentEncounterId(patientId);
+        bpas.forEach(function(b) {
+          dismissBPA(b.id, encId, 'Dismissed via banner');
+        });
         banner.classList.add('hidden');
+        showToast('BPA alerts dismissed for this encounter.', 'success');
       });
     }
   }, 50);
@@ -678,4 +898,60 @@ function renderCDS() {
   container.appendChild(tableCard);
 
   app.appendChild(container);
+}
+
+/* ============================================================
+   7d: Critical Value Alerting
+   ============================================================ */
+function checkCriticalValues(patientId) {
+  var criticalAlerts = [];
+  if (!patientId) return criticalAlerts;
+
+  var labs = typeof getLabResults === 'function' ? getLabResults(patientId) : [];
+  if (labs.length === 0) return criticalAlerts;
+
+  // Build map of latest values per test
+  var latestByTest = {};
+  labs.forEach(function(lab) {
+    if (!lab.tests) return;
+    lab.tests.forEach(function(test) {
+      var testName = (test.name || '').toLowerCase().trim();
+      var val = parseFloat(test.value);
+      if (isNaN(val)) return;
+      var labDate = lab.resultDate || lab.createdAt || '';
+      if (!latestByTest[testName] || new Date(labDate) > new Date(latestByTest[testName].date)) {
+        latestByTest[testName] = { value: val, date: labDate, rawName: test.name };
+      }
+    });
+  });
+
+  // Check against critical thresholds
+  Object.keys(CRITICAL_VALUES).forEach(function(testKey) {
+    var threshold = CRITICAL_VALUES[testKey];
+    var latest = latestByTest[testKey];
+    if (!latest) return;
+
+    if (threshold.low !== null && latest.value < threshold.low) {
+      criticalAlerts.push({
+        testName: latest.rawName || testKey,
+        value: latest.value,
+        threshold: threshold.low,
+        direction: 'low',
+        unit: threshold.unit,
+        date: latest.date,
+      });
+    }
+    if (threshold.high !== null && latest.value > threshold.high) {
+      criticalAlerts.push({
+        testName: latest.rawName || testKey,
+        value: latest.value,
+        threshold: threshold.high,
+        direction: 'high',
+        unit: threshold.unit,
+        date: latest.date,
+      });
+    }
+  });
+
+  return criticalAlerts;
 }

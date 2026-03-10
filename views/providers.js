@@ -315,6 +315,59 @@ function buildPatientBanner(patientId) {
     banner.appendChild(nkda);
   }
 
+  // 8f: Risk badges
+  const riskBadges = document.createElement('span');
+  riskBadges.className = 'patient-banner-risk-badges';
+  riskBadges.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:center';
+
+  // Fall risk badge — from Morse scores in nursing assessments
+  if (typeof getNursingAssessments === 'function') {
+    const assessments = getNursingAssessments(patientId);
+    const morseAssessments = assessments.filter(function(a) {
+      return a.type === 'Morse Fall Risk' || a.type === 'morse' || a.morseScore !== undefined;
+    }).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+
+    if (morseAssessments.length > 0) {
+      var morseScore = morseAssessments[0].score !== undefined ? morseAssessments[0].score : morseAssessments[0].morseScore;
+      if (morseScore !== undefined && morseScore !== null) {
+        morseScore = parseInt(morseScore);
+        if (morseScore >= 45) {
+          var fallBadge = document.createElement('span');
+          fallBadge.style.cssText = 'background:var(--badge-danger-bg);color:var(--badge-danger-text);padding:2px 8px;border-radius:var(--radius);font-size:11px;font-weight:700';
+          fallBadge.textContent = 'FALL RISK: HIGH';
+          riskBadges.appendChild(fallBadge);
+        } else if (morseScore >= 25) {
+          var fallBadge2 = document.createElement('span');
+          fallBadge2.style.cssText = 'background:var(--badge-warning-bg);color:var(--badge-warning-text);padding:2px 8px;border-radius:var(--radius);font-size:11px;font-weight:700';
+          fallBadge2.textContent = 'FALL RISK: MODERATE';
+          riskBadges.appendChild(fallBadge2);
+        }
+      }
+    }
+  }
+
+  // Isolation badge
+  if (patient.isolationType) {
+    var isoBadge = document.createElement('span');
+    isoBadge.style.cssText = 'background:var(--badge-warning-bg);color:var(--warning);padding:2px 8px;border-radius:var(--radius);font-size:11px;font-weight:700';
+    isoBadge.textContent = 'ISOLATION: ' + patient.isolationType;
+    riskBadges.appendChild(isoBadge);
+  }
+
+  // High-risk pregnancy badge
+  if (typeof getPrenatalVisits === 'function') {
+    var prenatalVisits = getPrenatalVisits(patientId);
+    var hasHighRisk = prenatalVisits.some(function(v) { return v.highRisk === true; });
+    if (hasHighRisk) {
+      var hrpBadge = document.createElement('span');
+      hrpBadge.style.cssText = 'background:var(--badge-danger-bg);color:var(--badge-danger-text);padding:2px 8px;border-radius:var(--radius);font-size:11px;font-weight:700';
+      hrpBadge.textContent = 'HIGH RISK PREGNANCY';
+      riskBadges.appendChild(hrpBadge);
+    }
+  }
+
+  if (riskBadges.childNodes.length > 0) banner.appendChild(riskBadges);
+
   return banner;
 }
 

@@ -4,6 +4,7 @@
 
 let _autosaveTimers = {};
 let _encSmartPhraseTextareas = [];
+let _apMode = null; // 'narrative' | 'problem-oriented' — persisted per user
 
 const NOTE_SECTIONS = [
   { key: 'chiefComplaint', label: 'Chief Complaint' },
@@ -19,6 +20,13 @@ function _getEditorMode() {
 }
 function _setEditorMode(mode) {
   try { localStorage.setItem('emr_note_editor_mode', mode); } catch(e) {}
+}
+
+function _getAPMode() {
+  try { return localStorage.getItem('emr_ap_mode') || 'narrative'; } catch(e) { return 'narrative'; }
+}
+function _setAPMode(mode) {
+  try { localStorage.setItem('emr_ap_mode', mode); } catch(e) {}
 }
 
 function _parseFreeformToSections(text) {
@@ -268,6 +276,61 @@ function renderEncounter(encounterId) {
   ctxBar.appendChild(statusWrap);
   app.appendChild(ctxBar);
 
+  /* ---------- 8e: OB Context Banner ---------- */
+  if (patient) {
+    const obBanner = buildOBContextBanner(patient.id);
+    if (obBanner.childNodes.length > 0) app.appendChild(obBanner);
+  }
+
+  /* ---------- WS8e: PT Context Banner ---------- */
+  if (patient && typeof getPTEvaluations === 'function') {
+    const ptEvalsCtx = getPTEvaluations(patient.id).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (ptEvalsCtx.length > 0) {
+      const ptE = ptEvalsCtx[0];
+      const ptBanner = document.createElement('div');
+      ptBanner.style.cssText = 'background:color-mix(in srgb, var(--accent-pt) 8%, transparent);border:1px solid color-mix(in srgb, var(--accent-pt) 40%, transparent);border-radius:var(--radius,8px);padding:8px 14px;margin:0 20px 12px;font-size:13px;display:flex;gap:16px;flex-wrap:wrap;align-items:center';
+      const ptIcon = document.createElement('span');
+      ptIcon.style.cssText = 'font-weight:700;color:var(--accent-pt)';
+      ptIcon.textContent = 'PT';
+      ptBanner.appendChild(ptIcon);
+      const ptParts = [];
+      if (ptE.activityLevel || ptE.functionalMobility) ptParts.push(ptE.activityLevel || ptE.functionalMobility);
+      ptParts.push('WB: ' + (ptE.weightBearingStatus || ptE.wbStatus || 'N/A'));
+      ptParts.push('AD: ' + (ptE.assistiveDevice || 'None'));
+      if (typeof getPTSessions === 'function') {
+        const ptSessCtx = getPTSessions(patient.id).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+        if (ptSessCtx.length > 0) ptParts.push('Last session: ' + formatDateTime(ptSessCtx[0].createdAt));
+      }
+      const ptText = document.createElement('span');
+      ptText.textContent = ptParts.join(' | ');
+      ptBanner.appendChild(ptText);
+      app.appendChild(ptBanner);
+    }
+  }
+
+  /* ---------- WS8e: SLP Context Banner ---------- */
+  if (patient && typeof getSLPDietRecommendations === 'function') {
+    const slpRecsCtx = getSLPDietRecommendations(patient.id).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (slpRecsCtx.length > 0) {
+      const slpR = slpRecsCtx[0];
+      const slpBanner = document.createElement('div');
+      slpBanner.style.cssText = 'background:color-mix(in srgb, var(--accent-slp) 8%, transparent);border:1px solid color-mix(in srgb, var(--accent-slp) 40%, transparent);border-radius:var(--radius,8px);padding:8px 14px;margin:0 20px 12px;font-size:13px;display:flex;gap:16px;flex-wrap:wrap;align-items:center';
+      const slpIcon = document.createElement('span');
+      slpIcon.style.cssText = 'font-weight:700;color:var(--accent-slp)';
+      slpIcon.textContent = 'Diet';
+      slpBanner.appendChild(slpIcon);
+      const slpParts = [];
+      slpParts.push('IDDSI ' + (slpR.foodLevel != null ? slpR.foodLevel : 'N/A'));
+      slpParts.push('Liquids: ' + (slpR.liquidLevel != null ? slpR.liquidLevel : 'N/A'));
+      const hasAspPrecCtx = slpR.precautions && (Array.isArray(slpR.precautions) ? slpR.precautions.length > 0 : !!slpR.precautions);
+      slpParts.push('Aspiration Precautions: ' + (hasAspPrecCtx ? 'Y' : 'N'));
+      const slpText = document.createElement('span');
+      slpText.textContent = slpParts.join(' | ');
+      slpBanner.appendChild(slpText);
+      app.appendChild(slpBanner);
+    }
+  }
+
   /* ---------- Medication Reconciliation Banner (unsigned only) ---------- */
   if (!isSigned) {
     app.appendChild(buildMedRecBanner(encounter, note));
@@ -370,7 +433,8 @@ function renderEncounter(encounterId) {
     // Show structured sections if available
     const hasSections = NOTE_SECTIONS.some(s => note[s.key] && note[s.key].trim());
     if (hasSections) {
-      NOTE_SECTIONS.forEach(s => {
+      // Show non-A&P sections
+      NOTE_SECTIONS.filter(s => s.key !== 'assessment' && s.key !== 'plan').forEach(s => {
         if (note[s.key] && note[s.key].trim()) {
           const secDiv = document.createElement('div');
           secDiv.className = 'note-preview-section';
@@ -386,6 +450,54 @@ function renderEncounter(encounterId) {
           section.appendChild(secDiv);
         }
       });
+      // 8a: If problems array exists, show problem-oriented A&P
+      if (Array.isArray(note.problems) && note.problems.length > 0) {
+        const apDiv = document.createElement('div');
+        apDiv.className = 'note-preview-section';
+        const apLabel = document.createElement('div');
+        apLabel.className = 'note-preview-section-label';
+        apLabel.textContent = 'Assessment & Plan (Problem-Oriented)';
+        apDiv.appendChild(apLabel);
+        note.problems.forEach(function(p, i) {
+          if (p.name) {
+            const probDiv = document.createElement('div');
+            probDiv.style.cssText = 'border-left:3px solid var(--accent-blue,#4a7ce2);padding-left:12px;margin:8px 0';
+            probDiv.innerHTML = '<strong>' + (i + 1) + '. ' + esc(p.name) + '</strong>';
+            if (p.assessment) {
+              const aEl = document.createElement('div');
+              aEl.style.cssText = 'font-size:13px;margin-top:4px;white-space:pre-wrap';
+              aEl.textContent = 'Assessment: ' + p.assessment;
+              probDiv.appendChild(aEl);
+            }
+            if (p.plan) {
+              const pEl = document.createElement('div');
+              pEl.style.cssText = 'font-size:13px;margin-top:2px;white-space:pre-wrap';
+              pEl.textContent = 'Plan: ' + p.plan;
+              probDiv.appendChild(pEl);
+            }
+            apDiv.appendChild(probDiv);
+          }
+        });
+        section.appendChild(apDiv);
+      } else {
+        // Standard assessment + plan
+        ['assessment', 'plan'].forEach(function(key) {
+          if (note[key] && note[key].trim()) {
+            const secDiv = document.createElement('div');
+            secDiv.className = 'note-preview-section';
+            const secLabel = document.createElement('div');
+            secLabel.className = 'note-preview-section-label';
+            secLabel.textContent = key === 'assessment' ? 'Assessment' : 'Plan';
+            const secBody = document.createElement('div');
+            secBody.className = 'note-preview-section-body';
+            secBody.style.whiteSpace = 'pre-wrap';
+            secBody.textContent = note[key];
+            secDiv.appendChild(secLabel);
+            secDiv.appendChild(secBody);
+            section.appendChild(secDiv);
+          }
+        });
+      }
     } else if (noteBodyText) {
       const readDiv = document.createElement('div');
       readDiv.className = 'note-readonly';
@@ -407,7 +519,10 @@ function renderEncounter(encounterId) {
       const sectionContainer = document.createElement('div');
       sectionContainer.className = 'note-section-container';
 
-      NOTE_SECTIONS.forEach(s => {
+      const apMode = _getAPMode();
+      const NON_AP_SECTIONS = NOTE_SECTIONS.filter(s => s.key !== 'assessment' && s.key !== 'plan');
+
+      NON_AP_SECTIONS.forEach(s => {
         const secWrap = document.createElement('div');
         secWrap.className = 'note-section-wrap';
 
@@ -426,7 +541,6 @@ function renderEncounter(encounterId) {
         ta.value = note[s.key] || '';
         textareas[s.key] = ta;
 
-        // Wire SmartPhrases
         initSmartPhraseListener(ta);
         _encSmartPhraseTextareas.push(ta);
 
@@ -434,6 +548,100 @@ function renderEncounter(encounterId) {
         secWrap.appendChild(ta);
         sectionContainer.appendChild(secWrap);
       });
+
+      // 8a: Assessment & Plan section with narrative / problem-oriented toggle
+      const apWrap = document.createElement('div');
+      apWrap.className = 'note-section-wrap';
+      const apHeader = document.createElement('div');
+      apHeader.className = 'note-section-header';
+      apHeader.style.display = 'flex'; apHeader.style.justifyContent = 'space-between'; apHeader.style.alignItems = 'center';
+
+      const apLabel = document.createElement('span');
+      apLabel.innerHTML = '<span class="note-section-chevron">&#9660;</span> Assessment &amp; Plan';
+      apLabel.style.cursor = 'pointer';
+      apLabel.addEventListener('click', () => {
+        apWrap.classList.toggle('collapsed');
+        apLabel.querySelector('.note-section-chevron').innerHTML = apWrap.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+      });
+
+      const apToggleBtn = document.createElement('button');
+      apToggleBtn.className = 'btn btn-outline btn-sm';
+      apToggleBtn.textContent = apMode === 'problem-oriented' ? 'Narrative' : 'Problem-Oriented';
+      apToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newMode = _getAPMode() === 'problem-oriented' ? 'narrative' : 'problem-oriented';
+        // Save current problem data before toggle
+        if (_getAPMode() === 'problem-oriented') {
+          _serializeProblemsToNote(note, encounterId);
+        }
+        _setAPMode(newMode);
+        saveNote({ ...readNoteFields(textareas), encounterId });
+        renderEncounter(encounterId);
+      });
+
+      apHeader.appendChild(apLabel);
+      apHeader.appendChild(apToggleBtn);
+      apWrap.appendChild(apHeader);
+
+      const apBody = document.createElement('div');
+      apBody.id = 'ap-body';
+
+      if (apMode === 'problem-oriented') {
+        // Problem-oriented mode
+        const problems = Array.isArray(note.problems) ? note.problems : [];
+        const problemsContainer = document.createElement('div');
+        problemsContainer.id = 'problems-container';
+        problemsContainer.style.cssText = 'display:flex;flex-direction:column;gap:12px;padding:8px 0';
+
+        problems.forEach((prob, idx) => {
+          problemsContainer.appendChild(_buildProblemRow(prob, idx));
+        });
+
+        apBody.appendChild(problemsContainer);
+
+        const addProbBtn = makeEncBtn('+ Add Problem', 'btn btn-secondary btn-sm', () => {
+          const container = document.getElementById('problems-container');
+          if (!container) return;
+          const idx = container.children.length;
+          container.appendChild(_buildProblemRow({ name: '', assessment: '', plan: '' }, idx));
+        });
+        addProbBtn.style.marginTop = '8px';
+        apBody.appendChild(addProbBtn);
+
+        // Hidden textareas for assessment/plan so readNoteFields still works
+        const hiddenAssess = document.createElement('textarea');
+        hiddenAssess.id = 'note-assessment'; hiddenAssess.style.display = 'none';
+        hiddenAssess.value = note.assessment || '';
+        textareas['assessment'] = hiddenAssess;
+        apBody.appendChild(hiddenAssess);
+
+        const hiddenPlan = document.createElement('textarea');
+        hiddenPlan.id = 'note-plan'; hiddenPlan.style.display = 'none';
+        hiddenPlan.value = note.plan || '';
+        textareas['plan'] = hiddenPlan;
+        apBody.appendChild(hiddenPlan);
+      } else {
+        // Narrative mode
+        ['assessment', 'plan'].forEach(key => {
+          const label = key === 'assessment' ? 'Assessment' : 'Plan';
+          const lbl = document.createElement('div');
+          lbl.style.cssText = 'font-weight:600;font-size:13px;margin:8px 0 4px;color:var(--text-secondary,#666)';
+          lbl.textContent = label;
+          apBody.appendChild(lbl);
+          const ta = document.createElement('textarea');
+          ta.className = 'note-section-textarea';
+          ta.id = 'note-' + key;
+          ta.placeholder = label + '…';
+          ta.value = note[key] || '';
+          textareas[key] = ta;
+          initSmartPhraseListener(ta);
+          _encSmartPhraseTextareas.push(ta);
+          apBody.appendChild(ta);
+        });
+      }
+
+      apWrap.appendChild(apBody);
+      sectionContainer.appendChild(apWrap);
 
       noteBody.appendChild(sectionContainer);
     } else {
@@ -532,6 +740,49 @@ function renderEncounter(encounterId) {
     lastModEl.className = 'text-muted text-sm'; lastModEl.style.flex = '1'; lastModEl.id = 'last-modified';
     lastModEl.textContent = note.lastModified ? 'Last saved: ' + formatDateTime(note.lastModified) : '';
 
+    // 7e: Med rec enforcement wrapper — checks before opening sign modal
+    function _attemptSign() {
+      var visitType = (encounter.visitType || '').toLowerCase();
+      var visitSubtype = (encounter.visitSubtype || '').toLowerCase();
+      var requiresMedRec = visitType === 'inpatient' || visitType === 'emergency' ||
+        visitSubtype.indexOf('admission') >= 0 || visitSubtype.indexOf('discharge') >= 0;
+
+      if (requiresMedRec) {
+        var medRecs = typeof getMedRec === 'function' ? getMedRec(encounterId) : [];
+        var hasCompleted = medRecs.length > 0 && medRecs.some(function(mr) {
+          return mr.medName !== '__dismissed__';
+        });
+        if (!hasCompleted) {
+          var visitLabel = encounter.visitType + (encounter.visitSubtype ? ' — ' + encounter.visitSubtype : '');
+          openModal({
+            title: 'Medication Reconciliation Required',
+            bodyHTML:
+              '<div style="background:var(--badge-danger-bg);border:2px solid var(--danger);border-radius:8px;padding:20px">' +
+              '<p style="color:var(--badge-danger-text);font-size:14px;line-height:1.6;margin:0">' +
+              'Medication reconciliation is required before signing this <strong>' + esc(visitLabel) + '</strong> note.</p>' +
+              '<p style="color:var(--badge-warning-text,#713f12);font-size:13px;margin:12px 0 0">Please complete medication reconciliation using the banner at the top of the encounter, then try signing again.</p>' +
+              '</div>',
+            footerHTML:
+              '<button class="btn btn-secondary" id="medrec-block-close">Close</button>' +
+              '<button class="btn btn-primary" id="medrec-block-open">Open Med Rec</button>',
+          });
+          document.getElementById('medrec-block-close').addEventListener('click', closeModal);
+          document.getElementById('medrec-block-open').addEventListener('click', function() {
+            closeModal();
+            // Expand the med rec banner
+            var banner = document.querySelector('.med-rec-banner');
+            if (banner) {
+              var bodyDiv = banner.querySelector('.med-rec-body');
+              if (bodyDiv) bodyDiv.style.display = 'block';
+              banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          });
+          return;
+        }
+      }
+      openSignModal();
+    }
+
     const signBtn = makeEncBtn('Sign Note', 'btn btn-success', () => {
       if (!canSignNotes()) { showToast('Only attending physicians can sign notes.', 'error'); return; }
       if (!getProviders().length) { showToast('Add a provider first.', 'error'); return; }
@@ -542,10 +793,10 @@ function renderEncounter(encounterId) {
           message: 'Several sections appear to be empty (documentation: ' + quality + '%). Sign anyway?',
           confirmLabel: 'Sign Anyway',
           danger: false,
-          onConfirm: openSignModal,
+          onConfirm: _attemptSign,
         });
       } else {
-        openSignModal();
+        _attemptSign();
       }
     });
     if (!canSignNotes()) {
@@ -606,11 +857,35 @@ function renderEncounter(encounterId) {
 
   } else {
     app.appendChild(noteCard);
+
+    // 8d: Co-signature section for signed notes
+    app.appendChild(buildCoSignatureSection(encounterId, note));
+
     // Addenda section for signed notes
     app.appendChild(buildAddendaSection(encounterId, note, encounter));
 
     /* ---------- Diagnoses & Billing card ---------- */
     app.appendChild(buildBillingSection(encounter, isSigned));
+  }
+
+  // 8b: Quick Orders panel (always shown)
+  app.appendChild(buildQuickOrdersPanel(encounterId, encounter.patientId));
+
+  // 8a: Save problem-oriented data on autosave if in problem mode
+  if (!isSigned && _getAPMode() === 'problem-oriented') {
+    const origTriggerAutosave = () => {
+      _serializeProblemsToNote(note, encounterId);
+    };
+    // Hook into the problems container inputs
+    setTimeout(() => {
+      const probContainer = document.getElementById('problems-container');
+      if (probContainer) {
+        probContainer.addEventListener('input', () => {
+          clearTimeout(probContainer._debounce);
+          probContainer._debounce = setTimeout(origTriggerAutosave, 1500);
+        });
+      }
+    }, 100);
   }
 
   // Patient Summary button
@@ -931,6 +1206,24 @@ function readNoteFields(textareas) {
     });
     result.noteBody = _sectionsToFreeform(textareas);
   }
+  // 8a: Also save problem-oriented data if in that mode
+  if (_getAPMode() === 'problem-oriented') {
+    const problems = _collectProblemsFromDOM();
+    if (problems.length > 0) {
+      result.problems = problems;
+      // Generate flat assessment/plan from problems
+      const assessParts = [];
+      const planParts = [];
+      problems.forEach(function(p, i) {
+        if (p.name) {
+          assessParts.push((i + 1) + '. ' + p.name + ': ' + (p.assessment || ''));
+          planParts.push((i + 1) + '. ' + p.name + ': ' + (p.plan || ''));
+        }
+      });
+      result.assessment = assessParts.join('\n');
+      result.plan = planParts.join('\n');
+    }
+  }
   return result;
 }
 
@@ -1002,24 +1295,33 @@ function openTemplatePickerModal(note, encounterId, textareas) {
       card.addEventListener('click', () => {
         const applyTemplate = () => {
           if (editorMode === 'sections') {
-            // Section mode: write to individual textareas
+            // 8c: Non-destructive — append with separator if section has content
             const fields = ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'];
             fields.forEach(f => {
               const ta = document.getElementById('note-' + f);
               if (ta && tmpl[f]) {
-                ta.value = tmpl[f];
+                if (ta.value.trim().length > 0) {
+                  ta.value = ta.value.trimEnd() + '\n\n---\n' + tmpl[f];
+                } else {
+                  ta.value = tmpl[f];
+                }
                 ta.dispatchEvent(new Event('input', { bubbles: true }));
               }
             });
           } else {
-            // Freeform mode: concatenate template into single textarea
+            // Freeform mode: append with separator if content exists
             const parts = [];
             NOTE_SECTIONS.forEach(s => {
               if (tmpl[s.key]) parts.push(s.label + ':\n' + tmpl[s.key]);
             });
             const ta = document.getElementById('note-noteBody');
             if (ta) {
-              ta.value = parts.join('\n\n');
+              const newText = parts.join('\n\n');
+              if (ta.value.trim().length > 0) {
+                ta.value = ta.value.trimEnd() + '\n\n---\n' + newText;
+              } else {
+                ta.value = newText;
+              }
               ta.dispatchEvent(new Event('input', { bubbles: true }));
             }
           }
@@ -1027,30 +1329,8 @@ function openTemplatePickerModal(note, encounterId, textareas) {
           showToast('Template applied: ' + tmpl.name, 'success');
         };
 
-        // Check if there's existing content
-        let hasContent = false;
-        if (editorMode === 'sections') {
-          hasContent = ['chiefComplaint','hpi','ros','physicalExam','assessment','plan'].some(f => {
-            const ta = document.getElementById('note-' + f);
-            return ta && ta.value.trim().length > 0;
-          });
-        } else {
-          const ta = document.getElementById('note-noteBody');
-          hasContent = ta && ta.value.trim().length > 0;
-        }
-
-        if (hasContent) {
-          closeModal();
-          confirmAction({
-            title: 'Replace Note Content?',
-            message: 'This will replace the current note content with the "' + tmpl.name + '" template. Continue?',
-            confirmLabel: 'Apply Template',
-            danger: false,
-            onConfirm: applyTemplate,
-          });
-        } else {
-          applyTemplate();
-        }
+        // 8c: Always apply non-destructively (append with separator)
+        applyTemplate();
       });
 
       grid.appendChild(card);
@@ -1603,4 +1883,437 @@ function openEncounterSummaryModal(encounterId) {
     printWin.document.close();
     printWin.print();
   });
+}
+
+/* ============================================================
+   8a: Problem-Oriented A&P Helpers
+   ============================================================ */
+function _buildProblemRow(prob, idx) {
+  const row = document.createElement('div');
+  row.className = 'problem-oriented-row';
+  row.style.cssText = 'border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;background:var(--bg-card,#fff)';
+  row.dataset.probIdx = idx;
+
+  const topRow = document.createElement('div');
+  topRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px';
+
+  const numBadge = document.createElement('span');
+  numBadge.style.cssText = 'font-weight:700;font-size:14px;color:var(--accent-blue,#4a7ce2);min-width:24px';
+  numBadge.textContent = '#' + (idx + 1);
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'form-control prob-name';
+  nameInput.placeholder = 'Problem name…';
+  nameInput.value = prob.name || '';
+  nameInput.style.flex = '1';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'btn btn-danger btn-sm';
+  removeBtn.textContent = 'Remove';
+  removeBtn.addEventListener('click', () => row.remove());
+
+  topRow.appendChild(numBadge);
+  topRow.appendChild(nameInput);
+  topRow.appendChild(removeBtn);
+  row.appendChild(topRow);
+
+  const assessLbl = document.createElement('label');
+  assessLbl.style.cssText = 'font-size:12px;font-weight:600;color:var(--text-secondary,#666)';
+  assessLbl.textContent = 'Assessment';
+  row.appendChild(assessLbl);
+  const assessTA = document.createElement('textarea');
+  assessTA.className = 'note-section-textarea prob-assessment';
+  assessTA.placeholder = 'Assessment for this problem…';
+  assessTA.value = prob.assessment || '';
+  assessTA.style.minHeight = '50px';
+  row.appendChild(assessTA);
+
+  const planLbl = document.createElement('label');
+  planLbl.style.cssText = 'font-size:12px;font-weight:600;color:var(--text-secondary,#666);margin-top:6px';
+  planLbl.textContent = 'Plan';
+  row.appendChild(planLbl);
+  const planTA = document.createElement('textarea');
+  planTA.className = 'note-section-textarea prob-plan';
+  planTA.placeholder = 'Plan for this problem…';
+  planTA.value = prob.plan || '';
+  planTA.style.minHeight = '50px';
+  row.appendChild(planTA);
+
+  return row;
+}
+
+function _collectProblemsFromDOM() {
+  const container = document.getElementById('problems-container');
+  if (!container) return [];
+  const problems = [];
+  container.querySelectorAll('.problem-oriented-row').forEach(row => {
+    const name = row.querySelector('.prob-name');
+    const assess = row.querySelector('.prob-assessment');
+    const plan = row.querySelector('.prob-plan');
+    problems.push({
+      name: name ? name.value : '',
+      assessment: assess ? assess.value : '',
+      plan: plan ? plan.value : '',
+    });
+  });
+  return problems;
+}
+
+function _serializeProblemsToNote(note, encounterId) {
+  const problems = _collectProblemsFromDOM();
+  // Save problems array on the note
+  const noteData = getNoteByEncounter(encounterId) || {};
+  noteData.encounterId = encounterId;
+  noteData.problems = problems;
+  // Also generate flat assessment/plan for backwards compat
+  const assessParts = [];
+  const planParts = [];
+  problems.forEach((p, i) => {
+    if (p.name) {
+      assessParts.push((i + 1) + '. ' + p.name + ': ' + (p.assessment || ''));
+      planParts.push((i + 1) + '. ' + p.name + ': ' + (p.plan || ''));
+    }
+  });
+  noteData.assessment = assessParts.join('\n');
+  noteData.plan = planParts.join('\n');
+  saveNote(noteData);
+}
+
+/* ============================================================
+   8b: In-Note Quick Orders Panel
+   ============================================================ */
+function buildQuickOrdersPanel(encounterId, patientId) {
+  const panel = document.createElement('div');
+  panel.className = 'card';
+  panel.style.margin = '0 20px 20px';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  hdr.style.cursor = 'pointer';
+
+  const title = document.createElement('span');
+  title.className = 'card-title';
+  title.innerHTML = 'Quick Orders <span id="quick-order-count" style="font-size:12px;color:var(--text-secondary,#666);margin-left:8px"></span>';
+
+  const chevron = document.createElement('span');
+  chevron.textContent = '▶';
+  chevron.style.cssText = 'font-size:11px;color:var(--text-muted);margin-left:auto';
+  chevron.id = 'quick-orders-chevron';
+
+  hdr.appendChild(title);
+  hdr.appendChild(chevron);
+  panel.appendChild(hdr);
+
+  const body = document.createElement('div');
+  body.id = 'quick-orders-body';
+  body.style.display = 'none';
+  body.style.padding = '14px 20px';
+
+  // Quick-action buttons
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap';
+
+  const orderTypes = [
+    { type: 'Lab', label: 'Lab', icon: '' },
+    { type: 'Medication', label: 'Medication', icon: '' },
+    { type: 'Imaging', label: 'Imaging', icon: '' },
+  ];
+
+  orderTypes.forEach(ot => {
+    const btn = makeEncBtn(ot.label, 'btn btn-secondary btn-sm', () => {
+      _showQuickOrderForm(body, encounterId, patientId, ot.type);
+    });
+    btnRow.appendChild(btn);
+  });
+  body.appendChild(btnRow);
+
+  // Order form placeholder
+  const formArea = document.createElement('div');
+  formArea.id = 'quick-order-form-area';
+  body.appendChild(formArea);
+
+  // Orders placed during this encounter
+  const listArea = document.createElement('div');
+  listArea.id = 'quick-order-list';
+  body.appendChild(listArea);
+
+  panel.appendChild(body);
+
+  // Toggle collapse
+  hdr.addEventListener('click', () => {
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    chevron.textContent = isOpen ? '▶' : '▼';
+  });
+
+  // Update count
+  _updateQuickOrderCount(encounterId);
+
+  return panel;
+}
+
+function _updateQuickOrderCount(encounterId) {
+  const orders = (typeof getOrders === 'function' ? getOrders() : []).filter(o => o.encounterId === encounterId);
+  const countEl = document.getElementById('quick-order-count');
+  if (countEl) countEl.textContent = orders.length > 0 ? '(' + orders.length + ' placed)' : '';
+}
+
+function _showQuickOrderForm(container, encounterId, patientId, orderType) {
+  const formArea = document.getElementById('quick-order-form-area');
+  if (!formArea) return;
+  formArea.innerHTML = '';
+
+  const form = document.createElement('div');
+  form.style.cssText = 'border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;margin-bottom:12px;background:var(--surface-2,#f8f8f8)';
+
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = 'font-weight:600;margin-bottom:8px';
+  titleEl.textContent = 'New ' + orderType + ' Order';
+  form.appendChild(titleEl);
+
+  let detailFields = {};
+
+  if (orderType === 'Lab') {
+    const panelLbl = document.createElement('label');
+    panelLbl.className = 'form-label'; panelLbl.textContent = 'Lab Panel/Test';
+    const panelInp = document.createElement('input');
+    panelInp.className = 'form-control'; panelInp.id = 'qo-lab-panel'; panelInp.placeholder = 'e.g., CBC, BMP, Lipid Panel';
+    form.appendChild(panelLbl); form.appendChild(panelInp);
+    detailFields = { getDetail: () => ({ panel: panelInp.value }) };
+  } else if (orderType === 'Medication') {
+    const drugLbl = document.createElement('label');
+    drugLbl.className = 'form-label'; drugLbl.textContent = 'Drug';
+    const drugInp = document.createElement('input');
+    drugInp.className = 'form-control'; drugInp.id = 'qo-med-drug'; drugInp.placeholder = 'Drug name';
+    const doseLbl = document.createElement('label');
+    doseLbl.className = 'form-label'; doseLbl.textContent = 'Dose';
+    doseLbl.style.marginTop = '6px';
+    const doseInp = document.createElement('input');
+    doseInp.className = 'form-control'; doseInp.id = 'qo-med-dose'; doseInp.placeholder = 'e.g., 500mg PO BID';
+    form.appendChild(drugLbl); form.appendChild(drugInp);
+    form.appendChild(doseLbl); form.appendChild(doseInp);
+    detailFields = { getDetail: () => ({ drug: drugInp.value, dose: doseInp.value }) };
+  } else if (orderType === 'Imaging') {
+    const studyLbl = document.createElement('label');
+    studyLbl.className = 'form-label'; studyLbl.textContent = 'Study';
+    const studyInp = document.createElement('input');
+    studyInp.className = 'form-control'; studyInp.id = 'qo-img-study'; studyInp.placeholder = 'e.g., Chest X-Ray, CT Abdomen';
+    form.appendChild(studyLbl); form.appendChild(studyInp);
+    detailFields = { getDetail: () => ({ study: studyInp.value }) };
+  }
+
+  // Priority
+  const prioRow = document.createElement('div');
+  prioRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;align-items:center';
+  const prioLbl = document.createElement('label');
+  prioLbl.className = 'form-label'; prioLbl.textContent = 'Priority'; prioLbl.style.margin = '0';
+  const prioSel = document.createElement('select');
+  prioSel.className = 'form-control'; prioSel.style.maxWidth = '150px';
+  ['Routine', 'Urgent', 'STAT'].forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    prioSel.appendChild(opt);
+  });
+  prioRow.appendChild(prioLbl); prioRow.appendChild(prioSel);
+  form.appendChild(prioRow);
+
+  // Notes
+  const notesLbl = document.createElement('label');
+  notesLbl.className = 'form-label'; notesLbl.textContent = 'Notes'; notesLbl.style.marginTop = '6px';
+  const notesInp = document.createElement('input');
+  notesInp.className = 'form-control'; notesInp.placeholder = 'Clinical indication…';
+  form.appendChild(notesLbl); form.appendChild(notesInp);
+
+  // Buttons
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;margin-top:10px';
+  const cancelBtn = makeEncBtn('Cancel', 'btn btn-secondary btn-sm', () => { formArea.innerHTML = ''; });
+  const submitBtn = makeEncBtn('Place Order', 'btn btn-primary btn-sm', () => {
+    const detail = detailFields.getDetail();
+    saveOrder({
+      encounterId: encounterId,
+      patientId: patientId,
+      type: orderType,
+      priority: prioSel.value,
+      status: 'Pending',
+      detail: detail,
+      notes: notesInp.value,
+      orderedBy: getSessionUser().id,
+    });
+    showToast(orderType + ' order placed.', 'success');
+    formArea.innerHTML = '';
+    _updateQuickOrderCount(encounterId);
+  });
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(submitBtn);
+  form.appendChild(btnRow);
+
+  formArea.appendChild(form);
+}
+
+/* ============================================================
+   8d: Co-signature Workflow
+   ============================================================ */
+function buildCoSignatureSection(encounterId, note) {
+  const section = document.createElement('div');
+  section.style.cssText = 'margin:0 20px 20px';
+
+  if (!note.signed) return section; // only show on signed notes
+
+  // Pending co-signature indicator
+  if (note.coSignatureRequestedOf && !note.coSignedBy) {
+    const pendingBadge = document.createElement('div');
+    pendingBadge.style.cssText = 'background:var(--badge-warning-bg);border:1px solid var(--warning);border-radius:var(--radius,8px);padding:10px 14px;display:flex;align-items:center;gap:8px;margin-bottom:12px';
+    const icon = document.createElement('span');
+    icon.textContent = '⏳';
+    const text = document.createElement('span');
+    const reqProv = typeof getProvider === 'function' ? getProvider(note.coSignatureRequestedOf) : null;
+    text.textContent = 'Co-signature pending from ' + (reqProv ? reqProv.firstName + ' ' + reqProv.lastName + ', ' + reqProv.degree : note.coSignatureRequestedOf);
+    pendingBadge.appendChild(icon);
+    pendingBadge.appendChild(text);
+
+    // If current user is the requested co-signer, show sign button
+    const currentUser = getSessionUser();
+    if (currentUser && currentUser.id === note.coSignatureRequestedOf) {
+      const cosignBtn = makeEncBtn('Co-Sign Note', 'btn btn-success btn-sm', () => {
+        saveNote({
+          encounterId: encounterId,
+          coSignedBy: currentUser.id,
+          coSignedAt: new Date().toISOString(),
+        });
+        showToast('Note co-signed.', 'success');
+        renderEncounter(encounterId);
+      });
+      cosignBtn.style.marginLeft = 'auto';
+      pendingBadge.appendChild(cosignBtn);
+    }
+    section.appendChild(pendingBadge);
+  }
+
+  // Co-signed badge
+  if (note.coSignedBy) {
+    const signedBadge = document.createElement('div');
+    signedBadge.style.cssText = 'background:var(--badge-success-bg);border:1px solid var(--success);border-radius:var(--radius,8px);padding:10px 14px;display:flex;align-items:center;gap:8px;margin-bottom:12px';
+    const coSignProv = typeof getProvider === 'function' ? getProvider(note.coSignedBy) : null;
+    signedBadge.innerHTML = '<span>&#10003;</span>';
+    const text = document.createElement('span');
+    text.textContent = 'Co-signed by ' + (coSignProv ? coSignProv.firstName + ' ' + coSignProv.lastName + ', ' + coSignProv.degree : note.coSignedBy) +
+      ' on ' + (note.coSignedAt ? formatDateTime(note.coSignedAt) : '');
+    signedBadge.appendChild(text);
+    section.appendChild(signedBadge);
+  }
+
+  // Request Co-signature button (only if not already requested/co-signed)
+  if (!note.coSignatureRequestedOf && !note.coSignedBy) {
+    const reqBtn = makeEncBtn('Request Co-signature', 'btn btn-secondary btn-sm', () => {
+      _openCoSignRequestModal(encounterId);
+    });
+    reqBtn.style.marginBottom = '12px';
+    section.appendChild(reqBtn);
+  }
+
+  return section;
+}
+
+function _openCoSignRequestModal(encounterId) {
+  const providers = typeof getProviders === 'function' ? getProviders() : [];
+  const currentUser = getSessionUser();
+
+  let optionsHTML = '<option value="">-- Select Provider --</option>';
+  providers.forEach(p => {
+    if (p.id !== currentUser.id) {
+      optionsHTML += '<option value="' + esc(p.id) + '">' + esc(p.firstName + ' ' + p.lastName + ', ' + p.degree) + '</option>';
+    }
+  });
+
+  openModal({
+    title: 'Request Co-signature',
+    bodyHTML:
+      '<div class="form-group">' +
+        '<label class="form-label">Request co-signature from:</label>' +
+        '<select class="form-control" id="cosign-provider">' + optionsHTML + '</select>' +
+      '</div>',
+    footerHTML:
+      '<button class="btn btn-secondary" id="cosign-cancel">Cancel</button>' +
+      '<button class="btn btn-primary" id="cosign-submit">Send Request</button>',
+  });
+
+  document.getElementById('cosign-cancel').addEventListener('click', closeModal);
+  document.getElementById('cosign-submit').addEventListener('click', () => {
+    const provId = document.getElementById('cosign-provider').value;
+    if (!provId) { showToast('Select a provider.', 'error'); return; }
+    saveNote({ encounterId: encounterId, coSignatureRequestedOf: provId });
+    closeModal();
+    showToast('Co-signature requested.', 'success');
+    renderEncounter(encounterId);
+  });
+}
+
+/* ============================================================
+   8e: OB Context Banner in Encounter
+   ============================================================ */
+function buildOBContextBanner(patientId) {
+  const banner = document.createElement('div');
+  if (typeof getPrenatalVisits !== 'function') return banner;
+
+  const visits = getPrenatalVisits(patientId);
+  if (!visits || visits.length === 0) return banner;
+
+  // Find active prenatal record (most recent)
+  const active = visits.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
+  if (!active) return banner;
+
+  banner.style.cssText = 'background:color-mix(in srgb, var(--accent-obgyn) 12%, transparent);border:1px solid color-mix(in srgb, var(--accent-obgyn) 50%, transparent);border-radius:var(--radius,8px);padding:8px 14px;margin:0 20px 12px;font-size:13px;display:flex;gap:16px;flex-wrap:wrap;align-items:center';
+
+  const parts = [];
+
+  // Calculate EGA from EDD or LMP
+  const today = new Date();
+  let egaText = '';
+  if (active.edd) {
+    const edd = new Date(active.edd);
+    const daysUntilEdd = Math.round((edd - today) / 86400000);
+    const totalDays = 280 - daysUntilEdd;
+    if (totalDays >= 0 && totalDays <= 300) {
+      const weeks = Math.floor(totalDays / 7);
+      const days = totalDays % 7;
+      egaText = 'EGA: ' + weeks + 'w ' + days + 'd';
+    }
+  } else if (active.lmp) {
+    const lmp = new Date(active.lmp);
+    const daysSinceLmp = Math.round((today - lmp) / 86400000);
+    if (daysSinceLmp >= 0 && daysSinceLmp <= 300) {
+      const weeks = Math.floor(daysSinceLmp / 7);
+      const days = daysSinceLmp % 7;
+      egaText = 'EGA: ' + weeks + 'w ' + days + 'd';
+    }
+  }
+  if (egaText) parts.push(egaText);
+  if (active.edd) parts.push('EDD: ' + active.edd);
+
+  // Gravida/Para
+  if (active.gravida !== undefined || active.para !== undefined) {
+    const g = active.gravida || 0;
+    const t = active.term || 0;
+    const p = active.preterm || 0;
+    const a = active.abortions || 0;
+    const l = active.living || 0;
+    parts.push('G' + g + 'T' + t + 'P' + p + 'A' + a + 'L' + l);
+  }
+
+  // GBS status
+  if (active.gbsStatus) parts.push('GBS: ' + active.gbsStatus);
+
+  if (parts.length === 0) return banner;
+
+  const icon = document.createElement('span');
+  icon.style.cssText = 'font-weight:700;color:var(--accent-obgyn)';
+  icon.textContent = 'OB';
+  banner.appendChild(icon);
+
+  const text = document.createElement('span');
+  text.textContent = parts.join(' | ');
+  banner.appendChild(text);
+
+  return banner;
 }

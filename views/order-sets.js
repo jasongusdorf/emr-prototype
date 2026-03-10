@@ -101,6 +101,7 @@ var BUILT_IN_ORDER_SETS = [
       { type: 'Lab', detail: { panel: 'Coagulation (PT/INR/PTT)', tests: [] }, priority: 'STAT' },
       { type: 'Lab', detail: { panel: 'Troponin', tests: [] }, priority: 'STAT' },
       { type: 'Consult', detail: { service: 'Neurology', reason: 'Acute stroke evaluation', urgency: 'STAT' }, priority: 'STAT' },
+      { type: 'Consult', detail: { service: 'Speech-Language Pathology', reason: 'Dysphagia screening — acute stroke per AHA guidelines', urgency: 'STAT' }, priority: 'STAT' },
     ]
   },
   {
@@ -113,6 +114,153 @@ var BUILT_IN_ORDER_SETS = [
       { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
       { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'Routine' },
       { type: 'Imaging', detail: { study: 'Chest X-Ray', modality: 'X-Ray', bodyPart: 'Chest', indication: 'Community-acquired pneumonia' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-preop-surgical', name: 'Pre-Op Surgical', category: 'Surgical',
+    description: 'Standard pre-operative surgical orders: NPO, IV fluids, labs, prophylactic antibiotics, SCDs, EKG.',
+    items: [
+      { type: 'Diet', detail: { dietType: 'NPO', fluidRestriction: '', instructions: 'NPO after midnight' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Normal Saline', dose: '125', unit: 'mL/hr', route: 'IV', frequency: 'Continuous', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Coagulation (PT/INR/PTT)', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Type and Screen', tests: [] }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Cefazolin', dose: '2', unit: 'g', route: 'IV', frequency: 'Once', duration: '' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'SCDs (Sequential Compression Devices)', frequency: 'Continuous', instructions: 'Apply bilateral lower extremity SCDs' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'EKG (12-lead)', frequency: 'Once', instructions: 'Pre-operative baseline EKG' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-labor-admission', name: 'Labor Admission', category: 'OB/GYN',
+    description: 'Labor admission orders: IV fluids, labs, fetal monitoring, epidural consult.',
+    items: [
+      { type: 'Medication', detail: { drug: 'Lactated Ringers', dose: '125', unit: 'mL/hr', route: 'IV', frequency: 'Continuous', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Type and Screen', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Urinalysis', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'GBS Culture', tests: [] }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Continuous fetal monitoring', frequency: 'Continuous', instructions: 'Continuous electronic fetal heart rate and uterine activity monitoring' }, priority: 'Routine' },
+      { type: 'Consult', detail: { service: 'Anesthesiology', reason: 'Epidural consult for labor analgesia', urgency: 'Routine' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-postpartum-vaginal', name: 'Postpartum Vaginal', category: 'OB/GYN',
+    description: 'Postpartum vaginal delivery orders: oxytocin, pain management, stool softener, lactation consult.',
+    items: [
+      { type: 'Medication', detail: { drug: 'Oxytocin', dose: '20', unit: 'units', route: 'IV', frequency: 'Continuous', duration: 'In LR 1L' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Ibuprofen', dose: '600', unit: 'mg', route: 'PO', frequency: 'Q6h', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Acetaminophen', dose: '1000', unit: 'mg', route: 'PO', frequency: 'Q6h', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Docusate', dose: '100', unit: 'mg', route: 'PO', frequency: 'BID', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Consult', detail: { service: 'Lactation Consultant', reason: 'Breastfeeding support and education', urgency: 'Routine' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-preop-cesarean', name: 'Pre-Op Cesarean', category: 'OB/GYN',
+    description: 'Pre-operative cesarean section orders: NPO, IV bolus, labs, antibiotics, SCDs, Foley.',
+    items: [
+      { type: 'Diet', detail: { dietType: 'NPO', fluidRestriction: '', instructions: 'NPO for cesarean section' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Lactated Ringers', dose: '1000', unit: 'mL', route: 'IV', frequency: 'Once', duration: 'Bolus' }, priority: 'Urgent' },
+      { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Type and Screen', tests: [] }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Cefazolin', dose: '2', unit: 'g', route: 'IV', frequency: 'Once', duration: '' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'SCDs (Sequential Compression Devices)', frequency: 'Continuous', instructions: 'Apply bilateral lower extremity SCDs pre-operatively' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Foley catheter insertion', frequency: 'Once', instructions: 'Insert Foley catheter prior to cesarean section' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-preeclampsia', name: 'Preeclampsia Severe', category: 'OB/GYN',
+    description: 'Severe preeclampsia management: magnesium sulfate, antihypertensives, frequent labs, fetal monitoring.',
+    items: [
+      { type: 'Medication', detail: { drug: 'Magnesium Sulfate', dose: '4', unit: 'g', route: 'IV', frequency: 'Once', duration: 'Load then 2g/hr maintenance' }, priority: 'STAT' },
+      { type: 'Medication', detail: { drug: 'Labetalol', dose: '20', unit: 'mg', route: 'IV', frequency: 'PRN', duration: 'PRN SBP >160' }, priority: 'STAT' },
+      { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [{ name: 'CBC', frequency: 'Q6h' }] }, priority: 'STAT' },
+      { type: 'Lab', detail: { panel: 'Comprehensive Metabolic Panel', tests: [{ name: 'CMP', frequency: 'Q6h' }] }, priority: 'STAT' },
+      { type: 'Lab', detail: { panel: 'LDH', tests: [] }, priority: 'STAT' },
+      { type: 'Nursing', detail: { intervention: 'Continuous fetal monitoring', frequency: 'Continuous', instructions: 'Continuous electronic fetal heart rate and uterine activity monitoring' }, priority: 'STAT' },
+    ]
+  },
+  {
+    id: 'os-preterm-labor', name: 'Preterm Labor', category: 'OB/GYN',
+    description: 'Preterm labor management: betamethasone, tocolytics, GBS culture, fetal monitoring, MFM consult.',
+    items: [
+      { type: 'Medication', detail: { drug: 'Betamethasone', dose: '12', unit: 'mg', route: 'IM', frequency: 'Once', duration: 'x2 doses 24hr apart' }, priority: 'STAT' },
+      { type: 'Medication', detail: { drug: 'Nifedipine', dose: '20', unit: 'mg', route: 'PO', frequency: 'Once', duration: 'Then 10mg Q6H' }, priority: 'Urgent' },
+      { type: 'Lab', detail: { panel: 'GBS Culture', tests: [] }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Continuous fetal monitoring', frequency: 'Continuous', instructions: 'Continuous electronic fetal heart rate and uterine activity monitoring' }, priority: 'Urgent' },
+      { type: 'Consult', detail: { service: 'MFM (Maternal-Fetal Medicine)', reason: 'Preterm labor management and consultation', urgency: 'Urgent' }, priority: 'Urgent' },
+    ]
+  },
+  {
+    id: 'os-dialysis-hd', name: 'Dialysis HD', category: 'Nephrology',
+    description: 'Hemodialysis orders: pre/post labs, heparin protocol, phosphate binder.',
+    items: [
+      { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [{ name: 'Pre-dialysis BMP' }] }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Complete Blood Count', tests: [{ name: 'Pre-dialysis CBC' }] }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Heparin', dose: 'per protocol', unit: 'units', route: 'IV', frequency: 'Per protocol', duration: 'During dialysis' }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'Basic Metabolic Panel', tests: [{ name: 'Post-dialysis BMP' }] }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Sevelamer (Phosphate Binder)', dose: '800', unit: 'mg', route: 'PO', frequency: 'TID', duration: 'With meals' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-enhanced-chf', name: 'Enhanced CHF', category: 'Cardiology',
+    description: 'Enhanced CHF management: daily weights, strict I&O, fluid restriction, echo, BNP, continuous SpO2.',
+    items: [
+      { type: 'Nursing', detail: { intervention: 'Daily weights', frequency: 'QDay', instructions: 'Weigh patient every morning before breakfast' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Strict I&O', frequency: 'Continuous', instructions: 'Record all intake and output strictly' }, priority: 'Routine' },
+      { type: 'Diet', detail: { dietType: 'Low Sodium', fluidRestriction: '1500', instructions: 'Fluid restriction 1.5L/day' }, priority: 'Routine' },
+      { type: 'Imaging', detail: { study: 'Echocardiogram', modality: 'Ultrasound', bodyPart: 'Heart', indication: 'CHF evaluation' }, priority: 'Routine' },
+      { type: 'Lab', detail: { panel: 'B-type Natriuretic Peptide', tests: [] }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Continuous SpO2 monitoring', frequency: 'Continuous', instructions: 'Continuous pulse oximetry monitoring' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-acs-protocol', name: 'ACS Protocol', category: 'Cardiology',
+    description: 'Acute coronary syndrome protocol: serial troponins, BNP, echo, dual antiplatelet, statin, heparin drip.',
+    items: [
+      { type: 'Lab', detail: { panel: 'Troponin', tests: [{ name: 'Troponin I', frequency: 'Q3h x3' }] }, priority: 'STAT' },
+      { type: 'Lab', detail: { panel: 'B-type Natriuretic Peptide', tests: [] }, priority: 'STAT' },
+      { type: 'Imaging', detail: { study: 'Echocardiogram', modality: 'Ultrasound', bodyPart: 'Heart', indication: 'ACS - assess cardiac function' }, priority: 'Urgent' },
+      { type: 'Medication', detail: { drug: 'Clopidogrel', dose: '300', unit: 'mg', route: 'PO', frequency: 'Once', duration: 'Loading dose' }, priority: 'STAT' },
+      { type: 'Medication', detail: { drug: 'Atorvastatin', dose: '80', unit: 'mg', route: 'PO', frequency: 'QDay', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Heparin Drip', dose: 'per protocol', unit: 'units', route: 'IV', frequency: 'Continuous', duration: 'Per protocol' }, priority: 'STAT' },
+    ]
+  },
+  {
+    id: 'os-pt-hip', name: 'PT Post-Hip Replacement', category: 'Rehabilitation',
+    description: 'Post-hip replacement rehabilitation: PT consult, assisted ambulation, DVT prophylaxis, pain management, hip precaution education.',
+    items: [
+      { type: 'Consult', detail: { service: 'Physical Therapy', reason: 'Post-hip replacement rehabilitation', urgency: 'Routine', rehabFrequency: 'Daily' }, priority: 'Routine' },
+      { type: 'Activity', detail: { level: 'Ambulate-assist', restrictions: 'Walker required', weightBearing: 'As Tolerated' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Enoxaparin', dose: '40', unit: 'mg', route: 'SQ', frequency: 'QDay', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Medication', detail: { drug: 'Acetaminophen', dose: '1000', unit: 'mg', route: 'PO', frequency: 'Q6h', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Hip precaution education', frequency: 'Once', instructions: 'Educate patient on hip precautions: no flexion >90°, no internal rotation, no adduction past midline' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Ice to surgical site Q4H', frequency: 'Q4h', instructions: 'Apply ice pack to surgical site for 20 minutes every 4 hours' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-slp-dysphagia', name: 'SLP Dysphagia Workup', category: 'Rehabilitation',
+    description: 'Dysphagia workup: SLP consult STAT, NPO pending evaluation, IV fluids, aspiration precautions, HOB elevation.',
+    items: [
+      { type: 'Consult', detail: { service: 'Speech-Language Pathology', reason: 'Dysphagia evaluation — swallow assessment needed', urgency: 'STAT' }, priority: 'STAT' },
+      { type: 'Diet', detail: { dietType: 'NPO', fluidRestriction: '', instructions: 'NPO until SLP evaluation complete' }, priority: 'STAT' },
+      { type: 'Medication', detail: { drug: 'Normal Saline', dose: '125', unit: 'mL/hr', route: 'IV', frequency: 'Continuous', duration: 'Ongoing' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Aspiration precautions', frequency: 'Continuous', instructions: 'Maintain aspiration precautions: HOB ≥30°, suction at bedside, supervise all PO intake' }, priority: 'STAT' },
+      { type: 'Nursing', detail: { intervention: 'HOB ≥30°', frequency: 'Continuous', instructions: 'Keep head of bed elevated ≥30 degrees at all times' }, priority: 'Routine' },
+    ]
+  },
+  {
+    id: 'os-stroke-rehab', name: 'Stroke Rehab Bundle', category: 'Rehabilitation',
+    description: 'Comprehensive stroke rehabilitation: PT, OT, SLP consults, neuro checks, DVT prophylaxis, activity, swallow eval.',
+    items: [
+      { type: 'Consult', detail: { service: 'Physical Therapy', reason: 'Stroke rehabilitation — mobility and gait assessment', urgency: 'Routine' }, priority: 'Routine' },
+      { type: 'Consult', detail: { service: 'Occupational Therapy', reason: 'Stroke rehabilitation — ADL and functional assessment', urgency: 'Routine' }, priority: 'Routine' },
+      { type: 'Consult', detail: { service: 'Speech-Language Pathology', reason: 'Stroke rehabilitation — speech, language, and swallowing assessment', urgency: 'Routine' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Neuro checks q4h', frequency: 'Q4h', instructions: 'Perform neurological checks every 4 hours: GCS, pupil response, motor strength, NIHSS' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'DVT prophylaxis - SCDs', frequency: 'Continuous', instructions: 'Apply bilateral sequential compression devices (SCDs) when in bed' }, priority: 'Routine' },
+      { type: 'Activity', detail: { level: 'Ambulate-assist', restrictions: 'Requires assistance', weightBearing: 'As Tolerated' }, priority: 'Routine' },
+      { type: 'Nursing', detail: { intervention: 'Swallow eval before PO intake', frequency: 'Once', instructions: 'Patient must pass bedside swallow evaluation before any oral intake' }, priority: 'Routine' },
     ]
   },
 ];
@@ -201,6 +349,11 @@ function renderOrderSets() {
     '<button class="os-cat-btn" data-cat="Admission">Admission</button>' +
     '<button class="os-cat-btn" data-cat="Protocol">Protocol</button>' +
     '<button class="os-cat-btn" data-cat="Specialty">Specialty</button>' +
+    '<button class="os-cat-btn" data-cat="OB/GYN">OB/GYN</button>' +
+    '<button class="os-cat-btn" data-cat="Surgical">Surgical</button>' +
+    '<button class="os-cat-btn" data-cat="Cardiology">Cardiology</button>' +
+    '<button class="os-cat-btn" data-cat="Nephrology">Nephrology</button>' +
+    '<button class="os-cat-btn" data-cat="Rehabilitation">Rehabilitation</button>' +
     '<button class="os-cat-btn" data-cat="Custom">Custom</button>' +
     '</div>';
   container.appendChild(filterBar);
@@ -246,6 +399,9 @@ function renderOrderSets() {
       var labCount = set.items.filter(function(i) { return i.type === 'Lab'; }).length;
       var imgCount = set.items.filter(function(i) { return i.type === 'Imaging'; }).length;
       var conCount = set.items.filter(function(i) { return i.type === 'Consult'; }).length;
+      var dietCount = set.items.filter(function(i) { return i.type === 'Diet'; }).length;
+      var nsgCount = set.items.filter(function(i) { return i.type === 'Nursing'; }).length;
+      var actCount = set.items.filter(function(i) { return i.type === 'Activity'; }).length;
 
       card.innerHTML = '<div class="os-card-header">' +
         '<h3 class="os-card-title">' + esc(set.name) + '</h3>' +
@@ -257,6 +413,9 @@ function renderOrderSets() {
         (labCount ? '<span class="os-count-badge os-count-lab">' + labCount + ' Labs</span>' : '') +
         (imgCount ? '<span class="os-count-badge os-count-img">' + imgCount + ' Imaging</span>' : '') +
         (conCount ? '<span class="os-count-badge os-count-con">' + conCount + ' Consults</span>' : '') +
+        (dietCount ? '<span class="os-count-badge os-count-diet">' + dietCount + ' Diet</span>' : '') +
+        (nsgCount ? '<span class="os-count-badge os-count-nsg">' + nsgCount + ' Nursing</span>' : '') +
+        (actCount ? '<span class="os-count-badge os-count-act">' + actCount + ' Activity</span>' : '') +
         '</div>' +
         '<div class="os-card-footer">' +
         '<span class="os-item-total">' + set.items.length + ' orders total</span>' +
@@ -306,6 +465,12 @@ function openOrderSetPreview(set) {
       desc = (item.detail.study || item.detail.modality || '') + ' ' + (item.detail.bodyPart || '');
     } else if (item.type === 'Consult') {
       desc = 'Consult: ' + (item.detail.service || '');
+    } else if (item.type === 'Diet') {
+      desc = (item.detail.dietType || 'Diet') + (item.detail.fluidRestriction ? ' (Fluid restrict: ' + item.detail.fluidRestriction + ' mL)' : '') + (item.detail.instructions ? ' — ' + item.detail.instructions : '');
+    } else if (item.type === 'Nursing') {
+      desc = item.detail.intervention || 'Nursing';
+    } else if (item.type === 'Activity') {
+      desc = (item.detail.level || 'Activity') + (item.detail.weightBearing ? ' — WB: ' + item.detail.weightBearing : '');
     }
 
     var prioClass = 'badge badge-' + item.priority.toLowerCase();
@@ -406,6 +571,6 @@ function openOrderSetPreview(set) {
 }
 
 function getOrderTypeIcon(type) {
-  var icons = { Medication: '', Lab: '', Imaging: '', Consult: '' };
+  var icons = { Medication: '', Lab: '', Imaging: '', Consult: '', Diet: '', Nursing: '', Activity: '' };
   return icons[type] || '';
 }

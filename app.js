@@ -491,6 +491,18 @@ function route() {
         if (param && typeof renderSurgery === 'function') renderSurgery(param);
         else navigate('#dashboard');
         break;
+      case 'physical-therapy':
+        if (param && typeof renderPhysicalTherapy === 'function') renderPhysicalTherapy(param);
+        else navigate('#dashboard');
+        break;
+      case 'speech-therapy':
+        if (param && typeof renderSpeechTherapy === 'function') renderSpeechTherapy(param);
+        else navigate('#dashboard');
+        break;
+      case 'discharge':
+        if (param && typeof renderDischarge === 'function') renderDischarge(param);
+        else navigate('#dashboard');
+        break;
       default:
         navigate('#dashboard');
     }
@@ -498,9 +510,9 @@ function route() {
     console.error('[EMR] View render error (' + view + '):', err);
     const app = document.getElementById('app');
     app.innerHTML = '<div style="padding:40px;max-width:600px;margin:0 auto;text-align:center">' +
-      '<h2 style="color:var(--danger,#dc3545)">Something went wrong</h2>' +
-      '<p style="color:var(--text-secondary,#666);margin:12px 0">The <strong>' + esc(view) + '</strong> view encountered an error.</p>' +
-      '<pre style="text-align:left;background:var(--bg-card,#f8f9fa);padding:12px;border-radius:6px;font-size:13px;overflow:auto;max-height:200px">' + esc(err.message || String(err)) + '</pre>' +
+      '<h2 style="color:var(--danger)">Something went wrong</h2>' +
+      '<p style="color:var(--text-secondary);margin:12px 0">The <strong>' + esc(view) + '</strong> view encountered an error.</p>' +
+      '<pre style="text-align:left;background:var(--bg-base);padding:12px;border-radius:6px;font-size:13px;overflow:auto;max-height:200px">' + esc(err.message || String(err)) + '</pre>' +
       '<button class="btn btn-primary" style="margin-top:16px" onclick="navigate(\'#dashboard\')">Back to Dashboard</button>' +
       '</div>';
     showToast('View error: ' + (err.message || 'Unknown error'), 'error');
@@ -820,66 +832,110 @@ function showForcePasswordChangeScreen() {
   document.getElementById('password-change-screen').classList.remove('hidden');
 }
 
-/* ---------- Session timeout (15 min) ---------- */
-let _sessionTimerId = null;
-let _activityThrottleTimer = null;
+/* ---------- Session timeout (7c: 15 min inactivity, modal warning) ---------- */
+let _sessionTimeoutInterval = null;
+let _sessionActivityHandler = null;
 let _sessionWarningShown = false;
+let _lastActivity = Date.now();
 
 function startSessionTimer() {
   // Clean up any existing timer/listeners first (prevents memory leak on re-login)
   stopSessionTimer();
   _sessionWarningShown = false;
+  _lastActivity = Date.now();
 
-  // Throttled activity listeners
-  const activityHandler = () => {
-    if (_activityThrottleTimer) return;
-    _activityThrottleTimer = setTimeout(() => {
-      updateSessionActivity();
-      _sessionWarningShown = false;
-      _activityThrottleTimer = null;
-    }, 30000);
+  // Track user activity with throttling
+  _sessionActivityHandler = () => {
+    _lastActivity = Date.now();
+    _sessionWarningShown = false;
+    updateSessionActivity();
+  };
+
+  let _activityThrottle = null;
+  const throttledHandler = () => {
+    if (_activityThrottle) return;
+    _activityThrottle = setTimeout(() => {
+      _sessionActivityHandler();
+      _activityThrottle = null;
+    }, 10000); // throttle to 10 seconds
   };
 
   ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(evt => {
-    document.addEventListener(evt, activityHandler, { passive: true });
+    document.addEventListener(evt, throttledHandler, { passive: true });
   });
 
-  // Check every 30s
-  _sessionTimerId = setInterval(() => {
-    if (isSessionExpired(15)) {
-      logSystemAudit('SESSION_TIMEOUT', (getSessionUser() || {}).id || '', '', 'Session timed out', (getSessionUser() || {}).email || '');
+  // Check every 60 seconds
+  _sessionTimeoutInterval = setInterval(() => {
+    const elapsed = Date.now() - _lastActivity;
+    const fifteenMin = 15 * 60 * 1000;
+    const sixteenMin = 16 * 60 * 1000;
+    const fourteenMin = 14 * 60 * 1000;
+
+    // 16 min: force logout (warning was not dismissed)
+    if (elapsed > sixteenMin) {
+      logSystemAudit('SESSION_TIMEOUT', (getSessionUser() || {}).id || '', '', 'Session timed out after 16 min inactivity', (getSessionUser() || {}).email || '');
       stopSessionTimer();
+      closeAllModals();
       logout();
       showLogin();
       showToast('Your session has expired due to inactivity.', 'error', 5000);
       return;
     }
-    // Warning at 13 min (show only once per activity cycle)
-    if (!_sessionWarningShown && isSessionExpired(13)) {
-      _sessionWarningShown = true;
-      showToast('Your session will expire in 2 minutes due to inactivity.', 'warning', 5000);
+
+    // 15 min: check via data.js isSessionExpired as backup
+    if (isSessionExpired(15)) {
+      logSystemAudit('SESSION_TIMEOUT', (getSessionUser() || {}).id || '', '', 'Session timed out', (getSessionUser() || {}).email || '');
+      stopSessionTimer();
+      closeAllModals();
+      logout();
+      showLogin();
+      showToast('Your session has expired due to inactivity.', 'error', 5000);
+      return;
     }
-  }, 30000);
+
+    // 14 min (1 min before expiry): show warning modal
+    if (!_sessionWarningShown && elapsed > fourteenMin) {
+      _sessionWarningShown = true;
+      openModal({
+        title: 'Session Expiring',
+        bodyHTML:
+          '<div style="text-align:center;padding:20px">' +
+          '<div style="font-size:48px;margin-bottom:12px">&#9888;</div>' +
+          '<p style="font-size:16px;color:var(--text-primary);margin:0 0 8px">Your session will expire in <strong>60 seconds</strong> due to inactivity.</p>' +
+          '<p style="font-size:13px;color:var(--text-secondary)">Click "Stay Logged In" to continue your session.</p>' +
+          '</div>',
+        footerHTML:
+          '<button class="btn btn-primary" id="session-stay-btn">Stay Logged In</button>',
+      });
+      const stayBtn = document.getElementById('session-stay-btn');
+      if (stayBtn) {
+        stayBtn.addEventListener('click', function() {
+          _lastActivity = Date.now();
+          _sessionWarningShown = false;
+          updateSessionActivity();
+          closeModal();
+          showToast('Session extended.', 'success');
+        });
+      }
+    }
+  }, 60000);
 
   // Store handler ref for cleanup
-  _sessionTimerId._activityHandler = activityHandler;
+  _sessionTimeoutInterval._throttledHandler = throttledHandler;
 }
 
 function stopSessionTimer() {
-  if (_sessionTimerId) {
-    const handler = _sessionTimerId._activityHandler;
-    clearInterval(_sessionTimerId);
+  if (_sessionTimeoutInterval) {
+    const handler = _sessionTimeoutInterval._throttledHandler;
+    clearInterval(_sessionTimeoutInterval);
     if (handler) {
       ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(evt => {
         document.removeEventListener(evt, handler);
       });
     }
-    _sessionTimerId = null;
+    _sessionTimeoutInterval = null;
   }
-  if (_activityThrottleTimer) {
-    clearTimeout(_activityThrottleTimer);
-    _activityThrottleTimer = null;
-  }
+  _sessionActivityHandler = null;
 }
 
 /* ---------- Admin badge ---------- */
@@ -924,7 +980,7 @@ function initLoginForm() {
         if (!errEl) {
           errEl = document.createElement('div');
           errEl.id = 'login-error';
-          errEl.style.cssText = 'background:#fecaca;color:#991b1b;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;border:1px solid #f87171';
+          errEl.style.cssText = 'background:var(--badge-danger-bg);color:var(--badge-danger-text);padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;border:1px solid var(--danger)';
           form.insertBefore(errEl, form.querySelector('button[type="submit"]'));
         }
         errEl.textContent = result.error;
@@ -950,7 +1006,7 @@ function initLoginForm() {
       if (!errEl) {
         errEl = document.createElement('div');
         errEl.id = 'login-error';
-        errEl.style.cssText = 'background:#fecaca;color:#991b1b;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;border:1px solid #f87171';
+        errEl.style.cssText = 'background:var(--badge-danger-bg);color:var(--badge-danger-text);padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;border:1px solid var(--danger)';
         form.insertBefore(errEl, form.querySelector('button[type="submit"]'));
       }
       errEl.textContent = 'Login failed: ' + (err.message || 'Unknown error');
@@ -1458,6 +1514,98 @@ function initNavContextMenus() {
   });
 }
 
+/* ---------- WS8h: Notification Bell ---------- */
+var _notifBellInterval = null;
+
+function updateNotificationBadge() {
+  var bell = document.getElementById('notif-bell');
+  var badge = document.getElementById('notif-badge');
+  if (!bell || !badge) return;
+
+  var counts = { unackedResults: 0, pendingCosign: 0, verbalCosign: 0, criticalAlerts: 0, expiringRestraints: 0 };
+
+  try {
+    var orders = typeof getOrders === 'function' ? getOrders() : [];
+    // Unacknowledged results
+    counts.unackedResults = orders.filter(function(o) { return o.resultStatus === 'Final' && !o.acknowledgedBy; }).length;
+    // Pending co-signatures
+    counts.pendingCosign = orders.filter(function(o) { return o.cosignRequired && !o.cosignedBy && o.status !== 'Cancelled'; }).length;
+    // Verbal orders needing co-sign
+    counts.verbalCosign = orders.filter(function(o) { return o.orderMode === 'Verbal' && !o.cosignedBy && o.status !== 'Cancelled'; }).length;
+    // Critical value alerts (critical flagged results not acknowledged)
+    counts.criticalAlerts = orders.filter(function(o) { return o.resultFlag === 'Critical' && !o.acknowledgedBy; }).length;
+  } catch(e) { /* no-op */ }
+
+  // Expiring restraint orders (within 4 hours)
+  try {
+    if (typeof getRestraints === 'function') {
+      var restraints = getRestraints();
+      var fourHoursFromNow = Date.now() + (4 * 3600000);
+      counts.expiringRestraints = restraints.filter(function(r) {
+        if (r.status === 'Discontinued' || r.status === 'Expired') return false;
+        if (r.expiresAt) return new Date(r.expiresAt).getTime() <= fourHoursFromNow;
+        return false;
+      }).length;
+    }
+  } catch(e) { /* no-op */ }
+
+  var total = counts.unackedResults + counts.pendingCosign + counts.verbalCosign + counts.criticalAlerts + counts.expiringRestraints;
+
+  badge.textContent = String(total);
+  badge.style.display = total > 0 ? '' : 'none';
+
+  // Store counts for dropdown
+  bell._notifCounts = counts;
+}
+
+function _initNotifBell() {
+  var bell = document.getElementById('notif-bell');
+  if (!bell) return;
+
+  bell.addEventListener('click', function(e) {
+    e.stopPropagation();
+    // Remove existing dropdown
+    var existing = document.getElementById('notif-dropdown');
+    if (existing) { existing.remove(); return; }
+
+    var counts = bell._notifCounts || {};
+    var dd = document.createElement('div');
+    dd.id = 'notif-dropdown';
+    dd.style.cssText = 'position:absolute;top:100%;right:0;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius,8px);box-shadow:0 4px 16px rgba(0,0,0,0.15);min-width:260px;z-index:9999;font-size:13px;overflow:hidden';
+
+    var items = [
+      { label: 'Unacknowledged Results', count: counts.unackedResults || 0, hash: '#inbox' },
+      { label: 'Pending Co-signatures', count: counts.pendingCosign || 0, hash: '#inbox' },
+      { label: 'Verbal Orders (co-sign)', count: counts.verbalCosign || 0, hash: '#inbox' },
+      { label: 'Critical Value Alerts', count: counts.criticalAlerts || 0, hash: '#inbox', critical: true },
+      { label: 'Expiring Restraint Orders', count: counts.expiringRestraints || 0, hash: '#nursing-assess' },
+    ];
+
+    dd.innerHTML = '<div style="padding:10px 14px;border-bottom:1px solid var(--border,#ddd);font-weight:700;font-size:14px">Notifications</div>';
+    items.forEach(function(item) {
+      var countColor = item.count > 0 ? (item.critical ? 'var(--danger)' : 'var(--accent-blue)') : 'var(--text-secondary,#999)';
+      dd.innerHTML += '<a href="' + item.hash + '" style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;text-decoration:none;color:inherit;border-bottom:1px solid var(--border,#eee)">' +
+        '<span>' + item.label + '</span>' +
+        '<span style="font-weight:700;color:' + countColor + '">' + item.count + '</span></a>';
+    });
+
+    bell.style.position = 'relative';
+    bell.appendChild(dd);
+
+    var closeDD = function(ev) {
+      if (!dd.contains(ev.target) && ev.target !== bell) {
+        dd.remove();
+        document.removeEventListener('click', closeDD);
+      }
+    };
+    setTimeout(function() { document.addEventListener('click', closeDD); }, 0);
+  });
+
+  updateNotificationBadge();
+  if (_notifBellInterval) clearInterval(_notifBellInterval);
+  _notifBellInterval = setInterval(updateNotificationBadge, 60000);
+}
+
 /* ---------- App init after authentication ---------- */
 function initAppAfterAuth() {
   initKeyboardShortcuts();
@@ -1481,6 +1629,7 @@ function initAppAfterAuth() {
   startSessionTimer();
   updateSessionActivity();
   updateAdminBadge();
+  _initNotifBell();
   window.removeEventListener('hashchange', route);
   window.addEventListener('hashchange', route);
   route();
@@ -1908,7 +2057,7 @@ function refreshRightPanel() {
     html += '<div class="rp-section">';
     html += '<div class="rp-section-title">Navigate</div>';
     html += '<button class="rp-action-btn" id="rp-go-chart">' +
-      '<div class="rp-action-icon" style="background:#f1f5f9;color:#475569;">&#128203;</div>' +
+      '<div class="rp-action-icon" style="background:var(--bg-base);color:var(--text-secondary);">&#128203;</div>' +
       '<div class="rp-action-body"><div class="rp-action-label">Open Chart</div>' +
       '<div class="rp-action-desc">View full patient chart</div></div></button>';
     html += '</div>';

@@ -69,7 +69,7 @@ function showPatientLoginForm() {
     patForm.id = 'patient-login-form';
     patForm.className = 'auth-form';
     patForm.innerHTML = `
-      <h2 style="color:var(--portal-accent, #0d9488)">Patient Portal</h2>
+      <h2 style="color:var(--accent-pt)">Patient Portal</h2>
       <div class="form-group">
         <label for="pat-login-email">Email</label>
         <input type="email" id="pat-login-email" required placeholder="patient@email.com" />
@@ -78,7 +78,7 @@ function showPatientLoginForm() {
         <label for="pat-login-pw">Password</label>
         <input type="password" id="pat-login-pw" required placeholder="Password" />
       </div>
-      <button type="submit" class="btn btn-primary btn-block" style="background:var(--portal-accent, #0d9488)">Sign In to Portal</button>
+      <button type="submit" class="btn btn-primary btn-block" style="background:var(--accent-pt)">Sign In to Portal</button>
       <p class="auth-toggle"><a href="#" id="pat-back-provider">Back to Provider Login</a></p>
       <p class="auth-toggle"><a href="#" id="pat-register-link">Create Patient Account</a></p>
     `;
@@ -120,7 +120,7 @@ function showPatientRegisterForm() {
     regForm.id = 'patient-register-form';
     regForm.className = 'auth-form';
     regForm.innerHTML = `
-      <h2 style="color:var(--portal-accent, #0d9488)">Create Patient Account</h2>
+      <h2 style="color:var(--accent-pt)">Create Patient Account</h2>
       <div class="form-group">
         <label>Email *</label>
         <input type="email" id="pat-reg-email" required placeholder="patient@email.com" />
@@ -137,7 +137,7 @@ function showPatientRegisterForm() {
         <label>Confirm Password *</label>
         <input type="password" id="pat-reg-confirm" required placeholder="Repeat password" />
       </div>
-      <button type="submit" class="btn btn-primary btn-block" style="background:var(--portal-accent, #0d9488)">Create Account</button>
+      <button type="submit" class="btn btn-primary btn-block" style="background:var(--accent-pt)">Create Account</button>
       <p class="auth-toggle"><a href="#" id="pat-reg-back">Back to Patient Login</a></p>
     `;
     loginCard.appendChild(regForm);
@@ -198,7 +198,7 @@ function renderPatientPortal() {
   // Portal header
   const header = document.createElement('div');
   header.className = 'portal-header';
-  header.innerHTML = '<h1 style="color:#0d9488;margin:0">GusdorfEMR Patient Portal</h1>' +
+  header.innerHTML = '<h1 style="color:var(--accent-pt);margin:0">GusdorfEMR Patient Portal</h1>' +
     '<div style="display:flex;align-items:center;gap:12px">' +
     '<span>' + esc(patient.firstName) + ' ' + esc(patient.lastName) + '</span>' +
     '<button class="btn btn-secondary btn-sm" id="portal-logout">Sign Out</button></div>';
@@ -342,7 +342,7 @@ function openPortalReplyModal(threadId, patientId, patient) {
   openModal({
     title: 'Reply to Message',
     bodyHTML,
-    footerHTML: '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="portal-reply-send" style="background:#0d9488">Send Reply</button>',
+    footerHTML: '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="portal-reply-send" style="background:var(--accent-pt)">Send Reply</button>',
   });
 
   document.getElementById('portal-reply-send').addEventListener('click', () => {

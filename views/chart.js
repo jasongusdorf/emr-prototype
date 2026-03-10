@@ -62,6 +62,8 @@ const OVERVIEW_SUBTABS = [
   { key: 'care-plans',    label: 'Care Plans',      color: 'notes' },
   { key: 'io',            label: 'I/O',             color: 'notes' },
   { key: 'communication', label: 'Communication',   color: 'notes' },
+  { key: 'pt',            label: 'PT',              color: 'notes' },
+  { key: 'slp',           label: 'SLP',             color: 'notes' },
 ];
 
 const PROFILE_SECTIONS = [
@@ -108,7 +110,7 @@ function renderChart(patientId) {
   if (!isOnPanel && !hasOverride) {
     const app = document.getElementById('app');
     app.innerHTML = '<div style="padding:40px;text-align:center">' +
-      '<h2 style="color:var(--warning,#f59e0b)">Access Restricted</h2>' +
+      '<h2 style="color:var(--warning)">Access Restricted</h2>' +
       '<p style="margin:12px 0;color:var(--text-secondary)">You are not on this patient\'s care team. Contact an administrator for access.</p>' +
       '<button class="btn btn-primary" onclick="navigate(\'#dashboard\')">Back to Dashboard</button></div>';
     if (typeof logAudit === 'function') {
@@ -653,6 +655,42 @@ function buildOverviewContent(app, patient, patientId) {
   buildAssessmentsTabContent(patientId, assessContainer);
   wrap('assessments', assessContainer);
 
+  // 8j: Shift Handoff button in assessments section + WS7 clinical safety buttons
+  const handoffBtnWrap = document.createElement('div');
+  handoffBtnWrap.style.cssText = 'display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap';
+  handoffBtnWrap.appendChild(makeBtn('Shift Handoff (SBAR)', 'btn btn-secondary btn-sm', function() {
+    openShiftHandoffModal(patientId);
+  }));
+  // 7f: Discharge Planning
+  handoffBtnWrap.appendChild(makeBtn('Discharge Planning', 'btn btn-secondary btn-sm', function() {
+    var encs = getEncountersByPatient(patientId).filter(function(e) { return e.status === 'Open'; });
+    var encId = encs.length > 0 ? encs[0].id : null;
+    openDischargeModal(encId, patientId);
+  }));
+  // 7g: Restraint Documentation
+  handoffBtnWrap.appendChild(makeBtn('Restraint Documentation', 'btn btn-secondary btn-sm', function() {
+    openRestraintModal(patientId);
+  }));
+  // 7h: Blood Product Administration
+  handoffBtnWrap.appendChild(makeBtn('Transfusion', 'btn btn-secondary btn-sm', function() {
+    openTransfusionModal(patientId);
+  }));
+  // 7i: Interdisciplinary Rounding
+  handoffBtnWrap.appendChild(makeBtn('Rounding Checklist', 'btn btn-secondary btn-sm', function() {
+    openRoundingModal(patientId);
+  }));
+  // 7j: Patient Education
+  handoffBtnWrap.appendChild(makeBtn('Patient Education', 'btn btn-secondary btn-sm', function() {
+    openPatientEducationModal(patientId);
+  }));
+  // 7k: Audit Log (admin only)
+  if (typeof isAdmin === 'function' && isAdmin()) {
+    handoffBtnWrap.appendChild(makeBtn('Audit Log', 'btn btn-ghost btn-sm', function() {
+      openAuditViewer();
+    }));
+  }
+  wrap('assessments', handoffBtnWrap);
+
   // Care Plans tab
   const carePlansContainer = document.createElement('div');
   carePlansContainer.id = 'section-care-plans';
@@ -667,6 +705,18 @@ function buildOverviewContent(app, patient, patientId) {
 
   // Communication category
   wrap('communication', buildCommunicationSection(patientId));
+
+  // WS8a: PT sub-tab
+  const ptContainer = document.createElement('div');
+  ptContainer.id = 'section-pt';
+  buildPTSubTabContent(patientId, ptContainer);
+  wrap('pt', ptContainer);
+
+  // WS8a: SLP sub-tab
+  const slpContainer = document.createElement('div');
+  slpContainer.id = 'section-slp';
+  buildSLPSubTabContent(patientId, slpContainer);
+  wrap('slp', slpContainer);
 
   app.appendChild(container);
 
@@ -960,7 +1010,7 @@ function _buildDischargeContent(container, patientId) {
       ta.rows = f.rows || 3;
       ta.value = val;
       ta.readOnly = isFinalized;
-      if (isFinalized) ta.style.background = 'var(--surface-2,#f8fafc)';
+      if (isFinalized) ta.style.background = 'var(--bg-base)';
       group.appendChild(ta);
     }
     body.appendChild(group);
@@ -980,7 +1030,7 @@ function _buildDischargeContent(container, patientId) {
 
     const finalizeBtn = document.createElement('button');
     finalizeBtn.className = 'btn btn-primary';
-    finalizeBtn.style.cssText = 'background:#38a169;border-color:#38a169;';
+    finalizeBtn.style.cssText = 'background:var(--success);border-color:var(--success);';
     finalizeBtn.textContent = 'Finalize & Discharge Patient';
     finalizeBtn.addEventListener('click', () => {
       if (typeof confirmAction === 'function') {
@@ -1006,7 +1056,7 @@ function _buildDischargeContent(container, patientId) {
   } else {
     // Show finalized info
     const info = document.createElement('div');
-    info.style.cssText = 'margin-top:16px;padding:12px;background:var(--success-light,#f0fff4);border:1px solid var(--success,#38a169);border-radius:6px;font-size:13px;color:var(--success,#38a169);';
+    info.style.cssText = 'margin-top:16px;padding:12px;background:var(--badge-success-bg);border:1px solid var(--success);border-radius:6px;font-size:13px;color:var(--success);';
     const discharger = existing.dischargedBy ? getProvider(existing.dischargedBy) : null;
     info.innerHTML = '<strong>Discharged</strong> by ' +
       esc(discharger ? discharger.lastName + ', ' + discharger.firstName : 'Unknown') +
@@ -1832,8 +1882,167 @@ function _vitalClass(key, value) {
   return '';
 }
 
+function _buildVitalsSparkline(rows) {
+  // Take up to 10 most recent entries, reverse so oldest is on the left
+  const data = rows.slice(0, 10).slice().reverse();
+  if (data.length < 2) return null;
+
+  const container = document.createElement('div');
+  container.style.cssText = 'padding:12px 14px;overflow-x:auto';
+
+  const canvas = document.createElement('canvas');
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = 600 * dpr;
+  canvas.height = 200 * dpr;
+  canvas.style.cssText = 'width:100%;max-width:600px;height:auto;display:block;margin:0 auto';
+
+  container.appendChild(canvas);
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.style.cssText = 'display:flex;gap:16px;justify-content:center;margin-top:6px;font-size:12px';
+  [
+    { label: 'Systolic', color: '#c53030' },
+    { label: 'Diastolic', color: '#3182ce' },
+    { label: 'HR', color: '#276749' },
+    { label: 'SpO\u2082', color: '#6b46c1' },
+  ].forEach(function(item) {
+    const span = document.createElement('span');
+    span.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
+    const swatch = document.createElement('span');
+    swatch.style.cssText = 'display:inline-block;width:12px;height:3px;border-radius:2px;background:' + item.color;
+    span.appendChild(swatch);
+    span.appendChild(document.createTextNode(item.label));
+    legend.appendChild(span);
+  });
+  container.appendChild(legend);
+
+  // Draw on next frame so canvas is in DOM
+  setTimeout(function() {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+
+    const W = 600;
+    const H = 200;
+    const padL = 40, padR = 10, padT = 10, padB = 30;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    // Extract series
+    const series = {
+      systolic: [],
+      diastolic: [],
+      hr: [],
+      spo2: [],
+    };
+    const labels = [];
+
+    data.forEach(function(r) {
+      var sys = parseFloat(r.v.bpSystolic);
+      var dia = parseFloat(r.v.bpDiastolic);
+      var hr  = parseFloat(r.v.heartRate);
+      var sp  = parseFloat(r.v.spo2);
+      series.systolic.push(isNaN(sys) ? null : sys);
+      series.diastolic.push(isNaN(dia) ? null : dia);
+      series.hr.push(isNaN(hr) ? null : hr);
+      series.spo2.push(isNaN(sp) ? null : sp);
+      var d = new Date(r.enc.dateTime);
+      labels.push((d.getMonth() + 1) + '/' + d.getDate());
+    });
+
+    // Compute global min/max across all non-null values
+    var allVals = [];
+    Object.keys(series).forEach(function(k) {
+      series[k].forEach(function(v) { if (v !== null) allVals.push(v); });
+    });
+    if (allVals.length === 0) return;
+
+    var minVal = Math.min.apply(null, allVals);
+    var maxVal = Math.max.apply(null, allVals);
+    var range = maxVal - minVal || 1;
+    // Add 10% padding
+    minVal = minVal - range * 0.1;
+    maxVal = maxVal + range * 0.1;
+    range = maxVal - minVal;
+
+    function toX(i) { return padL + (i / (data.length - 1)) * plotW; }
+    function toY(v) { return padT + plotH - ((v - minVal) / range) * plotH; }
+
+    // Background
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid lines (5 horizontal)
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 0.5;
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (plotH / 4) * g;
+      ctx.beginPath();
+      ctx.moveTo(padL, gy);
+      ctx.lineTo(W - padR, gy);
+      ctx.stroke();
+      // Y-axis label
+      var gv = maxVal - (g / 4) * range;
+      ctx.fillStyle = '#718096';
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(Math.round(gv), padL - 4, gy + 3);
+    }
+
+    // X-axis labels
+    ctx.fillStyle = '#718096';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    labels.forEach(function(lbl, i) {
+      ctx.fillText(lbl, toX(i), H - 6);
+    });
+
+    // Draw line for a series
+    function drawLine(arr, color) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      var started = false;
+      var prevX, prevY;
+      arr.forEach(function(v, i) {
+        if (v === null) { started = false; return; }
+        var x2 = toX(i), y2 = toY(v);
+        if (!started) { ctx.moveTo(x2, y2); started = true; }
+        else {
+          var cpx = (prevX + x2) / 2;
+          ctx.bezierCurveTo(cpx, prevY, cpx, y2, x2, y2);
+        }
+        prevX = x2;
+        prevY = y2;
+      });
+      ctx.stroke();
+
+      // Dots
+      ctx.fillStyle = color;
+      arr.forEach(function(v, i) {
+        if (v === null) return;
+        ctx.beginPath();
+        ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    drawLine(series.systolic, '#c53030');
+    drawLine(series.diastolic, '#3182ce');
+    drawLine(series.hr, '#276749');
+    drawLine(series.spo2, '#6b46c1');
+  }, 0);
+
+  return container;
+}
+
 function buildVitalsTrendCard(patientId) {
-  const card = chartCard('Vitals Trend', null);
+  // 8i: Add Quick Vitals button
+  const quickVitalsBtn = makeBtn('Quick Vitals', 'btn btn-secondary btn-sm', function() {
+    openQuickVitalsModal(patientId);
+  });
+  const card = chartCard('Vitals Trend', quickVitalsBtn);
   card.id = 'section-vitals-trend';
 
   const encs = getEncountersByPatient(patientId);
@@ -1842,12 +2051,28 @@ function buildVitalsTrendCard(patientId) {
     const v = getEncounterVitals(enc.id);
     if (v) rows.push({ enc, v });
   });
+
+  // 8i: Include standalone vitals in the trend
+  if (typeof getStandaloneVitals === 'function') {
+    const svs = getStandaloneVitals(patientId);
+    svs.forEach(sv => {
+      rows.push({
+        enc: { dateTime: sv.recordedAt, id: 'standalone-' + sv.id },
+        v: sv,
+      });
+    });
+  }
+
   rows.sort((a, b) => new Date(b.enc.dateTime) - new Date(a.enc.dateTime));
 
   if (rows.length === 0) {
     card.appendChild(buildEmptyState('', 'No vitals recorded', 'Vitals will appear here as encounters are created.'));
     return card;
   }
+
+  // Canvas sparkline graph above the table
+  const sparkline = _buildVitalsSparkline(rows);
+  if (sparkline) card.appendChild(sparkline);
 
   const SHOW = 10;
   const displayed = rows.slice(0, SHOW);
@@ -2311,6 +2536,41 @@ function _renderLabPanelView(container, results, patientId) {
       noteEl.textContent = result.notes;
       detailDiv.appendChild(noteEl);
     }
+
+    // 8m: Result acknowledgment
+    const ackRow = document.createElement('div');
+    ackRow.style.cssText = 'padding:8px 14px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--border,#eee)';
+    if (result.acknowledgedBy) {
+      const ackProv = typeof getProvider === 'function' ? getProvider(result.acknowledgedBy) : null;
+      const ackBadge = document.createElement('span');
+      ackBadge.style.cssText = 'font-size:12px;color:var(--badge-success-text);background:var(--badge-success-bg);padding:2px 8px;border-radius:4px';
+      ackBadge.textContent = 'Acknowledged by ' + (ackProv ? ackProv.firstName + ' ' + ackProv.lastName : result.acknowledgedBy) + ' on ' + formatDateTime(result.acknowledgedAt);
+      ackRow.appendChild(ackBadge);
+    } else {
+      const unackIndicator = document.createElement('span');
+      unackIndicator.style.cssText = 'width:8px;height:8px;border-radius:50%;background:var(--warning);display:inline-block';
+      unackIndicator.title = 'Unacknowledged';
+      // Add to panel header too
+      const headerDot = unackIndicator.cloneNode(true);
+      headerDot.style.marginLeft = '4px';
+      title.appendChild(document.createTextNode(' '));
+      title.appendChild(headerDot);
+
+      const ackBtn = makeBtn('Acknowledge', 'btn btn-secondary btn-sm', function() {
+        const user = getSessionUser();
+        result.acknowledgedBy = user.id;
+        result.acknowledgedAt = new Date().toISOString();
+        saveLabResult(result);
+        showToast('Result acknowledged.', 'success');
+        // Refresh just the lab body
+        container.innerHTML = '';
+        _renderLabPanelView(container, getLabResults(patientId), patientId);
+      });
+      ackRow.appendChild(unackIndicator);
+      ackRow.appendChild(ackBtn);
+    }
+    detailDiv.appendChild(ackRow);
+
     panel.appendChild(detailDiv);
 
     hdr.addEventListener('click', () => {
@@ -4101,7 +4361,7 @@ function buildOrderSetsTabContent(patientId, container) {
 
   var html = '<div style="padding:0 0 16px">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-    '<span style="font-size:13px;color:var(--text-secondary,#666)">' + allSets.length + ' order sets available</span>' +
+    '<span style="font-size:13px;color:var(--text-secondary)">' + allSets.length + ' order sets available</span>' +
     '<button class="btn btn-secondary btn-sm" id="os-new-custom">+ Custom Set</button>' +
   '</div>';
   html += '<div class="os-grid">';
@@ -4113,7 +4373,7 @@ function buildOrderSetsTabContent(patientId, container) {
       '<div class="os-card-meta">' + esc(s.category || '') + ' &bull; ' + (s.items || []).length + ' items</div>' +
       '<ul class="os-item-list">' +
         (s.items || []).slice(0,4).map(function(i) { return '<li>' + esc(typeof i === 'string' ? i : i.name || '') + '</li>'; }).join('') +
-        ((s.items || []).length > 4 ? '<li style="color:var(--text-secondary,#666);font-style:italic">+' + ((s.items||[]).length - 4) + ' more...</li>' : '') +
+        ((s.items || []).length > 4 ? '<li style="color:var(--text-secondary);font-style:italic">+' + ((s.items||[]).length - 4) + ' more...</li>' : '') +
       '</ul>' +
       '<button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" data-osidx="' + idx + '">Place Order Set</button>' +
     '</div>';
@@ -4165,12 +4425,12 @@ function buildERxTabContent(patientId, container) {
 
   var html = '<div style="padding:0 0 16px">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-    '<span style="font-size:13px;color:var(--text-secondary,#666)">Electronic prescribing for outpatient medications</span>' +
+    '<span style="font-size:13px;color:var(--text-secondary)">Electronic prescribing for outpatient medications</span>' +
     '<button class="btn btn-primary btn-sm" id="erx-new">+ New Prescription</button>' +
   '</div>';
 
   if (!rxList.length && !meds.length) {
-    html += '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No prescriptions on file for this patient.</p>';
+    html += '<p style="text-align:center;padding:32px;color:var(--text-secondary)">No prescriptions on file for this patient.</p>';
   } else {
     html += '<table class="data-table"><thead><tr><th>Medication</th><th>Sig</th><th>Qty</th><th>Refills</th><th>Status</th><th>Date</th></tr></thead><tbody>';
     rxList.forEach(function(rx) {
@@ -4182,7 +4442,7 @@ function buildERxTabContent(patientId, container) {
         '<td>' + (rx.createdAt ? formatDateTime(rx.createdAt) : '') + '</td></tr>';
     });
     meds.filter(function(m) { return !rxList.find(function(r) { return r.medId === m.id; }); }).forEach(function(m) {
-      html += '<tr style="color:var(--text-secondary,#666)"><td>' + esc(m.name || m.drug || '') + '</td>' +
+      html += '<tr style="color:var(--text-secondary)"><td>' + esc(m.name || m.drug || '') + '</td>' +
         '<td>' + esc(m.dose || '') + ' ' + esc(m.route || '') + '</td><td>—</td><td>—</td>' +
         '<td><span class="badge badge-muted">On File</span></td><td>—</td>' +
         '<td><button class="btn btn-sm btn-secondary erx-prescribe-btn" data-mid="' + m.id + '" data-mname="' + esc(m.name || m.drug || '') + '" data-dose="' + esc(m.dose || '') + '">Prescribe</button></td></tr>';
@@ -4235,15 +4495,15 @@ function buildMARTabContent(patientId, container) {
   var hours = [0,2,4,6,8,10,12,14,16,18,20,22];
 
   if (!meds.length) {
-    container.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No active medications for this patient.</p>';
+    container.innerHTML = '<p style="text-align:center;padding:32px;color:var(--text-secondary)">No active medications for this patient.</p>';
     return;
   }
 
   var html = '<div style="margin-bottom:12px;display:flex;gap:16px;font-size:12px">' +
-    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#d4edda;display:inline-block"></span> Given</span>' +
-    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#fff3cd;display:inline-block"></span> Held</span>' +
-    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#f8d7da;display:inline-block"></span> Refused</span>' +
-    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#e9ecef;display:inline-block"></span> Not Due</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--badge-success-bg);display:inline-block"></span> Given</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--badge-warning-bg);display:inline-block"></span> Held</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--badge-danger-bg);display:inline-block"></span> Refused</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--badge-neutral-bg);display:inline-block"></span> Not Due</span>' +
   '</div>';
   html += '<div style="overflow-x:auto"><table class="mar-grid"><thead><tr><th style="text-align:left;min-width:180px">Medication</th><th>Freq</th>';
   hours.forEach(function(h) { html += '<th>' + String(h).padStart(2,'0') + ':00</th>'; });
@@ -4260,8 +4520,8 @@ function buildMARTabContent(patientId, container) {
       var isDue = schedHours.indexOf(h) >= 0;
       var entry = entries.find(function(e) { return e.medId === med.id && e.hour === h && e.date === today; });
       var bg = ''; var label = '';
-      if (entry) { bg = entry.status === 'given' ? '#d4edda' : entry.status === 'held' ? '#fff3cd' : '#f8d7da'; label = entry.status === 'given' ? 'G' : entry.status === 'held' ? 'H' : 'R'; }
-      else if (isDue) { bg = '#e9ecef'; label = '—'; }
+      if (entry) { bg = entry.status === 'given' ? 'var(--badge-success-bg)' : entry.status === 'held' ? 'var(--badge-warning-bg)' : 'var(--badge-danger-bg)'; label = entry.status === 'given' ? 'G' : entry.status === 'held' ? 'H' : 'R'; }
+      else if (isDue) { bg = 'var(--badge-neutral-bg)'; label = '—'; }
       html += '<td style="text-align:center;background:' + bg + ';cursor:' + (isDue ? 'pointer' : 'default') + '" class="mar-cell-inline" data-med="' + med.id + '" data-hour="' + h + '" data-due="' + isDue + '">' + label + '</td>';
     });
     html += '</tr>';
@@ -4328,20 +4588,20 @@ function buildAssessmentsTabContent(patientId, container) {
 
   function renderHistory() {
     var html = '<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">' +
-      '<span style="font-size:13px;color:var(--text-secondary,#666)">' + assessments.length + ' assessment' + (assessments.length !== 1 ? 's' : '') + ' on file</span>' +
+      '<span style="font-size:13px;color:var(--text-secondary)">' + assessments.length + ' assessment' + (assessments.length !== 1 ? 's' : '') + ' on file</span>' +
       '<button class="btn btn-primary btn-sm" id="assess-new-btn">+ New Assessment</button>' +
     '</div>';
     if (!assessments.length) {
-      html += '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No assessments recorded. Click "+ New Assessment" to start.</p>';
+      html += '<p style="text-align:center;padding:32px;color:var(--text-secondary)">No assessments recorded. Click "+ New Assessment" to start.</p>';
     } else {
       assessments.forEach(function(a) {
         html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px 16px;margin-bottom:8px">' +
           '<div style="display:flex;justify-content:space-between;align-items:center">' +
             '<strong>' + esc(a.type || 'Assessment') + '</strong>' +
-            '<span style="font-size:12px;color:var(--text-secondary,#666)">' + formatDateTime(a.createdAt) + '</span>' +
+            '<span style="font-size:12px;color:var(--text-secondary)">' + formatDateTime(a.createdAt) + '</span>' +
           '</div>' +
           (a.score !== undefined ? '<div style="margin-top:4px">Score: <strong>' + a.score + '</strong></div>' : '') +
-          (a.notes ? '<div style="margin-top:4px;font-size:13px;color:var(--text-secondary,#666)">' + esc(a.notes) + '</div>' : '') +
+          (a.notes ? '<div style="margin-top:4px;font-size:13px;color:var(--text-secondary)">' + esc(a.notes) + '</div>' : '') +
         '</div>';
       });
     }
@@ -4407,23 +4667,23 @@ function buildCarePlansTabContent(patientId, container) {
   function render() {
     var plans = (typeof getCarePlans === 'function' ? getCarePlans(patientId) : []);
     var html = '<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">' +
-      '<span style="font-size:13px;color:var(--text-secondary,#666)">' + plans.length + ' care plan' + (plans.length !== 1 ? 's' : '') + '</span>' +
+      '<span style="font-size:13px;color:var(--text-secondary)">' + plans.length + ' care plan' + (plans.length !== 1 ? 's' : '') + '</span>' +
       '<button class="btn btn-primary btn-sm" id="cp-new-btn">+ New Care Plan</button>' +
     '</div>';
 
     if (!plans.length) {
-      html += '<p style="text-align:center;padding:32px;color:var(--text-secondary,#666)">No care plans. Click "+ New Care Plan" to add one.</p>';
+      html += '<p style="text-align:center;padding:32px;color:var(--text-secondary)">No care plans. Click "+ New Care Plan" to add one.</p>';
     }
     plans.forEach(function(plan) {
-      var statusBg = plan.status === 'Active' ? '#d4edda' : plan.status === 'On Hold' ? '#fff3cd' : '#e9ecef';
-      var statusColor = plan.status === 'Active' ? '#155724' : plan.status === 'On Hold' ? '#856404' : '#383d41';
+      var statusBg = plan.status === 'Active' ? 'var(--badge-success-bg)' : plan.status === 'On Hold' ? 'var(--badge-warning-bg)' : 'var(--badge-neutral-bg)';
+      var statusColor = plan.status === 'Active' ? 'var(--badge-success-text)' : plan.status === 'On Hold' ? 'var(--badge-warning-text)' : 'var(--badge-neutral-text)';
       html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:16px;margin-bottom:10px">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">' +
           '<strong>' + esc(plan.name || plan.diagnosis || '') + '</strong>' +
           '<span style="padding:2px 10px;border-radius:10px;font-size:12px;background:' + statusBg + ';color:' + statusColor + '">' + esc(plan.status || 'Active') + '</span>' +
         '</div>' +
-        '<div style="font-size:13px;margin-bottom:4px"><span style="color:var(--text-secondary,#666)">Diagnosis:</span> ' + esc(plan.diagnosis || '') + '</div>' +
-        '<div style="font-size:13px;margin-bottom:6px"><span style="color:var(--text-secondary,#666)">Goal:</span> ' + esc(plan.goals || '') + '</div>' +
+        '<div style="font-size:13px;margin-bottom:4px"><span style="color:var(--text-secondary)">Diagnosis:</span> ' + esc(plan.diagnosis || '') + '</div>' +
+        '<div style="font-size:13px;margin-bottom:6px"><span style="color:var(--text-secondary)">Goal:</span> ' + esc(plan.goals || '') + '</div>' +
         '<div style="font-size:13px">' + (plan.interventions || []).map(function(i) { return '<div style="padding:3px 0;border-bottom:1px solid var(--border,#eee)">' + esc(typeof i === 'string' ? i : i.text || '') + '</div>'; }).join('') + '</div>' +
         '<div style="margin-top:8px;display:flex;gap:6px">' +
           (plan.status === 'Active' ? '<button class="btn btn-secondary btn-sm cp-hold" data-id="' + plan.id + '">Hold</button>' : '') +
@@ -4434,7 +4694,8 @@ function buildCarePlansTabContent(patientId, container) {
     });
     container.innerHTML = html;
 
-    document.getElementById('cp-new-btn').addEventListener('click', function() { showPlanPicker(); });
+    var cpNewBtn = container.querySelector('#cp-new-btn');
+    if (cpNewBtn) cpNewBtn.addEventListener('click', function() { showPlanPicker(); });
 
     container.querySelectorAll('.cp-hold,.cp-activate,.cp-resolve').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -4452,7 +4713,7 @@ function buildCarePlansTabContent(patientId, container) {
   function showPlanPicker() {
     var body = '<p style="margin-bottom:12px;font-size:13px">Choose a template:</p><div class="os-grid">';
     CP_TEMPLATES.forEach(function(t, i) {
-      body += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;cursor:pointer" class="cp-tpl-pick" data-i="' + i + '"><strong>' + esc(t.name) + '</strong><div style="font-size:12px;color:var(--text-secondary,#666);margin-top:4px">' + esc(t.diagnosis) + '</div></div>';
+      body += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;cursor:pointer" class="cp-tpl-pick" data-i="' + i + '"><strong>' + esc(t.name) + '</strong><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + esc(t.diagnosis) + '</div></div>';
     });
     body += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:var(--radius,8px);padding:12px;cursor:pointer" class="cp-tpl-pick" data-i="custom"><strong>Custom Plan</strong></div>';
     body += '</div>';
@@ -6154,4 +6415,1170 @@ function openMessageThreadModal(threadId, patientId) {
     showToast('Reply sent.', 'success');
     renderChart(patientId);
   });
+}
+
+/* ============================================================
+   8i: Standalone Quick Vitals Modal
+   ============================================================ */
+function openQuickVitalsModal(patientId) {
+  const fields = [
+    { key: 'bpSystolic', label: 'BP Systolic', type: 'number', placeholder: 'mmHg' },
+    { key: 'bpDiastolic', label: 'BP Diastolic', type: 'number', placeholder: 'mmHg' },
+    { key: 'heartRate', label: 'Heart Rate', type: 'number', placeholder: 'bpm' },
+    { key: 'respiratoryRate', label: 'Respiratory Rate', type: 'number', placeholder: '/min' },
+    { key: 'tempF', label: 'Temp (°F)', type: 'number', placeholder: '°F', step: '0.1' },
+    { key: 'spo2', label: 'SpO₂', type: 'number', placeholder: '%' },
+    { key: 'weightLbs', label: 'Weight', type: 'number', placeholder: 'lbs' },
+    { key: 'painScore', label: 'Pain (0-10)', type: 'number', placeholder: '0-10' },
+    { key: 'o2FlowRate', label: 'O₂ Flow Rate', type: 'number', placeholder: 'L/min' },
+  ];
+
+  let bodyHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  fields.forEach(f => {
+    bodyHTML += '<div class="form-group" style="margin:0">' +
+      '<label class="form-label" style="font-size:12px">' + f.label + '</label>' +
+      '<input type="' + f.type + '" class="form-control" id="qv-' + f.key + '" placeholder="' + f.placeholder + '"' +
+      (f.step ? ' step="' + f.step + '"' : '') + '>' +
+      '</div>';
+  });
+  bodyHTML += '</div>';
+
+  openModal({
+    title: 'Quick Vitals Entry',
+    bodyHTML: bodyHTML,
+    footerHTML:
+      '<button class="btn btn-secondary" id="qv-cancel">Cancel</button>' +
+      '<button class="btn btn-primary" id="qv-save">Save Vitals</button>',
+  });
+
+  document.getElementById('qv-cancel').addEventListener('click', closeModal);
+  document.getElementById('qv-save').addEventListener('click', function() {
+    const data = { patientId: patientId, recordedBy: getSessionUser().id };
+    let hasValue = false;
+    fields.forEach(function(f) {
+      const el = document.getElementById('qv-' + f.key);
+      if (el && el.value) {
+        data[f.key] = f.type === 'number' ? parseFloat(el.value) : el.value;
+        hasValue = true;
+      }
+    });
+    if (!hasValue) { showToast('Enter at least one vital sign.', 'error'); return; }
+    saveStandaloneVital(data);
+    closeModal();
+    showToast('Vitals recorded.', 'success');
+    refreshChart(patientId);
+  });
+}
+
+/* ============================================================
+   WS8a: PT Sub-Tab Content
+   ============================================================ */
+function buildPTSubTabContent(patientId, container) {
+  var html = '';
+  var ptEvals = typeof getPTEvaluations === 'function' ? getPTEvaluations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); }) : [];
+  var ptSessions = typeof getPTSessions === 'function' ? getPTSessions(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); }) : [];
+  var ptGoals = typeof getPTGoals === 'function' ? getPTGoals(patientId).filter(function(g) { return g.status === 'Active' || g.status === 'In Progress'; }) : [];
+
+  html += '<div style="padding:12px 0">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+  html += '<h3 style="margin:0;color:#0d9488">Physical Therapy</h3>';
+  html += '<div style="display:flex;gap:8px">';
+  html += '<button class="btn btn-primary btn-sm" id="pt-new-session-btn">New PT Session</button>';
+  html += '<a href="#physical-therapy/' + esc(patientId) + '" class="btn btn-secondary btn-sm" style="text-decoration:none">Open PT Module</a>';
+  html += '</div></div>';
+
+  // Latest PT Evaluation Summary Card
+  if (ptEvals.length > 0) {
+    var ev = ptEvals[0];
+    html += '<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:var(--radius,8px);padding:12px 16px;margin-bottom:16px">';
+    html += '<h4 style="margin:0 0 8px;font-size:14px;color:#0d9488">Latest PT Evaluation</h4>';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">';
+    html += '<span><strong>Date:</strong> ' + (ev.createdAt ? formatDateTime(ev.createdAt) : '—') + '</span>';
+    html += '<span><strong>Diagnosis:</strong> ' + esc(ev.diagnosis || '—') + '</span>';
+    html += '<span><strong>WB Status:</strong> ' + esc(ev.weightBearingStatus || ev.wbStatus || '—') + '</span>';
+    html += '<span><strong>Berg Score:</strong> ' + (ev.bergScore != null ? ev.bergScore : '—') + '</span>';
+    html += '</div>';
+    if (ev.functionalMobility || ev.activityLevel) {
+      html += '<div style="margin-top:6px;font-size:13px"><strong>Functional Mobility:</strong> ' + esc(ev.functionalMobility || ev.activityLevel || '—') + '</div>';
+    }
+    html += '</div>';
+  } else {
+    html += '<p style="text-align:center;padding:16px;color:var(--text-secondary)">No PT evaluations on file.</p>';
+  }
+
+  // Recent Treatment Sessions (last 5)
+  if (ptSessions.length > 0) {
+    var recentSessions = ptSessions.slice(0, 5);
+    html += '<h4 style="margin:12px 0 8px;font-size:14px">Recent Treatment Sessions</h4>';
+    html += '<table class="table" style="font-size:13px"><thead><tr><th>Date</th><th>Duration</th><th>Modalities</th><th>Response</th></tr></thead><tbody>';
+    recentSessions.forEach(function(s) {
+      html += '<tr>';
+      html += '<td>' + (s.createdAt ? formatDateTime(s.createdAt) : '—') + '</td>';
+      html += '<td>' + esc(s.duration || '—') + '</td>';
+      html += '<td>' + esc(Array.isArray(s.modalities) ? s.modalities.join(', ') : (s.modalities || '—')) + '</td>';
+      html += '<td>' + esc(s.response || s.patientResponse || '—') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  // Active PT Goals
+  if (ptGoals.length > 0) {
+    html += '<h4 style="margin:12px 0 8px;font-size:14px">Active PT Goals</h4>';
+    html += '<div style="display:flex;flex-direction:column;gap:6px">';
+    ptGoals.forEach(function(g) {
+      var badgeColor = g.status === 'In Progress' ? '#f59e0b' : '#10b981';
+      html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:4px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px">';
+      html += '<span>' + esc(g.description || g.goal || '—') + '</span>';
+      html += '<span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:' + badgeColor + ';color:#fff">' + esc(g.status) + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Wire "New PT Session" button
+  var newPTBtn = container.querySelector('#pt-new-session-btn');
+  if (newPTBtn) {
+    newPTBtn.addEventListener('click', function() {
+      if (typeof openPTSessionModal === 'function') {
+        openPTSessionModal(patientId);
+      } else {
+        showToast('Navigate to PT module', 'warning');
+      }
+    });
+  }
+}
+
+/* ============================================================
+   WS8a: SLP Sub-Tab Content
+   ============================================================ */
+function buildSLPSubTabContent(patientId, container) {
+  var html = '';
+  var slpEvals = typeof getSLPEvaluations === 'function' ? getSLPEvaluations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); }) : [];
+  var slpDietRecs = typeof getSLPDietRecommendations === 'function' ? getSLPDietRecommendations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); }) : [];
+  var slpGoals = typeof getSLPGoals === 'function' ? getSLPGoals(patientId).filter(function(g) { return g.status === 'Active' || g.status === 'In Progress'; }) : [];
+
+  html += '<div style="padding:12px 0">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+  html += '<h3 style="margin:0;color:#7c3aed">Speech-Language Pathology</h3>';
+  html += '<div style="display:flex;gap:8px">';
+  html += '<button class="btn btn-primary btn-sm" id="slp-new-session-btn">New SLP Session</button>';
+  html += '<a href="#speech-therapy/' + esc(patientId) + '" class="btn btn-secondary btn-sm" style="text-decoration:none">Open SLP Module</a>';
+  html += '</div></div>';
+
+  // Latest Swallow Eval Summary
+  var latestEval = slpEvals.length > 0 ? slpEvals[0] : null;
+  if (latestEval) {
+    html += '<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:var(--radius,8px);padding:12px 16px;margin-bottom:16px">';
+    html += '<h4 style="margin:0 0 8px;font-size:14px;color:#7c3aed">Latest Swallow Evaluation</h4>';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">';
+    html += '<span><strong>Aspiration Risk:</strong> ' + esc(latestEval.aspirationRisk || '—') + '</span>';
+    html += '<span><strong>IDDSI Food:</strong> ' + (latestEval.iddsiFoodLevel != null ? 'Level ' + latestEval.iddsiFoodLevel : '—') + '</span>';
+    html += '<span><strong>IDDSI Liquid:</strong> ' + (latestEval.iddsiLiquidLevel != null ? 'Level ' + latestEval.iddsiLiquidLevel : '—') + '</span>';
+    if (latestEval.precautions) {
+      html += '<span><strong>Precautions:</strong> ' + esc(Array.isArray(latestEval.precautions) ? latestEval.precautions.join(', ') : latestEval.precautions) + '</span>';
+    }
+    html += '</div></div>';
+  }
+
+  // Current Diet Recommendation Card
+  var latestDiet = slpDietRecs.length > 0 ? slpDietRecs[0] : null;
+  if (latestDiet) {
+    html += '<div style="background:#faf5ff;border:1px solid #d8b4fe;border-radius:var(--radius,8px);padding:12px 16px;margin-bottom:16px">';
+    html += '<h4 style="margin:0 0 8px;font-size:14px;color:#7c3aed">Current Diet Recommendation</h4>';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">';
+    html += '<span><strong>IDDSI Food Level:</strong> ' + (latestDiet.foodLevel != null ? latestDiet.foodLevel : '—') + '</span>';
+    html += '<span><strong>IDDSI Liquid Level:</strong> ' + (latestDiet.liquidLevel != null ? latestDiet.liquidLevel : '—') + '</span>';
+    var hasAspPrec = latestDiet.precautions && (Array.isArray(latestDiet.precautions) ? latestDiet.precautions.length > 0 : !!latestDiet.precautions);
+    html += '<span><strong>Aspiration Precautions:</strong> ' + (hasAspPrec ? '<span style="color:#dc3545;font-weight:600">Yes</span>' : 'No') + '</span>';
+    html += '</div></div>';
+
+    // FOIS score
+    if (latestDiet.foisScore != null || (latestEval && latestEval.foisScore != null)) {
+      var fois = latestDiet.foisScore != null ? latestDiet.foisScore : latestEval.foisScore;
+      html += '<div style="font-size:13px;margin-bottom:12px"><strong>FOIS Score:</strong> ' + fois + '/7</div>';
+    }
+  } else if (!latestEval) {
+    html += '<p style="text-align:center;padding:16px;color:var(--text-secondary)">No SLP evaluations or diet recommendations on file.</p>';
+  }
+
+  // Active SLP Goals
+  if (slpGoals.length > 0) {
+    html += '<h4 style="margin:12px 0 8px;font-size:14px">Active SLP Goals</h4>';
+    html += '<div style="display:flex;flex-direction:column;gap:6px">';
+    slpGoals.forEach(function(g) {
+      var badgeColor = g.status === 'In Progress' ? '#f59e0b' : '#10b981';
+      html += '<div style="background:var(--bg-card,#fff);border:1px solid var(--border,#ddd);border-radius:4px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:13px">';
+      html += '<span>' + esc(g.description || g.goal || '—') + '</span>';
+      html += '<span style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:' + badgeColor + ';color:#fff">' + esc(g.status) + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Wire "New SLP Session" button
+  var newSLPBtn = container.querySelector('#slp-new-session-btn');
+  if (newSLPBtn) {
+    newSLPBtn.addEventListener('click', function() {
+      if (typeof openSLPSessionModal === 'function') {
+        openSLPSessionModal(patientId);
+      } else {
+        showToast('Navigate to SLP module', 'warning');
+      }
+    });
+  }
+}
+
+/* ============================================================
+   8j: Shift Handoff Tool (SBAR format)
+   ============================================================ */
+function openShiftHandoffModal(patientId) {
+  const patient = getPatient(patientId);
+  if (!patient) { showToast('Patient not found.', 'error'); return; }
+
+  const patName = patient.firstName + ' ' + patient.lastName;
+
+  // Auto-populate Situation
+  const problems = typeof getActiveProblems === 'function' ? getActiveProblems(patientId) : [];
+  const primaryDx = problems.length > 0 ? problems[0].name : 'Not documented';
+  const codeStatus = patient.codeStatus || 'Full Code';
+  const roomBed = patient.room ? patient.room + (patient.bed ? ' / ' + patient.bed : '') : 'Not assigned';
+  const situation = 'Patient: ' + patName + '\nRoom/Bed: ' + roomBed + '\nPrimary Diagnosis: ' + primaryDx + '\nCode Status: ' + codeStatus;
+
+  // Auto-populate Background
+  const probList = problems.map(function(p) { return '- ' + p.name + ' (' + (p.status || 'Active') + ')'; }).join('\n') || 'None documented';
+  let labSummary = 'No recent labs';
+  if (typeof getLabResults === 'function') {
+    const labs = getLabResults(patientId);
+    if (labs.length > 0) {
+      const recent = labs.slice(0, 3);
+      labSummary = recent.map(function(l) { return l.panel + ' (' + formatDate(l.resultDate) + ')'; }).join(', ');
+    }
+  }
+  const background = 'Active Problems:\n' + probList + '\n\nRecent Labs: ' + labSummary;
+
+  // Auto-populate Assessment
+  let vitalsText = 'No recent vitals';
+  const latestVitals = getLatestVitalsByPatient(patientId);
+  if (latestVitals && latestVitals.vitals) {
+    const v = latestVitals.vitals;
+    const parts = [];
+    if (v.bpSystolic && v.bpDiastolic) parts.push('BP ' + v.bpSystolic + '/' + v.bpDiastolic);
+    if (v.heartRate) parts.push('HR ' + v.heartRate);
+    if (v.tempF) parts.push('Temp ' + v.tempF + '°F');
+    if (v.spo2) parts.push('SpO₂ ' + v.spo2 + '%');
+    if (parts.length > 0) vitalsText = parts.join(', ');
+  }
+  let painText = 'Not assessed';
+  if (typeof getNursingAssessments === 'function') {
+    const assessments = getNursingAssessments(patientId)
+      .filter(function(a) { return a.findings && a.findings.pain; })
+      .sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (assessments.length > 0 && assessments[0].findings.pain) {
+      painText = 'Pain score: ' + (assessments[0].findings.pain.score || 0) + '/10';
+    }
+  }
+  // WS8c: PT Mobility in Assessment
+  let ptMobilityText = '';
+  if (typeof getPTEvaluations === 'function') {
+    const ptEvals = getPTEvaluations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (ptEvals.length > 0) {
+      const ptE = ptEvals[0];
+      ptMobilityText = '\nPT: ' + (ptE.activityLevel || ptE.functionalMobility || 'Assessed') + ' | WB: ' + (ptE.weightBearingStatus || ptE.wbStatus || 'N/A') + ' | AD: ' + (ptE.assistiveDevice || 'None');
+    }
+  }
+  // WS8c: SLP/Diet in Assessment
+  let slpDietText = '';
+  if (typeof getSLPDietRecommendations === 'function') {
+    const slpRecs = getSLPDietRecommendations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (slpRecs.length > 0) {
+      const slpR = slpRecs[0];
+      const hasAspPrec = slpR.precautions && (Array.isArray(slpR.precautions) ? slpR.precautions.length > 0 : !!slpR.precautions);
+      slpDietText = '\nDiet: IDDSI ' + (slpR.foodLevel != null ? slpR.foodLevel : 'N/A') + ' | Liquids: ' + (slpR.liquidLevel != null ? slpR.liquidLevel : 'N/A') + ' | Aspiration Precautions: ' + (hasAspPrec ? 'Y' : 'N');
+    }
+  }
+
+  const assessmentText = 'Latest Vitals: ' + vitalsText + '\n' + painText + ptMobilityText + slpDietText;
+
+  // Auto-populate Recommendation
+  let pendingOrders = 'None';
+  if (typeof getOrdersByPatient === 'function') {
+    const orders = getOrdersByPatient(patientId).filter(function(o) { return o.status === 'Pending'; });
+    if (orders.length > 0) {
+      pendingOrders = orders.slice(0, 5).map(function(o) { return '- ' + o.type + ': ' + (o.detail.panel || o.detail.drug || o.detail.study || '') + ' (' + o.priority + ')'; }).join('\n');
+    }
+  }
+  let carePlanText = 'None active';
+  if (typeof getCarePlans === 'function') {
+    const plans = getCarePlans(patientId).filter(function(cp) { return cp.status === 'Active'; });
+    if (plans.length > 0) {
+      carePlanText = plans.map(function(cp) { return '- ' + (cp.title || cp.problem || 'Care Plan'); }).join('\n');
+    }
+  }
+  // WS8c: PT Precautions in Recommendation
+  let ptPrecText = '';
+  if (typeof getPTEvaluations === 'function') {
+    const ptEvalsRec = getPTEvaluations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (ptEvalsRec.length > 0 && ptEvalsRec[0].precautions) {
+      ptPrecText = '\n\nPT Precautions: ' + (Array.isArray(ptEvalsRec[0].precautions) ? ptEvalsRec[0].precautions.join(', ') : ptEvalsRec[0].precautions);
+    }
+  }
+  // WS8c: Aspiration Precautions in Recommendation
+  let aspPrecText = '';
+  if (typeof getSLPDietRecommendations === 'function') {
+    const slpRecsRec = getSLPDietRecommendations(patientId).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+    if (slpRecsRec.length > 0 && slpRecsRec[0].precautions) {
+      var precList = Array.isArray(slpRecsRec[0].precautions) ? slpRecsRec[0].precautions.join(', ') : slpRecsRec[0].precautions;
+      if (precList) aspPrecText = '\n\nAspiration Precautions: ' + precList;
+    }
+  }
+
+  const recommendation = 'Pending Orders:\n' + pendingOrders + '\n\nActive Care Plans:\n' + carePlanText + ptPrecText + aspPrecText;
+
+  const bodyHTML =
+    '<div style="display:flex;flex-direction:column;gap:12px">' +
+    '<div class="form-group" style="margin:0"><label class="form-label" style="color:#c53030;font-weight:700">S — Situation</label>' +
+    '<textarea class="form-control" id="sbar-situation" rows="4">' + esc(situation) + '</textarea></div>' +
+    '<div class="form-group" style="margin:0"><label class="form-label" style="color:#2563eb;font-weight:700">B — Background</label>' +
+    '<textarea class="form-control" id="sbar-background" rows="5">' + esc(background) + '</textarea></div>' +
+    '<div class="form-group" style="margin:0"><label class="form-label" style="color:#276749;font-weight:700">A — Assessment</label>' +
+    '<textarea class="form-control" id="sbar-assessment" rows="3">' + esc(assessmentText) + '</textarea></div>' +
+    '<div class="form-group" style="margin:0"><label class="form-label" style="color:#6b46c1;font-weight:700">R — Recommendation</label>' +
+    '<textarea class="form-control" id="sbar-recommendation" rows="4">' + esc(recommendation) + '</textarea></div>' +
+    '</div>';
+
+  openModal({
+    title: 'Shift Handoff — SBAR',
+    bodyHTML: bodyHTML,
+    footerHTML:
+      '<button class="btn btn-secondary" id="sbar-cancel">Cancel</button>' +
+      '<button class="btn btn-secondary" id="sbar-print">Print</button>' +
+      '<button class="btn btn-primary" id="sbar-save">Save Handoff</button>',
+    size: 'lg',
+  });
+
+  document.getElementById('sbar-cancel').addEventListener('click', closeModal);
+
+  document.getElementById('sbar-save').addEventListener('click', function() {
+    saveShiftHandoff({
+      patientId: patientId,
+      situation: document.getElementById('sbar-situation').value,
+      background: document.getElementById('sbar-background').value,
+      assessment: document.getElementById('sbar-assessment').value,
+      recommendation: document.getElementById('sbar-recommendation').value,
+      createdBy: getSessionUser().id,
+    });
+    closeModal();
+    showToast('Shift handoff saved.', 'success');
+  });
+
+  document.getElementById('sbar-print').addEventListener('click', function() {
+    const sit = document.getElementById('sbar-situation').value;
+    const bg = document.getElementById('sbar-background').value;
+    const assess = document.getElementById('sbar-assessment').value;
+    const rec = document.getElementById('sbar-recommendation').value;
+
+    const printWin = window.open('', '_blank', 'width=800,height=600');
+    let html = '<html><head><title>Shift Handoff — ' + esc(patName) + '</title>';
+    html += '<style>body{font-family:sans-serif;padding:20px;font-size:13px;line-height:1.6}h2{margin:0 0 12px}h3{margin:16px 0 4px;border-bottom:2px solid #ddd;padding-bottom:4px}pre{white-space:pre-wrap;margin:0}@media print{button{display:none}}</style></head><body>';
+    html += '<h2>Shift Handoff Report</h2>';
+    html += '<p><strong>Patient:</strong> ' + esc(patName) + ' | <strong>Date:</strong> ' + formatDateTime(new Date().toISOString()) + '</p>';
+    html += '<h3 style="color:#c53030">Situation</h3><pre>' + esc(sit) + '</pre>';
+    html += '<h3 style="color:#2563eb">Background</h3><pre>' + esc(bg) + '</pre>';
+    html += '<h3 style="color:#276749">Assessment</h3><pre>' + esc(assess) + '</pre>';
+    html += '<h3 style="color:#6b46c1">Recommendation</h3><pre>' + esc(rec) + '</pre>';
+    html += '</body></html>';
+    printWin.document.write(html);
+    printWin.document.close();
+    printWin.print();
+  });
+}
+
+/* ============================================================
+   7f: Discharge Planning Modal
+   ============================================================ */
+function openDischargeModal(encounterId, patientId) {
+  var patient = getPatient(patientId);
+  var patName = patient ? patient.firstName + ' ' + patient.lastName : 'Unknown';
+  var existingDischarge = null;
+  if (encounterId) {
+    var allDischarges = loadAll(KEYS.discharges);
+    existingDischarge = allDischarges.find(function(d) { return d.encounterId === encounterId || d.patientId === patientId; }) || null;
+  }
+  var ed = existingDischarge || {};
+
+  // Pending orders for this patient
+  var pendingOrders = getOrdersByPatient(patientId).filter(function(o) {
+    return o.status === 'Pending' || o.status === 'Active';
+  });
+
+  // Current medications
+  var currentMeds = typeof getPatientMedications === 'function' ? getPatientMedications(patientId).filter(function(m) { return m.status === 'Current' || m.status === 'Active'; }) : [];
+
+  var bodyHTML = '<div style="max-height:60vh;overflow-y:auto;padding:4px">';
+
+  // Disposition
+  bodyHTML += '<h4 style="margin:0 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Disposition</h4>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Discharge Disposition *</label>' +
+    '<select class="form-control" id="dc2-disposition">' +
+    ['', 'Home', 'Home with Home Health', 'SNF', 'LTAC', 'Acute Rehab', 'AMA', 'Expired', 'Hospice'].map(function(o) {
+      return '<option' + (ed.disposition === o ? ' selected' : '') + '>' + esc(o || '-- Select --') + '</option>';
+    }).join('') + '</select></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Discharge Condition</label>' +
+    '<select class="form-control" id="dc2-condition">' +
+    ['', 'Stable', 'Improved', 'Unchanged', 'Worsened'].map(function(o) {
+      return '<option' + (ed.condition === o ? ' selected' : '') + '>' + esc(o || '-- Select --') + '</option>';
+    }).join('') + '</select></div>';
+  bodyHTML += '</div>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Discharge Date/Time</label>' +
+    '<input class="form-control" id="dc2-datetime" type="datetime-local" value="' + (ed.dischargeDateTime || '') + '" /></div>';
+  bodyHTML += '<div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:8px">' +
+    '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="dc2-transport"' + (ed.transportArranged ? ' checked' : '') + ' /> Transportation arranged</label></div>';
+  bodyHTML += '</div>';
+
+  // Follow-up
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Follow-up Appointments</h4>';
+  bodyHTML += '<div id="dc2-followups">';
+  var followups = ed.followups || [];
+  followups.forEach(function(fu, i) {
+    bodyHTML += '<div class="form-row" data-fu-row="' + i + '"><div class="form-group"><input class="form-control dc2-fu-provider" placeholder="Provider name" value="' + esc(fu.provider || '') + '" /></div>' +
+      '<div class="form-group"><input class="form-control dc2-fu-date" type="date" value="' + (fu.date || '') + '" /></div>' +
+      '<div class="form-group"><input class="form-control dc2-fu-reason" placeholder="Reason" value="' + esc(fu.reason || '') + '" /></div></div>';
+  });
+  bodyHTML += '</div>';
+  bodyHTML += '<button class="btn btn-secondary btn-sm" id="dc2-add-fu" style="margin-bottom:12px">+ Add Follow-up</button>';
+
+  // Medications
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Discharge Medications</h4>';
+  if (currentMeds.length > 0) {
+    bodyHTML += '<div style="font-size:13px;margin-bottom:8px">';
+    currentMeds.forEach(function(med, i) {
+      bodyHTML += '<div style="display:flex;gap:12px;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<span style="flex:1">' + esc(med.name + ' ' + (med.dose || '') + ' ' + (med.unit || '') + ' ' + (med.frequency || '')) + '</span>' +
+        '<label style="font-size:12px"><input type="radio" name="dc2-med-' + i + '" value="continue" checked /> Continue</label>' +
+        '<label style="font-size:12px"><input type="radio" name="dc2-med-' + i + '" value="discontinue" /> D/C</label>' +
+        '<label style="font-size:12px"><input type="radio" name="dc2-med-' + i + '" value="modified" /> Modified</label>' +
+        '<input class="form-control dc2-med-notes" placeholder="Notes" style="width:120px;font-size:12px" />' +
+        '</div>';
+    });
+    bodyHTML += '</div>';
+  } else {
+    bodyHTML += '<p style="color:var(--text-muted);font-size:13px">No current medications on file.</p>';
+  }
+  bodyHTML += '<div class="form-group"><label class="form-label">New Medications</label>' +
+    '<textarea class="form-control" id="dc2-new-meds" rows="2" placeholder="List new discharge medications...">' + esc(ed.newMedications || '') + '</textarea></div>';
+
+  // Instructions
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Discharge Instructions</h4>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Patient Instructions</label>' +
+    '<textarea class="form-control" id="dc2-instructions" rows="3" placeholder="General discharge instructions...">' + esc(ed.patientInstructions || '') + '</textarea></div>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Diet Instructions</label>' +
+    '<input class="form-control" id="dc2-diet" value="' + esc(ed.dietInstructions || '') + '" placeholder="Diet restrictions..." /></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Activity Restrictions</label>' +
+    '<input class="form-control" id="dc2-activity" value="' + esc(ed.activityRestrictions || '') + '" placeholder="Activity limitations..." /></div>';
+  bodyHTML += '</div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Return to ER if:</label>' +
+    '<textarea class="form-control" id="dc2-return-er" rows="2" placeholder="e.g. Fever > 101.3, worsening pain, shortness of breath, bleeding...">' + esc(ed.returnToER || '') + '</textarea></div>';
+
+  // Pending items
+  if (pendingOrders.length > 0) {
+    bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Pending Items (' + pendingOrders.length + ')</h4>';
+    pendingOrders.forEach(function(ord, i) {
+      var ordName = typeof getOrderDisplayName === 'function' ? getOrderDisplayName(ord) : ord.type;
+      bodyHTML += '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;border-bottom:1px solid var(--border)">' +
+        '<input type="checkbox" class="dc2-pending-ack" data-order-id="' + ord.id + '" /> ' +
+        '<span>' + esc(ord.type + ': ' + ordName) + ' <span style="color:var(--text-muted)">(' + ord.status + ')</span></span></label>';
+    });
+  }
+
+  bodyHTML += '</div>';
+
+  var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="dc2-save-btn">Save Discharge Plan</button>';
+
+  openModal({ title: 'Discharge Planning — ' + esc(patName), bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  // Add follow-up button
+  document.getElementById('dc2-add-fu').addEventListener('click', function() {
+    var container = document.getElementById('dc2-followups');
+    var idx = container.children.length;
+    var row = document.createElement('div');
+    row.className = 'form-row';
+    row.setAttribute('data-fu-row', idx);
+    row.innerHTML = '<div class="form-group"><input class="form-control dc2-fu-provider" placeholder="Provider name" /></div>' +
+      '<div class="form-group"><input class="form-control dc2-fu-date" type="date" /></div>' +
+      '<div class="form-group"><input class="form-control dc2-fu-reason" placeholder="Reason" /></div>';
+    container.appendChild(row);
+  });
+
+  // Save
+  document.getElementById('dc2-save-btn').addEventListener('click', function() {
+    var data = {
+      encounterId: encounterId || '',
+      patientId: patientId,
+      disposition: document.getElementById('dc2-disposition').value,
+      condition: document.getElementById('dc2-condition').value,
+      dischargeDateTime: document.getElementById('dc2-datetime').value,
+      transportArranged: document.getElementById('dc2-transport').checked,
+      followups: [],
+      medications: [],
+      newMedications: document.getElementById('dc2-new-meds').value.trim(),
+      patientInstructions: document.getElementById('dc2-instructions').value.trim(),
+      dietInstructions: document.getElementById('dc2-diet').value.trim(),
+      activityRestrictions: document.getElementById('dc2-activity').value.trim(),
+      returnToER: document.getElementById('dc2-return-er').value.trim(),
+      pendingAcknowledged: [],
+      savedBy: (getSessionUser() || {}).id || '',
+      savedAt: new Date().toISOString(),
+    };
+    if (existingDischarge) data.id = existingDischarge.id;
+
+    // Collect follow-ups
+    document.querySelectorAll('#dc2-followups [data-fu-row]').forEach(function(row) {
+      data.followups.push({
+        provider: (row.querySelector('.dc2-fu-provider') || {}).value || '',
+        date: (row.querySelector('.dc2-fu-date') || {}).value || '',
+        reason: (row.querySelector('.dc2-fu-reason') || {}).value || '',
+      });
+    });
+
+    // Collect med decisions
+    currentMeds.forEach(function(med, i) {
+      var radios = document.querySelectorAll('input[name="dc2-med-' + i + '"]');
+      var action = 'continue';
+      radios.forEach(function(r) { if (r.checked) action = r.value; });
+      var notesInputs = document.querySelectorAll('.dc2-med-notes');
+      data.medications.push({ medId: med.id, medName: med.name, action: action, notes: notesInputs[i] ? notesInputs[i].value : '' });
+    });
+
+    // Collect pending acknowledgments
+    document.querySelectorAll('.dc2-pending-ack:checked').forEach(function(cb) {
+      data.pendingAcknowledged.push(cb.dataset.orderId);
+    });
+
+    saveDischarge(data);
+    closeModal();
+    showToast('Discharge plan saved.', 'success');
+  });
+}
+
+/* ============================================================
+   7g: Restraint Documentation Modal
+   ============================================================ */
+function openRestraintModal(patientId) {
+  var patient = getPatient(patientId);
+  var patName = patient ? patient.firstName + ' ' + patient.lastName : 'Unknown';
+
+  // Show active restraints
+  var allRestraints = loadAll(KEYS.restraints).filter(function(r) { return r.patientId === patientId; });
+  var activeRestraints = allRestraints.filter(function(r) { return !r.removedAt; });
+
+  var bodyHTML = '<div style="max-height:60vh;overflow-y:auto;padding:4px">';
+
+  // Active restraints
+  if (activeRestraints.length > 0) {
+    bodyHTML += '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:8px;padding:12px;margin-bottom:16px">';
+    bodyHTML += '<h4 style="color:#dc2626;margin:0 0 8px">Active Restraints</h4>';
+    activeRestraints.forEach(function(r) {
+      var elapsed = Date.now() - new Date(r.createdAt).getTime();
+      var hoursLeft = Math.max(0, 24 - Math.floor(elapsed / 3600000));
+      bodyHTML += '<div style="padding:4px 0;border-bottom:1px solid #fecaca;font-size:13px">' +
+        '<strong>' + esc(r.restraintType) + '</strong> — Applied ' + formatDateTime(r.createdAt) +
+        ' <span style="color:#dc2626;font-weight:600">(' + hoursLeft + 'h to renewal)</span></div>';
+    });
+    bodyHTML += '</div>';
+  }
+
+  // New restraint form
+  bodyHTML += '<h4 style="margin:0 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">New Restraint Order</h4>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Restraint Type *</label>' +
+    '<select class="form-control" id="rst-type">' +
+    ['', 'Soft Wrist', 'Soft Ankle', 'Vest', 'Mitt', '4-Point', 'Seclusion'].map(function(o) {
+      return '<option>' + esc(o || '-- Select --') + '</option>';
+    }).join('') + '</select></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Clinical Indication *</label>' +
+    '<textarea class="form-control" id="rst-indication" rows="2" placeholder="Clinical justification for restraint use..."></textarea></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Alternatives Tried</label>';
+  var alternatives = ['Verbal de-escalation', 'Reorientation', '1:1 Sitter', 'PRN Medication', 'Environmental modification', 'Family at bedside'];
+  alternatives.forEach(function(alt, i) {
+    bodyHTML += '<label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:2px 0"><input type="checkbox" class="rst-alt-cb" value="' + esc(alt) + '" /> ' + esc(alt) + '</label>';
+  });
+  bodyHTML += '</div>';
+
+  bodyHTML += '<div style="background:var(--surface-2,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:12px;margin:12px 0">' +
+    '<p style="font-size:12px;color:var(--text-secondary);margin:0"><strong>Note:</strong> Physician order auto-generated with 24-hour expiry. ' +
+    'Assessment schedule: Behavioral restraints = q1h, Medical restraints = q2h.</p></div>';
+
+  bodyHTML += '<div id="rst-assessment-schedule" style="font-size:13px;margin-bottom:12px;display:none"></div>';
+
+  // Neurovascular checks
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Neurovascular Checks</h4>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Circulation</label><select class="form-control" id="rst-circulation"><option>Intact</option><option>Impaired</option></select></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Sensation</label><select class="form-control" id="rst-sensation"><option>Intact</option><option>Diminished</option><option>Absent</option></select></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Movement</label><select class="form-control" id="rst-movement"><option>Present</option><option>Absent</option></select></div>';
+  bodyHTML += '</div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Release Criteria</label>' +
+    '<textarea class="form-control" id="rst-release" rows="2" placeholder="Criteria for restraint removal..."></textarea></div>';
+
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Restraint Removal (if removing)</h4>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Removed Date/Time</label><input class="form-control" id="rst-removed-at" type="datetime-local" /></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Removal Reason</label><input class="form-control" id="rst-removed-reason" placeholder="Reason for removal" /></div>';
+  bodyHTML += '</div>';
+
+  bodyHTML += '</div>';
+
+  var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="rst-save-btn">Save Restraint Documentation</button>';
+
+  openModal({ title: 'Restraint Documentation — ' + esc(patName), bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  // Show assessment schedule based on type
+  var typeSelect = document.getElementById('rst-type');
+  var scheduleDiv = document.getElementById('rst-assessment-schedule');
+  typeSelect.addEventListener('change', function() {
+    var isBehavioral = typeSelect.value === 'Seclusion' || typeSelect.value === '4-Point';
+    if (typeSelect.value && typeSelect.value !== '-- Select --') {
+      scheduleDiv.style.display = '';
+      scheduleDiv.innerHTML = '<strong>Assessment Schedule:</strong> ' + (isBehavioral ? 'Every 1 hour (behavioral)' : 'Every 2 hours (medical)');
+    } else {
+      scheduleDiv.style.display = 'none';
+    }
+  });
+
+  document.getElementById('rst-save-btn').addEventListener('click', function() {
+    var restraintType = typeSelect.value;
+    var indication = document.getElementById('rst-indication').value.trim();
+    if (!restraintType || restraintType === '-- Select --') { showToast('Restraint type is required.', 'error'); return; }
+    if (!indication) { showToast('Clinical indication is required.', 'error'); return; }
+
+    var alts = [];
+    document.querySelectorAll('.rst-alt-cb:checked').forEach(function(cb) { alts.push(cb.value); });
+
+    var data = {
+      patientId: patientId,
+      restraintType: restraintType,
+      indication: indication,
+      alternativesTried: alts,
+      isBehavioral: restraintType === 'Seclusion' || restraintType === '4-Point',
+      assessmentFrequency: (restraintType === 'Seclusion' || restraintType === '4-Point') ? 'q1h' : 'q2h',
+      orderExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      neurovascular: {
+        circulation: document.getElementById('rst-circulation').value,
+        sensation: document.getElementById('rst-sensation').value,
+        movement: document.getElementById('rst-movement').value,
+      },
+      releaseCriteria: document.getElementById('rst-release').value.trim(),
+      removedAt: document.getElementById('rst-removed-at').value || null,
+      removedReason: document.getElementById('rst-removed-reason').value.trim() || null,
+      orderedBy: (getSessionUser() || {}).id || '',
+    };
+
+    saveRestraint(data);
+    closeModal();
+    showToast('Restraint documentation saved.', 'success');
+  });
+}
+
+/* ============================================================
+   7h: Blood Product Administration (Transfusion) Modal
+   ============================================================ */
+function openTransfusionModal(patientId) {
+  var patient = getPatient(patientId);
+  var patName = patient ? patient.firstName + ' ' + patient.lastName : 'Unknown';
+  var nowLocal = new Date().toISOString().slice(0, 16);
+
+  var bodyHTML = '<div style="max-height:60vh;overflow-y:auto;padding:4px">';
+
+  // Product info
+  bodyHTML += '<h4 style="margin:0 0 8px;border-bottom:2px solid #dc2626;padding-bottom:4px">Blood Product</h4>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Product Type *</label>' +
+    '<select class="form-control" id="tx-product">' +
+    ['', 'PRBCs', 'FFP', 'Platelets', 'Cryoprecipitate', 'Albumin', 'Whole Blood'].map(function(o) {
+      return '<option>' + esc(o || '-- Select --') + '</option>';
+    }).join('') + '</select></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Unit Number *</label><input class="form-control" id="tx-unit-num" placeholder="Unit/bag number" /></div>';
+  bodyHTML += '</div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Blood Type / Crossmatch</label><input class="form-control" id="tx-crossmatch" placeholder="e.g. O+, crossmatch compatible" /></div>';
+
+  // Two-person verification
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid #dc2626;padding-bottom:4px">Two-Person Verification (BOTH required)</h4>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Verifier 1 Name/ID *</label><input class="form-control" id="tx-verify1" placeholder="Name and credentials" /></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Verifier 2 Name/ID *</label><input class="form-control" id="tx-verify2" placeholder="Name and credentials" /></div>';
+  bodyHTML += '</div>';
+
+  // Pre-transfusion vitals
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid #dc2626;padding-bottom:4px">Pre-Transfusion Vitals *</h4>';
+  bodyHTML += '<div class="form-row">';
+  ['BP', 'HR', 'Temp', 'RR', 'SpO2'].forEach(function(v) {
+    bodyHTML += '<div class="form-group"><label class="form-label">' + v + '</label><input class="form-control tx-pre-vital" id="tx-pre-' + v.toLowerCase().replace(/[^a-z0-9]/g, '') + '" type="number" step="any" /></div>';
+  });
+  bodyHTML += '</div>';
+
+  // Transfusion timing
+  bodyHTML += '<div class="form-group"><label class="form-label">Transfusion Start Time</label><input class="form-control" id="tx-start" type="datetime-local" value="' + nowLocal + '" /></div>';
+
+  // Vital check intervals
+  var intervals = ['15-min', '30-min', '1-hr', 'Post-transfusion'];
+  intervals.forEach(function(interval) {
+    var prefix = 'tx-' + interval.replace(/[^a-z0-9]/g, '');
+    bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px;font-size:13px">' + interval + ' Vital Check</h4>';
+    bodyHTML += '<div class="form-row">';
+    ['BP', 'HR', 'Temp', 'RR', 'SpO2'].forEach(function(v) {
+      bodyHTML += '<div class="form-group"><label class="form-label" style="font-size:11px">' + v + '</label><input class="form-control" id="' + prefix + '-' + v.toLowerCase().replace(/[^a-z0-9]/g, '') + '" type="number" step="any" /></div>';
+    });
+    bodyHTML += '</div>';
+  });
+
+  // Reaction monitoring
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid #dc2626;padding-bottom:4px">Reaction Monitoring</h4>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Reaction</label>' +
+    '<select class="form-control" id="tx-reaction">' +
+    ['None', 'Febrile', 'Allergic Mild', 'Allergic Severe', 'Hemolytic', 'TRALI', 'TACO', 'Other'].map(function(o) {
+      return '<option>' + esc(o) + '</option>';
+    }).join('') + '</select></div>';
+  bodyHTML += '<div id="tx-reaction-fields" style="display:none">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Stop Time</label><input class="form-control" id="tx-stop-time" type="datetime-local" /></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Interventions</label><textarea class="form-control" id="tx-interventions" rows="2" placeholder="Describe interventions taken..."></textarea></div>';
+  bodyHTML += '</div>';
+
+  // Completion
+  bodyHTML += '<div class="form-row" style="margin-top:12px">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Volume Infused (mL)</label><input class="form-control" id="tx-volume" type="number" placeholder="mL" /></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">End Time</label><input class="form-control" id="tx-end" type="datetime-local" /></div>';
+  bodyHTML += '</div>';
+
+  bodyHTML += '</div>';
+
+  var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-danger" id="tx-save-btn">Save Transfusion Record</button>';
+
+  openModal({ title: 'Blood Product Administration — ' + esc(patName), bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  // Show/hide reaction fields
+  document.getElementById('tx-reaction').addEventListener('change', function() {
+    var show = this.value !== 'None';
+    document.getElementById('tx-reaction-fields').style.display = show ? '' : 'none';
+  });
+
+  document.getElementById('tx-save-btn').addEventListener('click', function() {
+    var product = document.getElementById('tx-product').value;
+    var unitNum = document.getElementById('tx-unit-num').value.trim();
+    var verify1 = document.getElementById('tx-verify1').value.trim();
+    var verify2 = document.getElementById('tx-verify2').value.trim();
+    if (!product || product === '-- Select --') { showToast('Product type is required.', 'error'); return; }
+    if (!unitNum) { showToast('Unit number is required.', 'error'); return; }
+    if (!verify1 || !verify2) { showToast('Two-person verification is required.', 'error'); return; }
+
+    // Check pre-transfusion vitals
+    var preVitals = {};
+    var missingVitals = false;
+    ['bp', 'hr', 'temp', 'rr', 'spo2'].forEach(function(v) {
+      var el = document.getElementById('tx-pre-' + v);
+      preVitals[v] = el ? el.value : '';
+      if (!preVitals[v]) missingVitals = true;
+    });
+    if (missingVitals) { showToast('All pre-transfusion vitals are required.', 'error'); return; }
+
+    // Collect interval vitals
+    var vitalChecks = {};
+    ['15min', '30min', '1hr', 'Posttransfusion'].forEach(function(interval) {
+      var prefix = 'tx-' + interval.toLowerCase().replace(/[^a-z0-9]/g, '');
+      vitalChecks[interval] = {};
+      ['bp', 'hr', 'temp', 'rr', 'spo2'].forEach(function(v) {
+        var el = document.getElementById(prefix + '-' + v);
+        vitalChecks[interval][v] = el ? el.value : '';
+      });
+    });
+
+    var data = {
+      patientId: patientId,
+      productType: product,
+      unitNumber: unitNum,
+      crossmatch: document.getElementById('tx-crossmatch').value.trim(),
+      verifier1: verify1,
+      verifier2: verify2,
+      preTransfusionVitals: preVitals,
+      startTime: document.getElementById('tx-start').value,
+      vitalChecks: vitalChecks,
+      reaction: document.getElementById('tx-reaction').value,
+      reactionStopTime: document.getElementById('tx-stop-time').value || null,
+      reactionInterventions: document.getElementById('tx-interventions').value.trim() || null,
+      volumeInfused: document.getElementById('tx-volume').value || null,
+      endTime: document.getElementById('tx-end').value || null,
+      documentedBy: (getSessionUser() || {}).id || '',
+    };
+
+    saveTransfusion(data);
+    closeModal();
+    showToast('Transfusion record saved.', 'success');
+  });
+}
+
+/* ============================================================
+   7i: Interdisciplinary Rounding Tool
+   ============================================================ */
+function openRoundingModal(patientId) {
+  var patient = getPatient(patientId);
+  var patName = patient ? patient.firstName + ' ' + patient.lastName : 'Unknown';
+
+  // Auto-populate checklist items
+  var orders = getOrdersByPatient(patientId);
+  var meds = typeof getPatientMedications === 'function' ? getPatientMedications(patientId) : [];
+  var ivDocs = loadAll(KEYS.ivAccessDocs || 'emr_iv_access_docs').filter(function(d) { return d.patientId === patientId; });
+
+  // DVT prophylaxis check
+  var hasDVTProph = orders.some(function(o) {
+    if (o.status === 'Cancelled') return false;
+    var drug = ((o.detail || {}).drug || '').toLowerCase();
+    return drug.indexOf('enoxaparin') >= 0 || drug.indexOf('heparin') >= 0 || drug.indexOf('fondaparinux') >= 0;
+  });
+
+  // Latest pain score (from vitals or assessments)
+  var latestVitals = typeof getLatestVitalsByPatient === 'function' ? getLatestVitalsByPatient(patientId) : null;
+  var painScore = latestVitals && latestVitals.vitals && latestVitals.vitals.painScore ? latestVitals.vitals.painScore : 'N/A';
+
+  // Current diet order
+  var dietOrder = orders.filter(function(o) { return o.type === 'Diet' && o.status !== 'Cancelled'; }).sort(function(a, b) { return new Date(b.dateTime) - new Date(a.dateTime); })[0];
+  var dietStatus = dietOrder ? (dietOrder.detail || {}).dietType || 'Ordered' : 'No diet order';
+
+  // Code status
+  var codeStatus = patient ? (patient.codeStatus || 'Full Code') : 'Unknown';
+
+  var bodyHTML = '<div style="max-height:60vh;overflow-y:auto;padding:4px">';
+
+  // Lines/Tubes/Drains
+  bodyHTML += '<h4 style="margin:0 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Lines / Tubes / Drains</h4>';
+  if (ivDocs.length > 0) {
+    ivDocs.forEach(function(iv, i) {
+      bodyHTML += '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;border-bottom:1px solid var(--border)">' +
+        '<input type="checkbox" class="rnd-line-cb" /> ' +
+        '<span>Reviewed: ' + esc((iv.accessType || 'IV') + ' — ' + (iv.site || '') + (iv.insertedAt ? ' (inserted ' + formatDateTime(iv.insertedAt) + ')' : '')) + '</span>' +
+        '<input class="form-control rnd-line-note" placeholder="Note" style="width:120px;font-size:12px" /></label>';
+    });
+  } else {
+    bodyHTML += '<p style="font-size:13px;color:var(--text-muted)">No IV access documented.</p>';
+  }
+
+  // Auto-populated items
+  bodyHTML += '<h4 style="margin:16px 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">Rounding Checklist</h4>';
+  var checkItems = [
+    { label: 'DVT Prophylaxis', status: hasDVTProph ? 'Active' : 'NOT ordered', id: 'rnd-dvt' },
+    { label: 'Pain Score', status: painScore, id: 'rnd-pain' },
+    { label: 'Mobility', status: 'Review with PT/nursing', id: 'rnd-mobility' },
+    { label: 'Diet', status: dietStatus, id: 'rnd-diet' },
+    { label: 'Code Status', status: codeStatus, id: 'rnd-code' },
+  ];
+
+  checkItems.forEach(function(item) {
+    bodyHTML += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">' +
+      '<input type="checkbox" id="' + item.id + '-cb" />' +
+      '<span style="flex:1"><strong>' + esc(item.label) + ':</strong> ' + esc(item.status) + '</span>' +
+      '<input class="form-control" id="' + item.id + '-note" placeholder="Note" style="width:180px;font-size:12px" />' +
+      '</div>';
+  });
+
+  // Free text fields
+  bodyHTML += '<div class="form-group" style="margin-top:12px"><label class="form-label">Discharge Criteria</label>' +
+    '<textarea class="form-control" id="rnd-dc-criteria" rows="2" placeholder="What needs to happen before discharge?"></textarea></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Daily Goal</label>' +
+    '<textarea class="form-control" id="rnd-goal" rows="2" placeholder="Today\'s primary goal for this patient..."></textarea></div>';
+  bodyHTML += '<div class="form-row">';
+  bodyHTML += '<div class="form-group"><label class="form-label">Estimated Discharge Date</label><input class="form-control" id="rnd-est-dc" type="date" /></div>';
+  bodyHTML += '<div class="form-group"><label class="form-label">Participants</label><input class="form-control" id="rnd-participants" placeholder="Who was present at rounds?" /></div>';
+  bodyHTML += '</div>';
+
+  bodyHTML += '</div>';
+
+  var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="rnd-save-btn">Save Rounding Checklist</button>';
+
+  openModal({ title: 'Interdisciplinary Rounding — ' + esc(patName), bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  document.getElementById('rnd-save-btn').addEventListener('click', function() {
+    var data = {
+      patientId: patientId,
+      lines: [],
+      checklistItems: {},
+      dischargeCriteria: document.getElementById('rnd-dc-criteria').value.trim(),
+      dailyGoal: document.getElementById('rnd-goal').value.trim(),
+      estimatedDischargeDate: document.getElementById('rnd-est-dc').value,
+      participants: document.getElementById('rnd-participants').value.trim(),
+      completedBy: (getSessionUser() || {}).id || '',
+    };
+
+    // Collect line reviews
+    document.querySelectorAll('.rnd-line-cb').forEach(function(cb, i) {
+      var noteEl = document.querySelectorAll('.rnd-line-note')[i];
+      data.lines.push({ reviewed: cb.checked, note: noteEl ? noteEl.value : '' });
+    });
+
+    // Collect checklist items
+    checkItems.forEach(function(item) {
+      var cb = document.getElementById(item.id + '-cb');
+      var note = document.getElementById(item.id + '-note');
+      data.checklistItems[item.label] = { reviewed: cb ? cb.checked : false, note: note ? note.value : '', status: item.status };
+    });
+
+    saveRoundingChecklist(data);
+    closeModal();
+    showToast('Rounding checklist saved.', 'success');
+  });
+}
+
+/* ============================================================
+   7j: Patient Education Tracking Modal
+   ============================================================ */
+function openPatientEducationModal(patientId) {
+  var patient = getPatient(patientId);
+  var patName = patient ? patient.firstName + ' ' + patient.lastName : 'Unknown';
+
+  // Show previous education records
+  var prevEd = loadAll(KEYS.patientEducation).filter(function(e) { return e.patientId === patientId; })
+    .sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+
+  var bodyHTML = '<div style="max-height:60vh;overflow-y:auto;padding:4px">';
+
+  if (prevEd.length > 0) {
+    bodyHTML += '<h4 style="margin:0 0 8px;border-bottom:1px solid var(--border);padding-bottom:4px">Previous Education (' + prevEd.length + ')</h4>';
+    bodyHTML += '<div style="max-height:120px;overflow-y:auto;margin-bottom:12px;font-size:12px">';
+    prevEd.slice(0, 10).forEach(function(e) {
+      bodyHTML += '<div style="padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<strong>' + esc(e.topic) + '</strong> — ' + esc(e.method || '') + ' — ' + esc(e.understanding || '') +
+        ' <span style="color:var(--text-muted)">' + formatDateTime(e.createdAt) + '</span></div>';
+    });
+    bodyHTML += '</div>';
+  }
+
+  bodyHTML += '<h4 style="margin:0 0 8px;border-bottom:2px solid var(--primary,#2563eb);padding-bottom:4px">New Education Record</h4>';
+
+  var topics = ['Medications', 'Disease Management', 'Diet/Nutrition', 'Activity/Exercise', 'Fall Prevention', 'Wound Care', 'Pain Management', 'Discharge Instructions', 'Smoking Cessation', 'Other'];
+  bodyHTML += '<div class="form-group"><label class="form-label">Topic *</label>' +
+    '<select class="form-control" id="edu-topic">' +
+    topics.map(function(t) { return '<option>' + esc(t) + '</option>'; }).join('') + '</select></div>';
+  bodyHTML += '<div class="form-group" id="edu-topic-other-group" style="display:none"><label class="form-label">Other Topic</label>' +
+    '<input class="form-control" id="edu-topic-other" placeholder="Specify topic..." /></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Method</label>' +
+    '<select class="form-control" id="edu-method">' +
+    ['Verbal', 'Written Materials', 'Demonstration', 'Video', 'Teach-back'].map(function(m) { return '<option>' + esc(m) + '</option>'; }).join('') + '</select></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Learner</label>' +
+    '<select class="form-control" id="edu-learner">' +
+    ['Patient', 'Family Member', 'Caregiver'].map(function(l) { return '<option>' + esc(l) + '</option>'; }).join('') + '</select></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Understanding Verified</label>' +
+    '<select class="form-control" id="edu-understanding">' +
+    ['Teach-back successful', 'Return demonstration adequate', 'Verbalized understanding', 'Needs reinforcement', 'Unable to learn - barrier documented'].map(function(u) { return '<option>' + esc(u) + '</option>'; }).join('') + '</select></div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Barriers to Learning</label>';
+  var barriers = ['None', 'Language', 'Literacy', 'Cognitive', 'Hearing', 'Vision', 'Cultural', 'Emotional readiness'];
+  barriers.forEach(function(b) {
+    bodyHTML += '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:13px"><input type="checkbox" class="edu-barrier-cb" value="' + esc(b) + '"' + (b === 'None' ? ' checked' : '') + ' /> ' + esc(b) + '</label>';
+  });
+  bodyHTML += '</div>';
+
+  bodyHTML += '<div class="form-group"><label class="form-label">Notes</label>' +
+    '<textarea class="form-control" id="edu-notes" rows="2" placeholder="Additional notes..."></textarea></div>';
+
+  bodyHTML += '</div>';
+
+  var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="edu-save-btn">Save Education Record</button>';
+
+  openModal({ title: 'Patient Education — ' + esc(patName), bodyHTML: bodyHTML, footerHTML: footerHTML, size: 'lg' });
+
+  // Other topic toggle
+  document.getElementById('edu-topic').addEventListener('change', function() {
+    document.getElementById('edu-topic-other-group').style.display = this.value === 'Other' ? '' : 'none';
+  });
+
+  document.getElementById('edu-save-btn').addEventListener('click', function() {
+    var topic = document.getElementById('edu-topic').value;
+    if (topic === 'Other') {
+      topic = document.getElementById('edu-topic-other').value.trim();
+      if (!topic) { showToast('Please specify the education topic.', 'error'); return; }
+    }
+
+    var barriersList = [];
+    document.querySelectorAll('.edu-barrier-cb:checked').forEach(function(cb) { barriersList.push(cb.value); });
+
+    var data = {
+      patientId: patientId,
+      topic: topic,
+      method: document.getElementById('edu-method').value,
+      learner: document.getElementById('edu-learner').value,
+      understanding: document.getElementById('edu-understanding').value,
+      barriers: barriersList,
+      notes: document.getElementById('edu-notes').value.trim(),
+      educatedBy: (getSessionUser() || {}).id || '',
+    };
+
+    savePatientEducation(data);
+    closeModal();
+    showToast('Patient education record saved.', 'success');
+  });
+}
+
+/* ============================================================
+   7k: Audit Log Viewer
+   ============================================================ */
+function openAuditViewer() {
+  var _auditPage = 0;
+  var _auditPerPage = 25;
+  var _auditFilters = { dateFrom: '', dateTo: '', action: '', user: '', patient: '' };
+
+  function getFilteredLogs() {
+    var allLogs = loadAll(KEYS.systemAuditLog || 'emr_system_audit_log');
+    return allLogs.filter(function(log) {
+      if (_auditFilters.dateFrom && log.timestamp < _auditFilters.dateFrom) return false;
+      if (_auditFilters.dateTo && log.timestamp > _auditFilters.dateTo + 'T23:59:59') return false;
+      if (_auditFilters.action && _auditFilters.action !== 'All' && log.action !== _auditFilters.action) return false;
+      if (_auditFilters.user) {
+        var userStr = ((log.userId || '') + ' ' + (log.email || '') + ' ' + (log.userName || '')).toLowerCase();
+        if (userStr.indexOf(_auditFilters.user.toLowerCase()) < 0) return false;
+      }
+      if (_auditFilters.patient) {
+        var patStr = ((log.patientId || '') + ' ' + (log.patientName || '') + ' ' + (log.details || '')).toLowerCase();
+        if (patStr.indexOf(_auditFilters.patient.toLowerCase()) < 0) return false;
+      }
+      return true;
+    }).sort(function(a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+  }
+
+  function renderAuditContent() {
+    var logs = getFilteredLogs();
+    var totalPages = Math.ceil(logs.length / _auditPerPage) || 1;
+    if (_auditPage >= totalPages) _auditPage = totalPages - 1;
+    if (_auditPage < 0) _auditPage = 0;
+    var pageLogs = logs.slice(_auditPage * _auditPerPage, (_auditPage + 1) * _auditPerPage);
+
+    var html = '<div style="max-height:50vh;overflow-y:auto">';
+
+    // Filters
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end">';
+    html += '<div class="form-group" style="margin:0"><label class="form-label" style="font-size:11px">From</label><input class="form-control" id="audit-from" type="date" value="' + _auditFilters.dateFrom + '" style="font-size:12px" /></div>';
+    html += '<div class="form-group" style="margin:0"><label class="form-label" style="font-size:11px">To</label><input class="form-control" id="audit-to" type="date" value="' + _auditFilters.dateTo + '" style="font-size:12px" /></div>';
+    html += '<div class="form-group" style="margin:0"><label class="form-label" style="font-size:11px">Action</label><select class="form-control" id="audit-action" style="font-size:12px">';
+    var actionTypes = ['All', 'LOGIN', 'LOGOUT', 'SESSION_TIMEOUT', 'ORDER_PLACED', 'NOTE_SIGNED', 'CHART_ACCESS', 'ACCESS_DENIED', 'PATIENT_CREATED', 'PATIENT_UPDATED', 'USER_CREATED', 'USER_APPROVED', 'PASSWORD_CHANGE', 'REGISTRATION'];
+    actionTypes.forEach(function(a) { html += '<option' + (_auditFilters.action === a ? ' selected' : '') + '>' + a + '</option>'; });
+    html += '</select></div>';
+    html += '<div class="form-group" style="margin:0"><label class="form-label" style="font-size:11px">User</label><input class="form-control" id="audit-user" value="' + esc(_auditFilters.user) + '" placeholder="Search user..." style="font-size:12px;width:100px" /></div>';
+    html += '<div class="form-group" style="margin:0"><label class="form-label" style="font-size:11px">Patient</label><input class="form-control" id="audit-patient" value="' + esc(_auditFilters.patient) + '" placeholder="Name/MRN" style="font-size:12px;width:100px" /></div>';
+    html += '<button class="btn btn-secondary btn-sm" id="audit-filter-btn">Filter</button>';
+    html += '</div>';
+
+    // Summary
+    html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' + logs.length + ' entries · Page ' + (_auditPage + 1) + ' of ' + totalPages + '</div>';
+
+    // Table
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html += '<thead><tr style="background:var(--surface-2,#f8fafc);border-bottom:2px solid var(--border)">';
+    html += '<th style="padding:6px 8px;text-align:left">Timestamp</th>';
+    html += '<th style="padding:6px 8px;text-align:left">User</th>';
+    html += '<th style="padding:6px 8px;text-align:left">Action</th>';
+    html += '<th style="padding:6px 8px;text-align:left">Patient</th>';
+    html += '<th style="padding:6px 8px;text-align:left">Detail</th>';
+    html += '</tr></thead><tbody>';
+
+    if (pageLogs.length === 0) {
+      html += '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--text-muted)">No audit log entries found.</td></tr>';
+    } else {
+      pageLogs.forEach(function(log) {
+        var patientName = '';
+        if (log.patientId) {
+          var p = getPatient(log.patientId);
+          patientName = p ? p.firstName + ' ' + p.lastName : log.patientId;
+        }
+        html += '<tr style="border-bottom:1px solid var(--border)">';
+        html += '<td style="padding:4px 8px;white-space:nowrap">' + formatDateTime(log.timestamp) + '</td>';
+        html += '<td style="padding:4px 8px">' + esc(log.email || log.userId || '—') + '</td>';
+        html += '<td style="padding:4px 8px"><span style="background:var(--surface-2,#f0f0f0);padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600">' + esc(log.action || '—') + '</span></td>';
+        html += '<td style="padding:4px 8px">' + esc(patientName || '—') + '</td>';
+        html += '<td style="padding:4px 8px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(log.details || '') + '">' + esc(log.details || '—') + '</td>';
+        html += '</tr>';
+      });
+    }
+    html += '</tbody></table>';
+
+    // Pagination
+    html += '<div style="display:flex;gap:8px;justify-content:center;margin-top:12px">';
+    html += '<button class="btn btn-secondary btn-sm" id="audit-prev"' + (_auditPage === 0 ? ' disabled' : '') + '>Previous</button>';
+    html += '<button class="btn btn-secondary btn-sm" id="audit-next"' + (_auditPage >= totalPages - 1 ? ' disabled' : '') + '>Next</button>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function attachAuditListeners() {
+    var filterBtn = document.getElementById('audit-filter-btn');
+    if (filterBtn) {
+      filterBtn.addEventListener('click', function() {
+        _auditFilters.dateFrom = document.getElementById('audit-from').value;
+        _auditFilters.dateTo = document.getElementById('audit-to').value;
+        _auditFilters.action = document.getElementById('audit-action').value;
+        _auditFilters.user = document.getElementById('audit-user').value.trim();
+        _auditFilters.patient = document.getElementById('audit-patient').value.trim();
+        _auditPage = 0;
+        document.getElementById('modal-body').innerHTML = renderAuditContent();
+        attachAuditListeners();
+      });
+    }
+    var prevBtn = document.getElementById('audit-prev');
+    if (prevBtn) {
+      prevBtn.addEventListener('click', function() {
+        if (_auditPage > 0) { _auditPage--; document.getElementById('modal-body').innerHTML = renderAuditContent(); attachAuditListeners(); }
+      });
+    }
+    var nextBtn = document.getElementById('audit-next');
+    if (nextBtn) {
+      nextBtn.addEventListener('click', function() {
+        _auditPage++;
+        document.getElementById('modal-body').innerHTML = renderAuditContent();
+        attachAuditListeners();
+      });
+    }
+    var exportBtn = document.getElementById('audit-export-csv');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function() {
+        var logs = getFilteredLogs();
+        var csv = 'Timestamp,User,Action,Patient,Detail\n';
+        logs.forEach(function(log) {
+          var patientName = '';
+          if (log.patientId) { var p = getPatient(log.patientId); patientName = p ? p.firstName + ' ' + p.lastName : log.patientId; }
+          csv += '"' + (log.timestamp || '') + '","' + (log.email || log.userId || '') + '","' + (log.action || '') + '","' + patientName + '","' + (log.details || '').replace(/"/g, '""') + '"\n';
+        });
+        var blob = new Blob([csv], { type: 'text/csv' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'audit_log_' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Audit log exported as CSV.', 'success');
+      });
+    }
+  }
+
+  var footerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Close</button>' +
+    '<button class="btn btn-primary" id="audit-export-csv">Export CSV</button>';
+
+  openModal({ title: 'System Audit Log', bodyHTML: renderAuditContent(), footerHTML: footerHTML, size: 'lg' });
+  attachAuditListeners();
 }

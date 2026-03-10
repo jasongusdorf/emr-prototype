@@ -311,13 +311,13 @@ function renderPortalRefills(container, patient) {
       html += '<div class="text-sm text-muted">Requested: ' + formatDateTime(r.createdAt) + '</div>';
       html += '<span class="pe-badge pe-badge-' + statusClass + '">' + esc(r.status) + '</span>';
       if (r.status === 'Denied' && r.denialReason) {
-        html += '<div class="text-sm" style="color:var(--danger,#dc3545);margin-top:4px">Reason: ' + esc(r.denialReason) + '</div>';
+        html += '<div class="text-sm" style="color:var(--danger);margin-top:4px">Reason: ' + esc(r.denialReason) + '</div>';
       }
       if (r.status === 'Approved' && r.modifiedDose) {
-        html += '<div class="text-sm" style="color:var(--success,#22c55e);margin-top:4px">Modified dose: ' + esc(r.modifiedDose) + '</div>';
+        html += '<div class="text-sm" style="color:var(--success);margin-top:4px">Modified dose: ' + esc(r.modifiedDose) + '</div>';
       }
       if (r.sentToPharmacyAt) {
-        html += '<div class="text-sm" style="color:var(--success,#22c55e);margin-top:4px">Sent to pharmacy: ' + formatDateTime(r.sentToPharmacyAt) + '</div>';
+        html += '<div class="text-sm" style="color:var(--success);margin-top:4px">Sent to pharmacy: ' + formatDateTime(r.sentToPharmacyAt) + '</div>';
       }
       html += '</div>';
     });

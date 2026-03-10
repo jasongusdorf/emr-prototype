@@ -20,11 +20,30 @@ function _getCalcPatientContext() {
       if (p) {
         const age = p.dob ? Math.floor((Date.now() - new Date(p.dob).getTime()) / 31557600000) : null;
         const sex = (p.sex || '').toLowerCase().startsWith('f') ? 'female' : ((p.sex || '').toLowerCase().startsWith('m') ? 'male' : null);
-        return { age, sex };
+        return { patientId, age, sex };
       }
     }
   } catch (e) { /* ignore */ }
-  return { age: null, sex: null };
+  return { patientId: null, age: null, sex: null };
+}
+
+function _getLatestCreatinine(patientId) {
+  if (!patientId || typeof getLabResults !== 'function') return null;
+  var labs = getLabResults(patientId);
+  var latestCr = null;
+  labs.forEach(function(lab) {
+    if (!lab.tests) return;
+    lab.tests.forEach(function(test) {
+      var testName = (test.name || '').toLowerCase();
+      if (testName === 'creatinine' || testName === 'cr') {
+        var val = parseFloat(test.value);
+        if (!isNaN(val) && (latestCr === null || new Date(lab.resultDate) > new Date(latestCr.date))) {
+          latestCr = { value: val, date: lab.resultDate };
+        }
+      }
+    });
+  });
+  return latestCr;
 }
 
 function openCalculatorsModal() {
@@ -35,6 +54,9 @@ function openCalculatorsModal() {
     { id: 'curb65',     label: 'CURB-65'         },
     { id: 'wells',      label: 'Wells DVT'       },
     { id: 'framingham', label: 'Framingham CV'   },
+    { id: 'troponin',   label: 'Troponin Delta'  },
+    { id: 'kfre',       label: 'KFRE'            },
+    { id: 'caprini',    label: 'Caprini VTE'     },
   ];
 
   const backdrop = document.getElementById('modal-backdrop');
@@ -76,6 +98,9 @@ function openCalculatorsModal() {
   panels.appendChild(_buildCURB65Panel());
   panels.appendChild(_buildWellsPanel());
   panels.appendChild(_buildFraminghamPanel());
+  panels.appendChild(_buildTroponinDeltaPanel());
+  panels.appendChild(_buildKFREPanel());
+  panels.appendChild(_buildCapriniPanel());
   body.appendChild(panels);
 
   document.getElementById('calc-close').addEventListener('click', closeModal);
@@ -159,8 +184,35 @@ function _buildBMIPanel() {
 }
 
 /* ============================================================
-   eGFR (CKD-EPI 2021)
+   eGFR (CKD-EPI 2021 — Race-Free)
+   Auto-pulls creatinine from latest lab result if available.
    ============================================================ */
+function _calcEGFR_CKDEPI(cr, age, sex) {
+  // CKD-EPI 2021 (race-free):
+  // eGFR = 142 × min(Scr/κ, 1)^α × max(Scr/κ, 1)^(−1.200) × 0.9938^age × (1.012 if female)
+  // κ = 0.7 (female) or 0.9 (male), α = −0.241 (female) or −0.302 (male)
+  if (!cr || cr <= 0 || !age || age < 18) return null;
+  var isFemale = sex === 'female';
+  var kappa = isFemale ? 0.7 : 0.9;
+  var alpha = isFemale ? -0.241 : -0.302;
+  var sexFactor = isFemale ? 1.012 : 1.0;
+  var ratio = cr / kappa;
+  return 142 *
+    Math.pow(Math.min(ratio, 1), alpha) *
+    Math.pow(Math.max(ratio, 1), -1.200) *
+    Math.pow(0.9938, age) *
+    sexFactor;
+}
+
+function _getCKDStage(egfr) {
+  if (egfr >= 90)      return { stage: 'G1', label: 'Normal', color: '#276749' };
+  else if (egfr >= 60) return { stage: 'G2', label: 'Mildly decreased', color: '#276749' };
+  else if (egfr >= 45) return { stage: 'G3a', label: 'Mild-moderately decreased', color: '#c05621' };
+  else if (egfr >= 30) return { stage: 'G3b', label: 'Moderately-severely decreased', color: '#c05621' };
+  else if (egfr >= 15) return { stage: 'G4', label: 'Severely decreased', color: '#c53030' };
+  else                 return { stage: 'G5', label: 'Kidney failure', color: '#c53030' };
+}
+
 function _buildEGFRPanel() {
   const panel = document.createElement('div');
   panel.className = 'calc-panel';
@@ -171,6 +223,7 @@ function _buildEGFRPanel() {
     <div class="form-group">
       <label class="form-label">Serum Creatinine (mg/dL)</label>
       <input class="form-control" id="egfr-cr" type="number" min="0" step="0.01" placeholder="e.g. 1.2" />
+      <small id="egfr-cr-source" style="color:var(--text-muted);font-size:11px"></small>
     </div>
     <div class="form-group">
       <label class="form-label">Age (years)</label>
@@ -199,31 +252,23 @@ function _buildEGFRPanel() {
     const sex = document.getElementById('egfr-sex')?.value;
     const valEl = right.querySelector('.calc-result-value');
     const catEl = right.querySelector('.calc-result-category');
-    if (!cr || !age || cr <= 0 || age < 18) { valEl.textContent = '—'; catEl.textContent = age && age < 18 ? 'Age must be ≥ 18' : ''; return; }
+    if (!cr || !age || cr <= 0 || age < 18) {
+      valEl.textContent = '—';
+      catEl.textContent = age && age < 18 ? 'Age must be \u2265 18' : '';
+      return;
+    }
 
-    // CKD-EPI 2021 (race-free)
-    const isFemale = sex === 'female';
-    const kappa = isFemale ? 0.7 : 0.9;
-    const alpha = isFemale ? -0.241 : -0.302;
-    const sexFactor = isFemale ? 1.012 : 1.0;
-    const ratio = cr / kappa;
-    const egfr = 142 *
-      Math.pow(Math.min(ratio, 1), alpha) *
-      Math.pow(Math.max(ratio, 1), -1.200) *
-      Math.pow(0.9938, age) *
-      sexFactor;
+    const egfr = _calcEGFR_CKDEPI(cr, age, sex);
+    if (egfr === null) { valEl.textContent = '—'; catEl.textContent = ''; return; }
 
     valEl.textContent = Math.round(egfr);
-    let ckd = '', color = '';
-    if (egfr >= 90)      { ckd = 'CKD Stage 1 (if markers) / Normal'; color = '#276749'; }
-    else if (egfr >= 60) { ckd = 'CKD Stage 2 — Mildly Decreased';    color = '#276749'; }
-    else if (egfr >= 45) { ckd = 'CKD Stage 3a — Mildly-Mod';         color = '#c05621'; }
-    else if (egfr >= 30) { ckd = 'CKD Stage 3b — Mod-Severely';       color = '#c05621'; }
-    else if (egfr >= 15) { ckd = 'CKD Stage 4 — Severely Decreased';  color = '#c53030'; }
-    else                 { ckd = 'CKD Stage 5 — Kidney Failure';       color = '#c53030'; }
-    catEl.textContent = ckd;
-    catEl.style.color = color;
-    catEl.style.fontWeight = '600';
+    const ckd = _getCKDStage(egfr);
+    catEl.innerHTML = '';
+    const stageLine = document.createElement('div');
+    stageLine.textContent = 'CKD Stage ' + ckd.stage + ' \u2014 ' + ckd.label;
+    stageLine.style.color = ckd.color;
+    stageLine.style.fontWeight = '600';
+    catEl.appendChild(stageLine);
   }
 
   const resetBtn = document.createElement('button');
@@ -235,6 +280,7 @@ function _buildEGFRPanel() {
     const sexEl = document.getElementById('egfr-sex'); if (sexEl) sexEl.selectedIndex = 0;
     right.querySelector('.calc-result-value').textContent = '—';
     right.querySelector('.calc-result-category').textContent = '';
+    const srcEl = document.getElementById('egfr-cr-source'); if (srcEl) srcEl.textContent = '';
   });
   left.appendChild(resetBtn);
 
@@ -243,7 +289,26 @@ function _buildEGFRPanel() {
     const ctx = _getCalcPatientContext();
     if (ctx.age) { const el = document.getElementById('egfr-age'); if (el && !el.value) el.value = ctx.age; }
     if (ctx.sex) { const el = document.getElementById('egfr-sex'); if (el) el.value = ctx.sex; }
-    document.getElementById('egfr-cr')?.addEventListener('input', calc);
+
+    // Auto-pull creatinine from latest lab result
+    if (ctx.patientId) {
+      const latestCr = _getLatestCreatinine(ctx.patientId);
+      if (latestCr) {
+        const crEl = document.getElementById('egfr-cr');
+        if (crEl && !crEl.value) {
+          crEl.value = latestCr.value;
+          const srcEl = document.getElementById('egfr-cr-source');
+          if (srcEl) srcEl.textContent = 'Auto-filled from lab (' + (typeof formatDateTime === 'function' ? formatDateTime(latestCr.date) : latestCr.date) + ')';
+          calc();
+        }
+      }
+    }
+
+    document.getElementById('egfr-cr')?.addEventListener('input', function() {
+      const srcEl = document.getElementById('egfr-cr-source');
+      if (srcEl) srcEl.textContent = '';
+      calc();
+    });
     document.getElementById('egfr-age')?.addEventListener('input', calc);
     document.getElementById('egfr-sex')?.addEventListener('change', calc);
   }, 0);
@@ -321,10 +386,26 @@ function _buildCHA2DS2Panel() {
     const catEl = right.querySelector('.calc-result-category');
     valEl.textContent = score;
     const risk = score < riskTable.length ? riskTable[score] : riskTable[riskTable.length - 1];
+    const isFemale = document.getElementById('cha-female')?.checked;
+
+    // Recommendation per guidelines:
+    // 0 (male) or 1 (female, where the 1 point is solely from sex) = no therapy
+    // 1 (male) = consider anticoagulation
+    // >=2 = anticoagulation recommended
     let rec = '', color = '';
-    if (score === 0)      { rec = 'No anticoagulation';   color = '#276749'; }
-    else if (score === 1) { rec = 'Consider anticoagulation'; color = '#c05621'; }
-    else                  { rec = 'Anticoagulation recommended'; color = '#c53030'; }
+    if (score === 0) {
+      rec = 'No anticoagulation therapy needed';
+      color = '#276749';
+    } else if (score === 1 && isFemale) {
+      rec = 'No anticoagulation therapy needed (female sex is sole risk factor)';
+      color = '#276749';
+    } else if (score === 1) {
+      rec = 'Consider anticoagulation (male with 1 non-sex risk factor)';
+      color = '#c05621';
+    } else {
+      rec = 'Anticoagulation recommended (score \u22652)';
+      color = '#c53030';
+    }
     catEl.innerHTML = '';
     const riskLine = document.createElement('div');
     riskLine.textContent = 'Annual Stroke Risk ~' + risk.toFixed(1) + '%';
@@ -650,6 +731,420 @@ function _buildFraminghamPanel() {
     document.getElementById('frs-smoker')?.addEventListener('change', calc);
     document.getElementById('frs-dm')?.addEventListener('change', calc);
   }, 0);
+
+  return panel;
+}
+
+/* ============================================================
+   Troponin Delta Calculator
+   ============================================================ */
+function _buildTroponinDeltaPanel() {
+  const panel = document.createElement('div');
+  panel.className = 'calc-panel';
+  panel.id = 'calc-troponin';
+
+  const left = document.createElement('div');
+  left.innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">1st Troponin (ng/L)</label>
+        <input class="form-control" id="trop-val1" type="number" min="0" step="0.001" placeholder="e.g. 14" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">1st Time</label>
+        <input class="form-control" id="trop-time1" type="datetime-local" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">2nd Troponin (ng/L)</label>
+        <input class="form-control" id="trop-val2" type="number" min="0" step="0.001" placeholder="e.g. 42" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">2nd Time</label>
+        <input class="form-control" id="trop-time2" type="datetime-local" />
+      </div>
+    </div>
+  `;
+
+  const right = document.createElement('div');
+  right.className = 'calc-result-box';
+  right.id = 'trop-result';
+  right.innerHTML = '<div class="calc-result-value">\u2014</div><div class="calc-result-label">Troponin Delta</div><div class="calc-result-category"></div>';
+
+  panel.appendChild(left);
+  panel.appendChild(right);
+
+  function calc() {
+    const v1 = parseFloat(document.getElementById('trop-val1')?.value);
+    const v2 = parseFloat(document.getElementById('trop-val2')?.value);
+    const t1 = document.getElementById('trop-time1')?.value;
+    const t2 = document.getElementById('trop-time2')?.value;
+    const valEl = right.querySelector('.calc-result-value');
+    const catEl = right.querySelector('.calc-result-category');
+
+    if (isNaN(v1) || isNaN(v2)) { valEl.textContent = '\u2014'; catEl.innerHTML = ''; return; }
+
+    const absDelta = v2 - v1;
+    const pctChange = v1 > 0 ? ((absDelta / v1) * 100) : (v2 > 0 ? Infinity : 0);
+    const absPct = Math.abs(pctChange);
+
+    valEl.textContent = (absDelta >= 0 ? '+' : '') + absDelta.toFixed(1) + ' ng/L';
+    catEl.innerHTML = '';
+
+    // Time interval
+    if (t1 && t2) {
+      const d1 = new Date(t1);
+      const d2 = new Date(t2);
+      const diffMin = Math.round((d2 - d1) / 60000);
+      const hrs = Math.floor(Math.abs(diffMin) / 60);
+      const mins = Math.abs(diffMin) % 60;
+      const timeLine = document.createElement('div');
+      timeLine.textContent = 'Interval: ' + hrs + 'h ' + mins + 'm';
+      timeLine.style.fontSize = '12px';
+      timeLine.style.color = 'var(--text-muted)';
+      timeLine.style.marginBottom = '4px';
+      catEl.appendChild(timeLine);
+    }
+
+    const pctLine = document.createElement('div');
+    pctLine.textContent = 'Change: ' + (pctChange === Infinity ? '\u221E' : (pctChange >= 0 ? '+' : '') + pctChange.toFixed(1)) + '%';
+    pctLine.style.fontSize = '13px';
+    pctLine.style.marginBottom = '4px';
+    catEl.appendChild(pctLine);
+
+    const sigLine = document.createElement('div');
+    sigLine.style.fontWeight = '600';
+    if (absPct > 20) {
+      sigLine.textContent = 'Significant change (>20%) \u2014 Concerning for acute MI';
+      sigLine.style.color = '#c53030';
+    } else {
+      sigLine.textContent = 'Not significant (\u226420% change)';
+      sigLine.style.color = '#276749';
+    }
+    catEl.appendChild(sigLine);
+  }
+
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-secondary btn-sm';
+  resetBtn.textContent = 'Reset';
+  resetBtn.style.marginTop = '12px';
+  resetBtn.addEventListener('click', () => {
+    ['trop-val1','trop-val2','trop-time1','trop-time2'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    right.querySelector('.calc-result-value').textContent = '\u2014';
+    right.querySelector('.calc-result-category').innerHTML = '';
+  });
+  left.appendChild(resetBtn);
+
+  setTimeout(() => {
+    ['trop-val1','trop-val2'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', calc);
+    });
+    ['trop-time1','trop-time2'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', calc);
+    });
+  }, 0);
+
+  return panel;
+}
+
+/* ============================================================
+   KFRE (Kidney Failure Risk Equation) — 4-Variable
+   ============================================================ */
+function _buildKFREPanel() {
+  const panel = document.createElement('div');
+  panel.className = 'calc-panel';
+  panel.id = 'calc-kfre';
+
+  const left = document.createElement('div');
+  left.innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Age (years)</label>
+        <input class="form-control" id="kfre-age" type="number" min="18" max="110" step="1" placeholder="e.g. 65" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Sex</label>
+        <select class="form-control" id="kfre-sex">
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">eGFR (mL/min/1.73m\u00B2)</label>
+      <input class="form-control" id="kfre-egfr" type="number" min="1" max="200" step="1" placeholder="e.g. 35" />
+      <small id="kfre-egfr-source" style="color:var(--text-muted);font-size:11px"></small>
+    </div>
+    <div class="form-group">
+      <label class="form-label">ACR \u2014 Albumin-Creatinine Ratio (mg/g)</label>
+      <input class="form-control" id="kfre-acr" type="number" min="0" step="1" placeholder="e.g. 300" />
+    </div>
+  `;
+
+  const right = document.createElement('div');
+  right.className = 'calc-result-box';
+  right.id = 'kfre-result';
+  right.innerHTML = '<div class="calc-result-value">\u2014</div><div class="calc-result-label">Kidney Failure Risk</div><div class="calc-result-category"></div>';
+
+  panel.appendChild(left);
+  panel.appendChild(right);
+
+  function calc() {
+    const age  = parseFloat(document.getElementById('kfre-age')?.value);
+    const sex  = document.getElementById('kfre-sex')?.value;
+    const egfr = parseFloat(document.getElementById('kfre-egfr')?.value);
+    const acr  = parseFloat(document.getElementById('kfre-acr')?.value);
+    const valEl = right.querySelector('.calc-result-value');
+    const catEl = right.querySelector('.calc-result-category');
+
+    if (!age || !egfr || !acr || acr <= 0) { valEl.textContent = '\u2014'; catEl.innerHTML = ''; return; }
+
+    var male = sex === 'male' ? 1 : 0;
+    // 4-variable KFRE linear predictor
+    var lp = -0.2201 * (age / 10 - 7.036)
+           + 0.2467 * (male - 0.5642)
+           - 0.5567 * (egfr / 5 - 7.222)
+           + 0.4510 * (Math.log(acr) - 5.137);
+
+    var risk2yr = 1 - Math.pow(0.9832, Math.exp(lp));
+    var risk5yr = 1 - Math.pow(0.9365, Math.exp(lp));
+
+    valEl.textContent = (risk2yr * 100).toFixed(1) + '%';
+    catEl.innerHTML = '';
+
+    var line2 = document.createElement('div');
+    line2.textContent = '2-year risk: ' + (risk2yr * 100).toFixed(1) + '%';
+    line2.style.fontWeight = '600';
+    line2.style.fontSize = '13px';
+    line2.style.marginBottom = '4px';
+
+    var line5 = document.createElement('div');
+    line5.textContent = '5-year risk: ' + (risk5yr * 100).toFixed(1) + '%';
+    line5.style.fontWeight = '600';
+    line5.style.fontSize = '13px';
+    line5.style.marginBottom = '6px';
+
+    var recLine = document.createElement('div');
+    recLine.style.fontSize = '12px';
+    if (risk5yr >= 0.15) {
+      line2.style.color = '#c53030';
+      line5.style.color = '#c53030';
+      recLine.textContent = 'High risk \u2014 consider nephrology referral and kidney replacement therapy planning.';
+      recLine.style.color = '#c53030';
+    } else if (risk5yr >= 0.05) {
+      line2.style.color = '#c05621';
+      line5.style.color = '#c05621';
+      recLine.textContent = 'Moderate risk \u2014 close monitoring and nephrology involvement recommended.';
+      recLine.style.color = '#c05621';
+    } else {
+      line2.style.color = '#276749';
+      line5.style.color = '#276749';
+      recLine.textContent = 'Lower risk \u2014 continue CKD management and monitoring.';
+      recLine.style.color = '#276749';
+    }
+
+    catEl.appendChild(line2);
+    catEl.appendChild(line5);
+    catEl.appendChild(recLine);
+  }
+
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-secondary btn-sm';
+  resetBtn.textContent = 'Reset';
+  resetBtn.style.marginTop = '12px';
+  resetBtn.addEventListener('click', () => {
+    ['kfre-age','kfre-egfr','kfre-acr'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const sexEl = document.getElementById('kfre-sex'); if (sexEl) sexEl.selectedIndex = 0;
+    right.querySelector('.calc-result-value').textContent = '\u2014';
+    right.querySelector('.calc-result-category').innerHTML = '';
+    const srcEl = document.getElementById('kfre-egfr-source'); if (srcEl) srcEl.textContent = '';
+  });
+  left.appendChild(resetBtn);
+
+  setTimeout(() => {
+    const ctx = _getCalcPatientContext();
+    if (ctx.age) { const el = document.getElementById('kfre-age'); if (el && !el.value) el.value = ctx.age; }
+    if (ctx.sex) { const el = document.getElementById('kfre-sex'); if (el) el.value = ctx.sex; }
+
+    // Auto-fill eGFR from patient labs if available
+    if (ctx.patientId && ctx.age) {
+      const latestCr = _getLatestCreatinine(ctx.patientId);
+      if (latestCr) {
+        const calcEgfr = _calcEGFR_CKDEPI(latestCr.value, ctx.age, ctx.sex || 'male');
+        if (calcEgfr !== null) {
+          const egfrEl = document.getElementById('kfre-egfr');
+          if (egfrEl && !egfrEl.value) {
+            egfrEl.value = Math.round(calcEgfr);
+            const srcEl = document.getElementById('kfre-egfr-source');
+            if (srcEl) srcEl.textContent = 'Auto-calculated from latest Cr ' + latestCr.value + ' mg/dL';
+            calc();
+          }
+        }
+      }
+    }
+
+    ['kfre-age','kfre-egfr','kfre-acr'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', calc);
+    });
+    document.getElementById('kfre-sex')?.addEventListener('change', calc);
+  }, 0);
+
+  return panel;
+}
+
+/* ============================================================
+   Caprini VTE Risk Assessment
+   ============================================================ */
+function _buildCapriniPanel() {
+  const panel = document.createElement('div');
+  panel.className = 'calc-panel';
+  panel.id = 'calc-caprini';
+
+  const groups = [
+    { pts: 1, label: '1 Point Each', items: [
+      { id: 'cap-age41', label: 'Age 41-60' },
+      { id: 'cap-minor-surg', label: 'Minor surgery' },
+      { id: 'cap-bmi25', label: 'BMI > 25' },
+      { id: 'cap-swollen', label: 'Swollen legs' },
+      { id: 'cap-varicose', label: 'Varicose veins' },
+      { id: 'cap-preg', label: 'Pregnancy/postpartum' },
+      { id: 'cap-stillbirth', label: 'Hx unexplained stillbirth' },
+      { id: 'cap-ocp', label: 'Oral contraceptives/HRT' },
+      { id: 'cap-sepsis', label: 'Sepsis (<1mo)' },
+      { id: 'cap-lung', label: 'Serious lung disease' },
+      { id: 'cap-pfts', label: 'Abnormal pulmonary function' },
+      { id: 'cap-mi', label: 'Acute MI' },
+      { id: 'cap-chf', label: 'CHF (<1mo)' },
+      { id: 'cap-ibd', label: 'IBD' },
+      { id: 'cap-bedrest', label: 'Medical patient on bed rest' },
+    ]},
+    { pts: 2, label: '2 Points Each', items: [
+      { id: 'cap-age61', label: 'Age 61-74' },
+      { id: 'cap-arthro', label: 'Arthroscopic surgery' },
+      { id: 'cap-major-surg', label: 'Major open surgery (>45min)' },
+      { id: 'cap-lap-surg', label: 'Laparoscopic surgery (>45min)' },
+      { id: 'cap-malig', label: 'Malignancy' },
+      { id: 'cap-confined', label: 'Confined to bed (>72hr)' },
+      { id: 'cap-cast', label: 'Immobilizing plaster cast' },
+      { id: 'cap-cva', label: 'Central venous access' },
+    ]},
+    { pts: 3, label: '3 Points Each', items: [
+      { id: 'cap-age75', label: 'Age \u226575' },
+      { id: 'cap-dvtpe', label: 'History of DVT/PE' },
+      { id: 'cap-fam-dvt', label: 'Family history DVT/PE' },
+      { id: 'cap-fvl', label: 'Factor V Leiden' },
+      { id: 'cap-pt20210', label: 'Prothrombin 20210A' },
+      { id: 'cap-lupus', label: 'Lupus anticoagulant' },
+      { id: 'cap-acl', label: 'Anticardiolipin antibodies' },
+      { id: 'cap-homocys', label: 'Elevated homocysteine' },
+      { id: 'cap-hit', label: 'HIT' },
+      { id: 'cap-thrombophilia', label: 'Other congenital/acquired thrombophilia' },
+    ]},
+    { pts: 5, label: '5 Points Each', items: [
+      { id: 'cap-stroke', label: 'Stroke (<1mo)' },
+      { id: 'cap-trauma', label: 'Multiple trauma (<1mo)' },
+      { id: 'cap-sci', label: 'Acute spinal cord injury (<1mo)' },
+      { id: 'cap-arthroplasty', label: 'Major lower extremity arthroplasty' },
+    ]},
+  ];
+
+  const left = document.createElement('div');
+  left.style.maxHeight = '400px';
+  left.style.overflowY = 'auto';
+
+  var allItems = [];
+  groups.forEach(function(g) {
+    var heading = document.createElement('div');
+    heading.textContent = g.label;
+    heading.style.cssText = 'font-weight:600;font-size:13px;margin:10px 0 6px;color:var(--text-muted)';
+    left.appendChild(heading);
+
+    g.items.forEach(function(item) {
+      allItems.push({ id: item.id, pts: g.pts });
+      var grp = document.createElement('div');
+      grp.className = 'checkbox-group';
+      grp.style.marginBottom = '4px';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = item.id;
+      cb.addEventListener('change', calc);
+      var lbl = document.createElement('label');
+      lbl.htmlFor = item.id;
+      lbl.textContent = item.label;
+      lbl.style.fontSize = '13px';
+      grp.appendChild(cb);
+      grp.appendChild(lbl);
+      left.appendChild(grp);
+    });
+  });
+
+  const right = document.createElement('div');
+  right.className = 'calc-result-box';
+  right.innerHTML = '<div class="calc-result-value">0</div><div class="calc-result-label">Caprini VTE Score</div><div class="calc-result-category"></div>';
+
+  panel.appendChild(left);
+  panel.appendChild(right);
+
+  function calc() {
+    var score = 0;
+    allItems.forEach(function(item) {
+      var el = document.getElementById(item.id);
+      if (el && el.checked) score += item.pts;
+    });
+    const valEl = right.querySelector('.calc-result-value');
+    const catEl = right.querySelector('.calc-result-category');
+    valEl.textContent = score;
+    catEl.innerHTML = '';
+
+    var risk = '', rec = '', color = '';
+    if (score === 0) {
+      risk = 'Lowest risk';
+      rec = 'Early ambulation';
+      color = '#276749';
+    } else if (score <= 2) {
+      risk = 'Low risk';
+      rec = 'SCDs (sequential compression devices)';
+      color = '#276749';
+    } else if (score <= 4) {
+      risk = 'Moderate risk';
+      rec = 'SCDs + pharmacologic prophylaxis';
+      color = '#c05621';
+    } else {
+      risk = 'High risk (score \u22655)';
+      rec = 'Pharmacologic prophylaxis + SCDs';
+      color = '#c53030';
+    }
+
+    var riskLine = document.createElement('div');
+    riskLine.textContent = risk;
+    riskLine.style.fontWeight = '600';
+    riskLine.style.color = color;
+    riskLine.style.marginBottom = '4px';
+
+    var recLine = document.createElement('div');
+    recLine.textContent = rec;
+    recLine.style.fontSize = '12px';
+    recLine.style.color = 'var(--text-muted)';
+
+    catEl.appendChild(riskLine);
+    catEl.appendChild(recLine);
+  }
+
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-secondary btn-sm';
+  resetBtn.textContent = 'Reset';
+  resetBtn.style.marginTop = '8px';
+  resetBtn.addEventListener('click', () => {
+    allItems.forEach(function(item) {
+      var el = document.getElementById(item.id);
+      if (el) el.checked = false;
+    });
+    calc();
+  });
+  left.appendChild(resetBtn);
 
   return panel;
 }

@@ -97,10 +97,40 @@ const KEYS = {
   growthCharts:     'emr_growth_charts',
   milestones:       'emr_milestones',
   surgicalCases:    'emr_surgical_cases',
+  surgicalSchedules:    'emr_surgical_schedules',
+  operativeNotes:       'emr_operative_notes',
+  preOpChecklists:      'emr_preop_checklists',
+  anesthesiaRecords:    'emr_anesthesia_records',
+  postOpOrders:         'emr_postop_orders',
+  laborFlowsheets:      'emr_labor_flowsheets',
+  antenatalSurveillance:'emr_antenatal_surveillance',
+  surgicalConsents:     'emr_surgical_consents',
+  orderAcknowledgments: 'emr_order_acks',
+  standaloneVitals:     'emr_standalone_vitals',
+  ivAccessDocs:         'emr_iv_access_docs',
+  woundAssessments:     'emr_wound_assessments',
+  shiftHandoffs:        'emr_shift_handoffs',
+  surgeonPreferences:   'emr_surgeon_preferences',
+  ptEvaluations:        'emr_pt_evaluations',
+  ptTreatmentSessions:  'emr_pt_sessions',
+  ptGoals:              'emr_pt_goals',
+  ptEquipment:          'emr_pt_equipment',
+  ptHEP:                'emr_pt_hep',
+  slpEvaluations:       'emr_slp_evaluations',
+  slpTreatmentSessions: 'emr_slp_sessions',
+  slpGoals:             'emr_slp_goals',
+  slpDietRecommendations:'emr_slp_diet_recs',
+  discharges:           'emr_discharges',
+  restraints:           'emr_restraints',
+  transfusions:         'emr_transfusions',
+  codeEvents:           'emr_code_events',
+  consentForms:         'emr_consent_forms',
+  patientEducation:     'emr_patient_education',
+  roundingChecklists:   'emr_rounding_checklists',
 };
 
 /* ---------- Data Versioning ---------- */
-var DATA_VERSION = 1;
+var DATA_VERSION = 2;
 var DATA_VERSION_KEY = 'emr_data_version';
 
 function runMigrations() {
@@ -111,6 +141,18 @@ function runMigrations() {
   if (currentVersion < 1) {
     console.log('[EMR] Running migration to v1: soft-delete support');
     // No data changes needed for v1 — just marks the schema version
+  }
+
+  // Migration 2: Add PT/SLP/Safety keys, normalize order acknowledgment fields
+  if (currentVersion < 2) {
+    console.log('[EMR] Running migration to v2: PT/SLP/safety modules');
+    // Ensure existing orders have acknowledgment fields
+    var orders = JSON.parse(_storageAdapter.getItem(KEYS.orders) || '[]');
+    var changed = false;
+    orders.forEach(function(o) {
+      if (typeof o.acknowledgedBy === 'undefined') { o.acknowledgedBy = null; o.acknowledgedAt = null; changed = true; }
+    });
+    if (changed) _storageAdapter.setItem(KEYS.orders, JSON.stringify(orders));
   }
 
   _storageAdapter.setItem(DATA_VERSION_KEY, String(DATA_VERSION));
@@ -136,7 +178,6 @@ function safeSave(key, value) {
     localStorage.setItem(key, value);
   } catch (e) {
     if (e.name === 'QuotaExceededError' || e.code === 22) {
-      // Defer to app.js showToast if available
       if (typeof showToast === 'function') {
         showToast('Storage quota exceeded. Please clear some data.', 'error');
       } else {
@@ -145,6 +186,28 @@ function safeSave(key, value) {
     }
     throw e;
   }
+}
+
+function getStorageUsage() {
+  var used = 0;
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('emr_') === 0) {
+        used += (localStorage.getItem(k) || '').length * 2; // UTF-16 bytes
+      }
+    }
+  } catch (e) { /* ignore */ }
+  var total = 5 * 1024 * 1024; // ~5MB estimate
+  return { used: used, total: total, percentage: Math.round((used / total) * 100) };
+}
+
+function checkStorageQuota() {
+  var usage = getStorageUsage();
+  if (usage.percentage >= 80 && typeof showToast === 'function') {
+    showToast('Storage is ' + usage.percentage + '% full (' + Math.round(usage.used / 1024) + 'KB). Consider exporting or clearing old data.', 'warning');
+  }
+  return usage;
 }
 
 var _dataCache = {};
@@ -708,7 +771,7 @@ function saveOrder(data) {
     if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
   }
   /* --- Data validation (hardening) --- */
-  var VALID_ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult'];
+  var VALID_ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult', 'Diet', 'Nursing', 'Activity'];
   if (!data.id || !getOrder(data.id)) {
     var ordReq = validateRequired(data, ['encounterId', 'patientId']);
     if (!ordReq.valid) return { error: true, errors: ordReq.errors };
@@ -728,6 +791,15 @@ function saveOrder(data) {
       if (!detail.modality || detail.modality.trim() === '') imgErrors.push('Modality is required for Imaging orders');
       if (!detail.bodyPart || detail.bodyPart.trim() === '') imgErrors.push('Body part is required for Imaging orders');
       if (imgErrors.length > 0) return { error: true, errors: imgErrors };
+    }
+    if (orderType === 'Diet' && (!detail.dietType || detail.dietType.trim() === '')) {
+      return { error: true, errors: ['Diet type is required for Diet orders'] };
+    }
+    if (orderType === 'Nursing' && (!detail.intervention || detail.intervention.trim() === '')) {
+      return { error: true, errors: ['Intervention is required for Nursing orders'] };
+    }
+    if (orderType === 'Activity' && (!detail.level || detail.level.trim() === '')) {
+      return { error: true, errors: ['Activity level is required for Activity orders'] };
     }
   }
   /* --- End validation --- */
@@ -754,6 +826,8 @@ function saveOrder(data) {
       dateTime:    new Date().toISOString(),
       completedAt: null,
       notes:       '',
+      acknowledgedBy: null,
+      acknowledgedAt: null,
       ...data,
     };
     orders.push(newOrder);
@@ -2515,6 +2589,9 @@ const PATIENT_COLUMNS = [
   { key: 'provider',      label: 'Provider(s)',         default: false, sortable: true  },
   { key: 'lastVitals',    label: 'Last Vitals (BP/HR)', default: false, sortable: false },
   { key: 'pendingOrders', label: 'Pending Orders',      default: false, sortable: true  },
+  { key: 'fallRisk',     label: 'Fall Risk (Morse)',    default: false, sortable: true  },
+  { key: 'vitalsSummary',label: 'Vitals (BP/HR)',       default: false, sortable: false },
+  { key: 'carePlanCount',label: 'Care Plans',           default: false, sortable: true  },
 ];
 
 function getDefaultColumnKeys() {
@@ -4200,3 +4277,105 @@ function saveSessionNote(data) { if (!data.id) data.id = generateId(); var all =
 
 function getSurgicalCases(patientId) { return loadAll(KEYS.surgicalCases).filter(function(c) { return !patientId || c.patientId === patientId; }); }
 function saveSurgicalCase(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.surgicalCases, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.surgicalCases, all); return data; }
+
+/* ---------- Surgical CRUD ---------- */
+function getSurgicalSchedules(patientId) { return loadAll(KEYS.surgicalSchedules).filter(function(s) { return !patientId || s.patientId === patientId; }); }
+function saveSurgicalSchedule(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.surgicalSchedules, true); var idx = all.findIndex(function(s) { return s.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.surgicalSchedules, all); return data; }
+
+function getOperativeNotes(patientId) { return loadAll(KEYS.operativeNotes).filter(function(n) { return !patientId || n.patientId === patientId; }); }
+function saveOperativeNote(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.operativeNotes, true); var idx = all.findIndex(function(n) { return n.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.operativeNotes, all); return data; }
+
+function getPreOpChecklists(patientId) { return loadAll(KEYS.preOpChecklists).filter(function(c) { return !patientId || c.patientId === patientId; }); }
+function savePreOpChecklist(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.preOpChecklists, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.preOpChecklists, all); return data; }
+
+function getAnesthesiaRecords(patientId) { return loadAll(KEYS.anesthesiaRecords).filter(function(r) { return !patientId || r.patientId === patientId; }); }
+function saveAnesthesiaRecord(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.anesthesiaRecords, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.anesthesiaRecords, all); return data; }
+
+function getPostOpOrders(patientId) { return loadAll(KEYS.postOpOrders).filter(function(o) { return !patientId || o.patientId === patientId; }); }
+function savePostOpOrder(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.postOpOrders, true); var idx = all.findIndex(function(o) { return o.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.postOpOrders, all); return data; }
+
+/* ---------- OB/GYN CRUD ---------- */
+function getLaborFlowsheets(patientId) { return loadAll(KEYS.laborFlowsheets).filter(function(f) { return !patientId || f.patientId === patientId; }); }
+function saveLaborFlowsheet(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.laborFlowsheets, true); var idx = all.findIndex(function(f) { return f.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.laborFlowsheets, all); return data; }
+
+function getAntenatalSurveillance(patientId) { return loadAll(KEYS.antenatalSurveillance).filter(function(s) { return !patientId || s.patientId === patientId; }); }
+function saveAntenatalSurveillance(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.antenatalSurveillance, true); var idx = all.findIndex(function(s) { return s.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.antenatalSurveillance, all); return data; }
+
+/* ---------- Surgical Consents CRUD ---------- */
+function getSurgicalConsents(patientId) { return loadAll(KEYS.surgicalConsents).filter(function(c) { return !patientId || c.patientId === patientId; }); }
+function saveSurgicalConsent(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.surgicalConsents, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.surgicalConsents, all); return data; }
+
+/* ---------- Order Acknowledgments CRUD ---------- */
+function getOrderAcknowledgments(orderId) { return loadAll(KEYS.orderAcknowledgments).filter(function(a) { return !orderId || a.orderId === orderId; }); }
+function saveOrderAcknowledgment(data) { if (!data.id) data.id = generateId(); data.acknowledgedAt = data.acknowledgedAt || new Date().toISOString(); var all = loadAll(KEYS.orderAcknowledgments, true); all.push(data); saveAll(KEYS.orderAcknowledgments, all); return data; }
+
+/* ---------- Standalone Vitals CRUD ---------- */
+function getStandaloneVitals(patientId) { return loadAll(KEYS.standaloneVitals).filter(function(v) { return !patientId || v.patientId === patientId; }); }
+function saveStandaloneVital(data) { if (!data.id) data.id = generateId(); data.recordedAt = data.recordedAt || new Date().toISOString(); var all = loadAll(KEYS.standaloneVitals, true); all.push(data); saveAll(KEYS.standaloneVitals, all); return data; }
+
+/* ---------- IV/Vascular Access CRUD ---------- */
+function getIVAccessDocs(patientId) { return loadAll(KEYS.ivAccessDocs).filter(function(d) { return !patientId || d.patientId === patientId; }); }
+function saveIVAccessDoc(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.ivAccessDocs, true); var idx = all.findIndex(function(d) { return d.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.ivAccessDocs, all); return data; }
+
+/* ---------- Wound Assessments CRUD ---------- */
+function getWoundAssessments(patientId) { return loadAll(KEYS.woundAssessments).filter(function(w) { return !patientId || w.patientId === patientId; }); }
+function saveWoundAssessment(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.woundAssessments, true); var idx = all.findIndex(function(w) { return w.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.woundAssessments, all); return data; }
+
+/* ---------- Shift Handoffs CRUD ---------- */
+function getShiftHandoffs(patientId) { return loadAll(KEYS.shiftHandoffs).filter(function(h) { return !patientId || h.patientId === patientId; }); }
+function saveShiftHandoff(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.shiftHandoffs, true); var idx = all.findIndex(function(h) { return h.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.shiftHandoffs, all); return data; }
+
+/* ---------- Surgeon Preferences CRUD ---------- */
+function getSurgeonPreferences(surgeonId) { return loadAll(KEYS.surgeonPreferences).filter(function(p) { return !surgeonId || p.surgeonId === surgeonId; }); }
+function saveSurgeonPreference(data) { if (!data.id) data.id = generateId(); var all = loadAll(KEYS.surgeonPreferences, true); var idx = all.findIndex(function(p) { return p.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.surgeonPreferences, all); return data; }
+
+/* ---------- Physical Therapy CRUD ---------- */
+function getPTEvaluations(patientId) { return loadAll(KEYS.ptEvaluations).filter(function(e) { return !patientId || e.patientId === patientId; }); }
+function savePTEvaluation(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.ptEvaluations, true); var idx = all.findIndex(function(e) { return e.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.ptEvaluations, all); return data; }
+
+function getPTSessions(patientId) { return loadAll(KEYS.ptTreatmentSessions).filter(function(s) { return !patientId || s.patientId === patientId; }); }
+function savePTSession(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.ptTreatmentSessions, true); var idx = all.findIndex(function(s) { return s.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.ptTreatmentSessions, all); return data; }
+
+function getPTGoals(patientId) { return loadAll(KEYS.ptGoals).filter(function(g) { return !patientId || g.patientId === patientId; }); }
+function savePTGoal(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.ptGoals, true); var idx = all.findIndex(function(g) { return g.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.ptGoals, all); return data; }
+
+function getPTEquipment(patientId) { return loadAll(KEYS.ptEquipment).filter(function(e) { return !patientId || e.patientId === patientId; }); }
+function savePTEquipment(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.ptEquipment, true); var idx = all.findIndex(function(e) { return e.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.ptEquipment, all); return data; }
+
+function getPTHEPs(patientId) { return loadAll(KEYS.ptHEP).filter(function(h) { return !patientId || h.patientId === patientId; }); }
+function savePTHEP(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.ptHEP, true); var idx = all.findIndex(function(h) { return h.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.ptHEP, all); return data; }
+
+/* ---------- Speech-Language Pathology CRUD ---------- */
+function getSLPEvaluations(patientId) { return loadAll(KEYS.slpEvaluations).filter(function(e) { return !patientId || e.patientId === patientId; }); }
+function saveSLPEvaluation(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.slpEvaluations, true); var idx = all.findIndex(function(e) { return e.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.slpEvaluations, all); return data; }
+
+function getSLPSessions(patientId) { return loadAll(KEYS.slpTreatmentSessions).filter(function(s) { return !patientId || s.patientId === patientId; }); }
+function saveSLPSession(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.slpTreatmentSessions, true); var idx = all.findIndex(function(s) { return s.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.slpTreatmentSessions, all); return data; }
+
+function getSLPGoals(patientId) { return loadAll(KEYS.slpGoals).filter(function(g) { return !patientId || g.patientId === patientId; }); }
+function saveSLPGoal(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.slpGoals, true); var idx = all.findIndex(function(g) { return g.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.slpGoals, all); return data; }
+
+function getSLPDietRecommendations(patientId) { return loadAll(KEYS.slpDietRecommendations).filter(function(d) { return !patientId || d.patientId === patientId; }); }
+function saveSLPDietRecommendation(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.slpDietRecommendations, true); var idx = all.findIndex(function(d) { return d.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.slpDietRecommendations, all); return data; }
+
+/* ---------- Clinical Safety CRUD ---------- */
+function getDischarges(patientId) { return loadAll(KEYS.discharges).filter(function(d) { return !patientId || d.patientId === patientId; }); }
+function saveDischarge(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.discharges, true); var idx = all.findIndex(function(d) { return d.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.discharges, all); return data; }
+
+function getRestraints(patientId) { return loadAll(KEYS.restraints).filter(function(r) { return !patientId || r.patientId === patientId; }); }
+function saveRestraint(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.restraints, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.restraints, all); return data; }
+
+function getTransfusions(patientId) { return loadAll(KEYS.transfusions).filter(function(t) { return !patientId || t.patientId === patientId; }); }
+function saveTransfusion(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.transfusions, true); var idx = all.findIndex(function(t) { return t.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.transfusions, all); return data; }
+
+function getCodeEvents(patientId) { return loadAll(KEYS.codeEvents).filter(function(c) { return !patientId || c.patientId === patientId; }); }
+function saveCodeEvent(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.codeEvents, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.codeEvents, all); return data; }
+
+function getConsentForms(patientId) { return loadAll(KEYS.consentForms).filter(function(c) { return !patientId || c.patientId === patientId; }); }
+function saveConsentForm(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.consentForms, true); var idx = all.findIndex(function(c) { return c.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.consentForms, all); return data; }
+
+function getPatientEducation(patientId) { return loadAll(KEYS.patientEducation).filter(function(e) { return !patientId || e.patientId === patientId; }); }
+function savePatientEducation(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.patientEducation, true); all.push(data); saveAll(KEYS.patientEducation, all); return data; }
+
+function getRoundingChecklists(patientId) { return loadAll(KEYS.roundingChecklists).filter(function(r) { return !patientId || r.patientId === patientId; }); }
+function saveRoundingChecklist(data) { if (!data.id) data.id = generateId(); data.createdAt = data.createdAt || new Date().toISOString(); var all = loadAll(KEYS.roundingChecklists, true); var idx = all.findIndex(function(r) { return r.id === data.id; }); if (idx >= 0) all[idx] = Object.assign(all[idx], data); else all.push(data); saveAll(KEYS.roundingChecklists, all); return data; }

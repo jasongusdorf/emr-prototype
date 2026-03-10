@@ -5,6 +5,21 @@
 
 let _dashMyPatientsOnly = false;
 
+/* WS8d: Inject PT/SLP/Aspiration columns into PATIENT_COLUMNS at load time */
+(function _injectWS8Columns() {
+  if (typeof PATIENT_COLUMNS === 'undefined') return;
+  var ws8Cols = [
+    { key: 'ptStatus',               label: 'PT Status',               default: false, sortable: false },
+    { key: 'dietTexture',            label: 'Diet (IDDSI)',            default: false, sortable: false },
+    { key: 'aspirationPrecautions',  label: 'Asp. Precautions',       default: false, sortable: false },
+  ];
+  ws8Cols.forEach(function(col) {
+    if (!PATIENT_COLUMNS.find(function(c) { return c.key === col.key; })) {
+      PATIENT_COLUMNS.push(col);
+    }
+  });
+})();
+
 function renderDashboard() {
   const app = document.getElementById('app');
   app.innerHTML = '';
@@ -773,6 +788,124 @@ function renderPatients() {
         td.appendChild(badges);
         return td;
       }
+      // 8g: Fall Risk column
+      case 'fallRisk': {
+        const td = document.createElement('td');
+        if (typeof getNursingAssessments === 'function') {
+          const morseList = getNursingAssessments(pat.id)
+            .filter(function(a) { return a.type === 'Morse Fall Risk' || a.type === 'morse' || a.morseScore !== undefined; })
+            .sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+          if (morseList.length > 0) {
+            var score = morseList[0].score !== undefined ? parseInt(morseList[0].score) : parseInt(morseList[0].morseScore);
+            if (!isNaN(score)) {
+              var badge = document.createElement('span');
+              badge.style.cssText = 'padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600';
+              if (score >= 45) {
+                badge.style.background = 'var(--badge-danger-bg)'; badge.style.color = 'var(--badge-danger-text)';
+                badge.textContent = score + ' HIGH';
+              } else if (score >= 25) {
+                badge.style.background = 'var(--badge-warning-bg)'; badge.style.color = 'var(--badge-warning-text)';
+                badge.textContent = score + ' MOD';
+              } else {
+                badge.style.background = 'var(--badge-success-bg)'; badge.style.color = 'var(--badge-success-text)';
+                badge.textContent = score + ' LOW';
+              }
+              td.appendChild(badge);
+            } else {
+              td.textContent = '—';
+            }
+          } else {
+            td.textContent = '—';
+          }
+        } else {
+          td.textContent = '—';
+        }
+        return td;
+      }
+      // 8h: Vitals summary column
+      case 'vitalsSummary': {
+        const v = getVitalData(pat.id);
+        if (v && v.vitals) {
+          const bp = (v.vitals.bpSystolic && v.vitals.bpDiastolic) ? v.vitals.bpSystolic + '/' + v.vitals.bpDiastolic : '';
+          const hr = v.vitals.heartRate ? 'HR ' + v.vitals.heartRate : '';
+          return createTd([bp, hr].filter(Boolean).join(', ') || '—');
+        }
+        return createTd('—');
+      }
+      // 8h: Care plan count column
+      case 'carePlanCount': {
+        const td = document.createElement('td');
+        if (typeof getCarePlans === 'function') {
+          var plans = getCarePlans(pat.id).filter(function(cp) { return cp.status === 'Active'; });
+          td.textContent = plans.length > 0 ? plans.length + ' active' : '—';
+        } else {
+          td.textContent = '—';
+        }
+        return td;
+      }
+      // WS8d: PT Status column
+      case 'ptStatus': {
+        const td = document.createElement('td');
+        td.style.color = 'var(--accent-pt)';
+        if (typeof getPTEvaluations === 'function') {
+          var ptEvalsDash = getPTEvaluations(pat.id).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+          if (ptEvalsDash.length > 0) {
+            var ptE = ptEvalsDash[0];
+            var parts = [];
+            if (ptE.activityLevel || ptE.functionalMobility) parts.push(ptE.activityLevel || ptE.functionalMobility);
+            if (ptE.assistiveDevice) parts.push(ptE.assistiveDevice);
+            td.textContent = parts.length > 0 ? parts.join(' / ') : '—';
+          } else {
+            td.textContent = '—';
+          }
+        } else {
+          td.textContent = '—';
+        }
+        return td;
+      }
+      // WS8d: Diet Texture column
+      case 'dietTexture': {
+        const td = document.createElement('td');
+        td.style.color = 'var(--accent-slp)';
+        if (typeof getSLPDietRecommendations === 'function') {
+          var slpRecsDash = getSLPDietRecommendations(pat.id).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+          if (slpRecsDash.length > 0) {
+            var dr = slpRecsDash[0];
+            td.textContent = (dr.foodLevel != null && dr.liquidLevel != null) ? 'IDDSI ' + dr.foodLevel + '/' + dr.liquidLevel : (dr.foodLevel != null ? 'IDDSI ' + dr.foodLevel : '—');
+          } else {
+            td.textContent = '—';
+          }
+        } else {
+          td.textContent = '—';
+        }
+        return td;
+      }
+      // WS8d: Aspiration Precautions column
+      case 'aspirationPrecautions': {
+        const td = document.createElement('td');
+        if (typeof getSLPDietRecommendations === 'function') {
+          var slpRecsAsp = getSLPDietRecommendations(pat.id).sort(function(a, b) { return new Date(b.createdAt || 0) - new Date(a.createdAt || 0); });
+          if (slpRecsAsp.length > 0) {
+            var sr = slpRecsAsp[0];
+            var hasPrec = sr.precautions && (Array.isArray(sr.precautions) ? sr.precautions.length > 0 : !!sr.precautions);
+            var badge = document.createElement('span');
+            badge.style.cssText = 'padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600';
+            if (hasPrec) {
+              badge.style.background = 'var(--badge-danger-bg)'; badge.style.color = 'var(--badge-danger-text)';
+              badge.textContent = 'Y';
+            } else {
+              badge.style.background = 'var(--badge-success-bg)'; badge.style.color = 'var(--badge-success-text)';
+              badge.textContent = 'N';
+            }
+            td.appendChild(badge);
+          } else {
+            td.textContent = '—';
+          }
+        } else {
+          td.textContent = '—';
+        }
+        return td;
+      }
       case 'actions': {
         const td = document.createElement('td');
         td.style.cssText = 'text-align:right;white-space:nowrap';
@@ -1317,7 +1450,7 @@ function openNewPatientModal() {
     );
     if (existing && !document.getElementById('np-dupe-confirmed')) {
       const warn = document.createElement('div');
-      warn.style.cssText = 'background:var(--warning-light,#fffceb);color:var(--warning,#b45309);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px';
+      warn.style.cssText = 'background:var(--badge-warning-bg);color:var(--warning,#b45309);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px';
       warn.id = 'np-dupe-warn';
       warn.innerHTML = '<strong>Possible duplicate:</strong> ' + esc(existing.firstName) + ' ' + esc(existing.lastName) + ' (' + esc(existing.mrn) + ') born ' + formatDate(existing.dob) + '.<br>Click "Register Patient" again to create anyway.';
       const old = document.getElementById('np-dupe-warn');
@@ -1422,7 +1555,7 @@ function renderInpatientHierarchy(app, allPatients, currentProv, checkbox) {
 
     const hospitalHeader = document.createElement('div');
     hospitalHeader.className = 'card-header';
-    hospitalHeader.style.cssText = 'background:var(--portal-accent,#0d9488);color:#fff;border-radius:8px 8px 0 0';
+    hospitalHeader.style.cssText = 'background:var(--portal-accent,var(--accent-pt));color:#fff;border-radius:8px 8px 0 0';
     const hospitalTitle = document.createElement('span');
     hospitalTitle.className = 'card-title';
     hospitalTitle.style.color = '#fff';

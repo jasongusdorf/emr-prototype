@@ -123,7 +123,7 @@ function openMediaUploadModal(patientId, onDone) {
       '<div>' +
         '<label style="font-weight:600;">File</label>' +
         '<input type="file" id="media-file-input" accept="image/jpeg,image/png,image/gif" style="display:block;margin-top:4px;">' +
-        '<div id="media-file-warning" style="color:#b91c1c;font-size:12px;margin-top:4px;display:none;"></div>' +
+        '<div id="media-file-warning" style="color:var(--badge-danger-text);font-size:12px;margin-top:4px;display:none;"></div>' +
       '</div>' +
       '<div id="media-upload-preview-wrap" style="display:none;">' +
         '<img id="media-upload-preview" class="media-upload-preview" alt="Preview">' +
@@ -234,7 +234,7 @@ function openMediaViewerModal(mediaId, onDone) {
   if (media.dataUrl && media.mimeType && media.mimeType.startsWith('image/')) {
     bodyHTML += '<img src="' + esc(media.dataUrl) + '" alt="' + esc(media.title) + '" style="max-width:100%;max-height:500px;border-radius:6px;">';
   } else {
-    bodyHTML += '<div style="padding:40px;background:#f3f4f6;border-radius:8px;font-size:18px;color:#6b7280;">Document File</div>';
+    bodyHTML += '<div style="padding:40px;background:var(--bg-base);border-radius:8px;font-size:18px;color:var(--text-muted);">Document File</div>';
   }
   bodyHTML += '</div>';
   bodyHTML += '<table style="width:100%;font-size:14px;">';
@@ -678,7 +678,7 @@ function openLetterViewModal(letterId, onDone) {
         (letter.sentAt ? '<tr><td style="font-weight:600;padding:3px 8px 3px 0;">Sent</td><td>' + formatDateTime(letter.sentAt) + '</td></tr>' : '') +
       '</table>' +
     '</div>' +
-    '<div class="letter-body-display" style="white-space:pre-wrap;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:16px;font-size:14px;font-family:serif;line-height:1.6;max-height:400px;overflow-y:auto;">' +
+    '<div class="letter-body-display" style="white-space:pre-wrap;background:var(--bg-base);border:1px solid var(--border);border-radius:6px;padding:16px;font-size:14px;font-family:serif;line-height:1.6;max-height:400px;overflow-y:auto;">' +
       esc(letter.body) +
     '</div>';
 
@@ -908,7 +908,7 @@ function renderRemindersPanel(patientId, container) {
 
   if (reminders.length === 0) {
     var empty = document.createElement('div');
-    empty.style.cssText = 'font-size:13px;color:#9ca3af;text-align:center;padding:8px 0;';
+    empty.style.cssText = 'font-size:13px;color:var(--text-muted);text-align:center;padding:8px 0;';
     empty.textContent = 'No active reminders';
     container.appendChild(empty);
     return;
@@ -929,7 +929,7 @@ function renderRemindersPanel(patientId, container) {
   reminders.forEach(function(rem) {
     var row = document.createElement('div');
     row.className = 'reminder-item reminder-priority-' + rem.priority;
-    row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;cursor:pointer;';
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid var(--bg-base);cursor:pointer;';
 
     var dot = document.createElement('span');
     dot.className = 'reminder-priority-dot reminder-dot-' + rem.priority;
@@ -946,12 +946,12 @@ function renderRemindersPanel(patientId, container) {
 
     if (rem.dueDate) {
       var dueDateEl = document.createElement('div');
-      dueDateEl.style.cssText = 'font-size:11px;color:#9ca3af;margin-top:1px;';
+      dueDateEl.style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:1px;';
       var dueDate = new Date(rem.dueDate + 'T00:00:00');
       var today = new Date();
       today.setHours(0, 0, 0, 0);
       if (dueDate < today) {
-        dueDateEl.style.color = '#dc2626';
+        dueDateEl.style.color = 'var(--danger)';
         dueDateEl.textContent = 'Overdue: ' + dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       } else {
         dueDateEl.textContent = 'Due: ' + dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -960,7 +960,7 @@ function renderRemindersPanel(patientId, container) {
     }
 
     var checkBtn = document.createElement('button');
-    checkBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:14px;color:#10b981;padding:0;line-height:1;flex-shrink:0;';
+    checkBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:14px;color:var(--success);padding:0;line-height:1;flex-shrink:0;';
     checkBtn.textContent = '\u2713';
     checkBtn.title = 'Complete';
     checkBtn.addEventListener('click', function(e) {
@@ -1030,7 +1030,7 @@ function renderRemindersView() {
   var _selectedIds = [];
   var batchBar = document.createElement('div');
   batchBar.className = 'reminder-batch-bar';
-  batchBar.style.cssText = 'display:none;gap:8px;align-items:center;margin-bottom:12px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;';
+  batchBar.style.cssText = 'display:none;gap:8px;align-items:center;margin-bottom:12px;padding:8px 12px;background:var(--badge-success-bg);border:1px solid var(--badge-success-border);border-radius:6px;';
 
   var batchCount = document.createElement('span');
   batchCount.style.fontWeight = '600';
@@ -1115,11 +1115,11 @@ function renderRemindersView() {
     });
 
     var sections = [
-      { key: 'overdue',  label: 'Overdue',   color: '#dc2626' },
-      { key: 'today',    label: 'Today',      color: '#f59e0b' },
-      { key: 'thisWeek', label: 'This Week',  color: '#3b82f6' },
-      { key: 'later',    label: 'Later',      color: '#6b7280' },
-      { key: 'noDue',    label: 'No Due Date', color: '#9ca3af' },
+      { key: 'overdue',  label: 'Overdue',   color: 'var(--danger)' },
+      { key: 'today',    label: 'Today',      color: 'var(--warning)' },
+      { key: 'thisWeek', label: 'This Week',  color: 'var(--accent-blue)' },
+      { key: 'later',    label: 'Later',      color: 'var(--text-muted)' },
+      { key: 'noDue',    label: 'No Due Date', color: 'var(--text-muted)' },
     ];
 
     sections.forEach(function(sec) {
@@ -1147,7 +1147,7 @@ function renderRemindersView() {
       items.forEach(function(rem) {
         var row = document.createElement('div');
         row.className = 'reminder-row';
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:6px;background:#fff;';
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg-surface);';
 
         // Checkbox
         var cb = document.createElement('input');
@@ -1190,7 +1190,7 @@ function renderRemindersView() {
         // Due date
         if (rem.dueDate) {
           var dueDateEl = document.createElement('span');
-          dueDateEl.style.cssText = 'font-size:12px;color:#6b7280;white-space:nowrap;';
+          dueDateEl.style.cssText = 'font-size:12px;color:var(--text-muted);white-space:nowrap;';
           var d = new Date(rem.dueDate + 'T00:00:00');
           dueDateEl.textContent = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           row.appendChild(dueDateEl);
@@ -1231,7 +1231,7 @@ function openAddReminderModal(patientId, onDone) {
 
   var bodyHTML =
     '<div style="display:flex;flex-direction:column;gap:10px;">' +
-      '<div style="font-size:13px;color:#6b7280;">Reminder for <strong>' + esc(patientLabel) + '</strong></div>' +
+      '<div style="font-size:13px;color:var(--text-muted);">Reminder for <strong>' + esc(patientLabel) + '</strong></div>' +
       '<div>' +
         '<label style="font-weight:600;">Reminder Text</label>' +
         '<input type="text" id="reminder-text" class="input" placeholder="e.g. Follow up on lab results">' +

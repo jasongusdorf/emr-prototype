@@ -198,7 +198,7 @@ function openEVisitReviewModal(visitId) {
   }
 
   if (v.moreInfoRequest) {
-    body += '<div class="pe-info-box" style="border-left:3px solid var(--warning,#eab308);margin:12px 0">';
+    body += '<div class="pe-info-box" style="border-left:3px solid var(--warning);margin:12px 0">';
     body += '<strong>More Info Requested:</strong> ' + esc(v.moreInfoRequest);
     body += '</div>';
   }
@@ -407,7 +407,7 @@ function renderPortalEVisits(container, patient) {
           html += '</div>';
         }
         if (v.status === 'More Info Requested') {
-          html += '<div style="margin-top:8px;color:var(--info,#0ea5e9)"><strong>Provider needs more information:</strong> ' + esc(v.moreInfoRequest || '') + '</div>';
+          html += '<div style="margin-top:8px;color:var(--accent-blue)"><strong>Provider needs more information:</strong> ' + esc(v.moreInfoRequest || '') + '</div>';
           html += '<button class="btn btn-primary btn-sm portal-respond-evisit" data-id="' + esc(v.id) + '" style="margin-top:6px">Respond</button>';
         }
         html += '</div>';
@@ -463,7 +463,7 @@ function renderPortalEVisitForm(patient) {
   html += '<textarea class="form-control" id="evisit-photo-desc" rows="2" placeholder="Describe any photos or additional details..."></textarea></div>';
 
   html += '<div style="display:flex;gap:8px;margin-top:16px">';
-  html += '<button class="btn btn-primary portal-submit-evisit" style="background:#0d9488">Submit E-Visit</button>';
+  html += '<button class="btn btn-primary portal-submit-evisit" style="background:var(--accent-pt)">Submit E-Visit</button>';
   html += '<button class="btn btn-secondary portal-cancel-evisit">Cancel</button>';
   html += '</div>';
 
@@ -472,13 +472,13 @@ function renderPortalEVisitForm(patient) {
 
 function renderPortalEVisitMoreInfo(visit) {
   var html = '<h4>Provider Request for More Information</h4>';
-  html += '<div class="pe-info-box" style="border-left:3px solid var(--info,#0ea5e9);margin-bottom:16px">';
+  html += '<div class="pe-info-box" style="border-left:3px solid var(--accent-blue);margin-bottom:16px">';
   html += '<strong>Provider asked:</strong> ' + esc(visit.moreInfoRequest || '');
   html += '</div>';
   html += '<div class="form-group"><label>Your Response *</label>';
   html += '<textarea class="form-control" id="evisit-moreinfo-response" rows="4" placeholder="Provide the requested information..."></textarea></div>';
   html += '<div style="display:flex;gap:8px;margin-top:16px">';
-  html += '<button class="btn btn-primary portal-send-moreinfo" style="background:#0d9488">Send Response</button>';
+  html += '<button class="btn btn-primary portal-send-moreinfo" style="background:var(--accent-pt)">Send Response</button>';
   html += '<button class="btn btn-secondary portal-cancel-moreinfo">Back</button>';
   html += '</div>';
   return html;

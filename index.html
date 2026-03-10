@@ -349,6 +349,17 @@
         </a>
       </div>
 
+      <!-- Rehabilitation -->
+      <div class="nav-section">
+        <div class="nav-section-header">REHABILITATION</div>
+        <a href="#physical-therapy" class="nav-item" data-nav="physical-therapy" title="Physical Therapy">
+          <span class="nav-label">Physical Therapy</span>
+        </a>
+        <a href="#speech-therapy" class="nav-item" data-nav="speech-therapy" title="Speech-Language Pathology">
+          <span class="nav-label">Speech Therapy</span>
+        </a>
+      </div>
+
       <!-- Patient Engagement -->
       <div class="nav-section">
         <div class="nav-section-header">PATIENT ENGAGEMENT</div>
@@ -464,6 +475,11 @@
       <div id="topbar-title">Loading…</div>
       <div id="topbar-meta"></div>
       <div id="topbar-actions"></div>
+      <!-- WS8h: Notification bell -->
+      <button id="notif-bell" class="btn-ghost" style="position:relative;font-size:18px;padding:6px 10px;" title="Notifications">
+        &#x1f514;
+        <span id="notif-badge" class="badge badge-sm" style="position:absolute;top:0;right:0;background:var(--danger,#dc3545);color:#fff;display:none;font-size:10px;min-width:16px;height:16px;line-height:16px;text-align:center;border-radius:8px;padding:0 4px;">0</span>
+      </button>
     </div>
 
     <!-- Patient tabs (inpatient multi-chart) -->
@@ -492,6 +508,15 @@
 
 <!-- ===== Toast container ===== -->
 <div id="toast-container" aria-live="polite" aria-atomic="false" role="status"></div>
+
+<!-- WS8g: Mobile bottom navigation -->
+<nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+  <a href="#dashboard"><span class="nav-icon">&#x1f465;</span><span>Patients</span></a>
+  <a href="#bed-board"><span class="nav-icon">&#x1f6cf;</span><span>Beds</span></a>
+  <a href="#"><span class="nav-icon">&#x1f4cb;</span><span>Chart</span></a>
+  <a href="#"><span class="nav-icon">&#x1f4dd;</span><span>Orders</span></a>
+  <a href="#"><span class="nav-icon">&#x2630;</span><span>More</span></a>
+</nav>
 
 <!-- ===== Scripts — load order matters ===== -->
 <script src="data.js"></script>
@@ -560,6 +585,8 @@
 <script src="views/behavioral-health.js"></script>
 <script src="views/pediatrics.js"></script>
 <script src="views/surgery.js"></script>
+<script src="views/physical-therapy.js"></script>
+<script src="views/speech-therapy.js"></script>
 <script src="state.js"></script>
 <script src="fhir.js"></script>
 <script src="app.js"></script>
