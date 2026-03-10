@@ -3,6 +3,28 @@
    Runs last; assumes data.js and all view files are loaded.
    ============================================================ */
 
+/* ---------- Named Constants (avoid magic numbers) ---------- */
+var SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+var SESSION_WARNING_MS = 2 * 60 * 1000;  // 2 minutes before timeout
+var MODAL_FOCUS_DELAY_MS = 50;
+var TOAST_DEFAULT_DURATION_MS = 3000;
+
+/* ---------- DOMPurify-lite Sanitizer ---------- */
+function sanitizeHTML(html) {
+  if (typeof html !== 'string') return '';
+  // Strip script tags, event handlers, and dangerous elements
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/\bon\w+\s*=\s*[^\s>]*/gi, '')
+    .replace(/javascript\s*:/gi, '')
+    .replace(/<iframe\b[^>]*>.*?<\/iframe>/gi, '')
+    .replace(/<object\b[^>]*>.*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '');
+}
+window.sanitizeHTML = sanitizeHTML;
+
 /* ---------- View Lifecycle / Cleanup (PR-2) ---------- */
 var _viewCleanupFns = [];
 
@@ -21,8 +43,8 @@ function _cleanupCurrentView() {
 function setTopbar({ title = '', meta = '', actions = '' }) {
   document.getElementById('topbar-title').textContent = title;
   document.getElementById('topbar-meta').textContent = meta;
-  // actions is trusted HTML built internally by view files
-  document.getElementById('topbar-actions').innerHTML = actions;
+  // Sanitize actions HTML as defense-in-depth
+  document.getElementById('topbar-actions').innerHTML = sanitizeHTML(actions);
 }
 
 function setActiveNav(name) {
@@ -95,7 +117,7 @@ function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
 
   // Focus first input
   const first = modal.querySelector('input, select, textarea, button');
-  if (first) setTimeout(() => first.focus(), 50);
+  if (first) setTimeout(() => first.focus(), MODAL_FOCUS_DELAY_MS);
 
   // Focus trap
   _modalFocusTrap = _buildFocusTrap(modal);
@@ -108,13 +130,26 @@ function closeModal() {
 
   bodyEl.innerHTML   = '';
   footerEl.innerHTML = '';
+
+  // Remove event listener BEFORE calling callback to prevent leak:
+  // If callback opens a new modal, the new modal's listener would be
+  // incorrectly removed if we did this after the callback.
   if (_modalFocusTrap) { document.removeEventListener('keydown', _modalFocusTrap); _modalFocusTrap = null; }
+
+  // Snapshot stack depth before callback — callback may open a new modal
+  const stackDepthBefore = _modalStack.length;
 
   if (typeof _modalCloseCallback === 'function') {
     const cb = _modalCloseCallback;
     _modalCloseCallback = null;
     cb();
   }
+
+  // If the callback opened a new modal (stack grew or a fresh modal is now active),
+  // skip stacked-modal restoration to avoid orphaning the new modal's keydown listener.
+  const callbackOpenedModal = _modalStack.length > stackDepthBefore ||
+    (_modalFocusTrap !== null);
+  if (callbackOpenedModal) return;
 
   // Restore stacked modal or hide backdrop
   if (_modalStack.length > 0) {
@@ -128,7 +163,7 @@ function closeModal() {
     _modalFocusTrap = prev.focusTrap;
     if (_modalFocusTrap) document.addEventListener('keydown', _modalFocusTrap);
     const first = modal.querySelector('input, select, textarea, button');
-    if (first) setTimeout(() => first.focus(), 50);
+    if (first) setTimeout(() => first.focus(), MODAL_FOCUS_DELAY_MS);
   } else {
     document.getElementById('modal-backdrop').classList.add('hidden');
   }
@@ -144,7 +179,7 @@ function closeAllModals() {
 }
 
 /* ---------- Toast ---------- */
-function showToast(message, type = 'default', duration = 3000) {
+function showToast(message, type = 'default', duration = TOAST_DEFAULT_DURATION_MS) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   toast.className = 'toast' + (type !== 'default' ? ' toast-' + type : '');
@@ -867,13 +902,13 @@ function startSessionTimer() {
   // Check every 60 seconds
   _sessionTimeoutInterval = setInterval(() => {
     const elapsed = Date.now() - _lastActivity;
-    const fifteenMin = 15 * 60 * 1000;
-    const sixteenMin = 16 * 60 * 1000;
-    const fourteenMin = 14 * 60 * 1000;
+    const timeoutMs = SESSION_TIMEOUT_MS;
+    const forceLogoutMs = SESSION_TIMEOUT_MS + 60000; // 1 min grace after timeout
+    const warningMs = SESSION_TIMEOUT_MS - SESSION_WARNING_MS;
 
-    // 16 min: force logout (warning was not dismissed)
-    if (elapsed > sixteenMin) {
-      logSystemAudit('SESSION_TIMEOUT', (getSessionUser() || {}).id || '', '', 'Session timed out after 16 min inactivity', (getSessionUser() || {}).email || '');
+    // Force logout (warning was not dismissed within grace period)
+    if (elapsed > forceLogoutMs) {
+      logSystemAudit('SESSION_TIMEOUT', (getSessionUser() || {}).id || '', '', 'Session timed out after inactivity (force logout)', (getSessionUser() || {}).email || '');
       stopSessionTimer();
       closeAllModals();
       logout();
@@ -882,8 +917,8 @@ function startSessionTimer() {
       return;
     }
 
-    // 15 min: check via data.js isSessionExpired as backup
-    if (isSessionExpired(15)) {
+    // Timeout: check via data.js isSessionExpired as backup
+    if (isSessionExpired(SESSION_TIMEOUT_MS / 60000)) {
       logSystemAudit('SESSION_TIMEOUT', (getSessionUser() || {}).id || '', '', 'Session timed out', (getSessionUser() || {}).email || '');
       stopSessionTimer();
       closeAllModals();
@@ -893,8 +928,8 @@ function startSessionTimer() {
       return;
     }
 
-    // 14 min (1 min before expiry): show warning modal
-    if (!_sessionWarningShown && elapsed > fourteenMin) {
+    // Show warning before session expires
+    if (!_sessionWarningShown && elapsed > warningMs) {
       _sessionWarningShown = true;
       openModal({
         title: 'Session Expiring',
@@ -1730,6 +1765,18 @@ function initListsNav() {
   }
 }
 
+/* ---------- Skip link focus management ---------- */
+var skipLink = document.getElementById('skip-link') || document.querySelector('.skip-link');
+if (skipLink) {
+  skipLink.addEventListener('click', function(e) {
+    var target = document.getElementById('app');
+    if (target) {
+      target.setAttribute('tabindex', '-1');
+      target.focus();
+    }
+  });
+}
+
 /* ---------- Init ---------- */
 async function init() {
   try {
@@ -1750,7 +1797,7 @@ async function init() {
   initForcePasswordChange();
 
   if (isAuthenticated()) {
-    if (isSessionExpired(15)) {
+    if (isSessionExpired(SESSION_TIMEOUT_MS / 60000)) {
       logout();
       showLogin();
       showToast('Your session has expired. Please sign in again.', 'error');

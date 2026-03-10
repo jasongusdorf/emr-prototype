@@ -324,10 +324,10 @@ function openPrenatalModal(patientId, existing) {
 
   var bodyHTML =
     '<div class="form-row">' +
-      '<div class="form-group"><label>LMP</label><input id="pn-lmp" type="date" class="form-control" value="' + esc(r.lmp || '') + '" /></div>' +
-      '<div class="form-group"><label>EDD (auto-calculated if blank)</label><input id="pn-edd" type="date" class="form-control" value="' + esc(r.edd || '') + '" /></div>' +
+      '<div class="form-group"><label for="pn-lmp">LMP</label><input id="pn-lmp" type="date" class="form-control" value="' + esc(r.lmp || '') + '" /></div>' +
+      '<div class="form-group"><label for="pn-edd">EDD (auto-calculated if blank)</label><input id="pn-edd" type="date" class="form-control" value="' + esc(r.edd || '') + '" /></div>' +
     '</div>' +
-    '<div class="form-group"><label>EDD Source</label><select id="pn-edd-source" class="form-control">' +
+    '<div class="form-group"><label for="pn-edd-source">EDD Source</label><select id="pn-edd-source" class="form-control">' +
       ['LMP', 'Ultrasound Dating', 'IVF Transfer Date'].map(function(s) {
         return '<option' + (r.eddSource === s ? ' selected' : '') + '>' + s + '</option>';
       }).join('') +
@@ -335,11 +335,11 @@ function openPrenatalModal(patientId, existing) {
     '<fieldset class="form-fieldset">' +
       '<legend>GTPAL</legend>' +
       '<div class="form-row">' +
-        '<div class="form-group"><label>Gravida (G)</label><input id="pn-gravida" type="number" min="0" class="form-control" value="' + (r.gravida || 0) + '" /></div>' +
-        '<div class="form-group"><label>Term (T)</label><input id="pn-term" type="number" min="0" class="form-control" value="' + (r.term || 0) + '" /></div>' +
-        '<div class="form-group"><label>Preterm (P)</label><input id="pn-preterm" type="number" min="0" class="form-control" value="' + (r.preterm || 0) + '" /></div>' +
-        '<div class="form-group"><label>Abortus (A)</label><input id="pn-abortus" type="number" min="0" class="form-control" value="' + (r.abortus || 0) + '" /></div>' +
-        '<div class="form-group"><label>Living (L)</label><input id="pn-living" type="number" min="0" class="form-control" value="' + (r.living || 0) + '" /></div>' +
+        '<div class="form-group"><label for="pn-gravida">Gravida (G)</label><input id="pn-gravida" type="number" min="0" class="form-control" value="' + (r.gravida || 0) + '" /></div>' +
+        '<div class="form-group"><label for="pn-term">Term (T)</label><input id="pn-term" type="number" min="0" class="form-control" value="' + (r.term || 0) + '" /></div>' +
+        '<div class="form-group"><label for="pn-preterm">Preterm (P)</label><input id="pn-preterm" type="number" min="0" class="form-control" value="' + (r.preterm || 0) + '" /></div>' +
+        '<div class="form-group"><label for="pn-abortus">Abortus (A)</label><input id="pn-abortus" type="number" min="0" class="form-control" value="' + (r.abortus || 0) + '" /></div>' +
+        '<div class="form-group"><label for="pn-living">Living (L)</label><input id="pn-living" type="number" min="0" class="form-control" value="' + (r.living || 0) + '" /></div>' +
       '</div>' +
       '<div id="pn-gtpal-preview" style="margin-top:4px;font-weight:600;font-size:14px;"></div>' +
     '</fieldset>' +
@@ -428,26 +428,26 @@ function openPrenatalModal(patientId, existing) {
 function openPrenatalVisitModal(patientId, record) {
   var bodyHTML =
     '<div class="form-row">' +
-      '<div class="form-group"><label>Visit Date</label><input id="pv-date" type="date" class="form-control" value="' + new Date().toISOString().slice(0, 10) + '" /></div>' +
-      '<div class="form-group"><label>EGA</label><input id="pv-ega" class="form-control" value="' + (record.lmp ? calculateEGA(record.lmp) : '') + '" /></div>' +
+      '<div class="form-group"><label for="pv-date">Visit Date</label><input id="pv-date" type="date" class="form-control" value="' + new Date().toISOString().slice(0, 10) + '" /></div>' +
+      '<div class="form-group"><label for="pv-ega">EGA</label><input id="pv-ega" class="form-control" value="' + (record.lmp ? calculateEGA(record.lmp) : '') + '" /></div>' +
     '</div>' +
     '<div class="form-row">' +
-      '<div class="form-group"><label>Fundal Height (cm)</label><input id="pv-fundal" class="form-control" /></div>' +
-      '<div class="form-group"><label>Fetal Heart Rate</label><input id="pv-fhr" class="form-control" /></div>' +
+      '<div class="form-group"><label for="pv-fundal">Fundal Height (cm)</label><input id="pv-fundal" class="form-control" /></div>' +
+      '<div class="form-group"><label for="pv-fhr">Fetal Heart Rate</label><input id="pv-fhr" class="form-control" /></div>' +
     '</div>' +
     '<div class="form-row">' +
-      '<div class="form-group"><label>Weight (lbs)</label><input id="pv-weight" class="form-control" /></div>' +
-      '<div class="form-group"><label>Blood Pressure</label><input id="pv-bp" class="form-control" placeholder="120/80" /></div>' +
+      '<div class="form-group"><label for="pv-weight">Weight (lbs)</label><input id="pv-weight" class="form-control" /></div>' +
+      '<div class="form-group"><label for="pv-bp">Blood Pressure</label><input id="pv-bp" class="form-control" placeholder="120/80" /></div>' +
     '</div>' +
     '<div class="form-row">' +
-      '<div class="form-group"><label>Urine Protein</label><select id="pv-protein" class="form-control"><option>Negative</option><option>Trace</option><option>1+</option><option>2+</option><option>3+</option><option>4+</option></select></div>' +
-      '<div class="form-group"><label>Glucose</label><select id="pv-glucose" class="form-control"><option>Negative</option><option>Trace</option><option>1+</option><option>2+</option><option>3+</option><option>4+</option></select></div>' +
+      '<div class="form-group"><label for="pv-protein">Urine Protein</label><select id="pv-protein" class="form-control"><option>Negative</option><option>Trace</option><option>1+</option><option>2+</option><option>3+</option><option>4+</option></select></div>' +
+      '<div class="form-group"><label for="pv-glucose">Glucose</label><select id="pv-glucose" class="form-control"><option>Negative</option><option>Trace</option><option>1+</option><option>2+</option><option>3+</option><option>4+</option></select></div>' +
     '</div>' +
     /* 6b: new fields */
     '<div class="form-row">' +
-      '<div class="form-group"><label>Edema</label><select id="pv-edema" class="form-control"><option value="">None</option><option>0</option><option>1+</option><option>2+</option><option>3+</option><option>4+</option></select></div>' +
-      '<div class="form-group"><label>Fetal Presentation</label><select id="pv-presentation" class="form-control"><option value="">Select</option><option>Cephalic</option><option>Breech</option><option>Transverse</option></select></div>' +
-      '<div class="form-group"><label>Fetal Movement</label><select id="pv-fetal-movement" class="form-control"><option value="">Select</option><option>Adequate</option><option>Decreased</option><option>None</option></select></div>' +
+      '<div class="form-group"><label for="pv-edema">Edema</label><select id="pv-edema" class="form-control"><option value="">None</option><option>0</option><option>1+</option><option>2+</option><option>3+</option><option>4+</option></select></div>' +
+      '<div class="form-group"><label for="pv-presentation">Fetal Presentation</label><select id="pv-presentation" class="form-control"><option value="">Select</option><option>Cephalic</option><option>Breech</option><option>Transverse</option></select></div>' +
+      '<div class="form-group"><label for="pv-fetal-movement">Fetal Movement</label><select id="pv-fetal-movement" class="form-control"><option value="">Select</option><option>Adequate</option><option>Decreased</option><option>None</option></select></div>' +
     '</div>' +
     /* Preeclampsia symptoms */
     '<fieldset class="form-fieldset">' +
@@ -462,9 +462,9 @@ function openPrenatalVisitModal(patientId, record) {
     '<fieldset class="form-fieldset">' +
       '<legend>Cervical Exam</legend>' +
       '<div class="form-row">' +
-        '<div class="form-group"><label>Dilation (cm)</label><input id="pv-cx-dilation" type="number" min="0" max="10" step="0.5" class="form-control" /></div>' +
-        '<div class="form-group"><label>Effacement (%)</label><input id="pv-cx-effacement" type="number" min="0" max="100" class="form-control" /></div>' +
-        '<div class="form-group"><label>Station (-5 to +5)</label><input id="pv-cx-station" type="number" min="-5" max="5" class="form-control" /></div>' +
+        '<div class="form-group"><label for="pv-cx-dilation">Dilation (cm)</label><input id="pv-cx-dilation" type="number" min="0" max="10" step="0.5" class="form-control" /></div>' +
+        '<div class="form-group"><label for="pv-cx-effacement">Effacement (%)</label><input id="pv-cx-effacement" type="number" min="0" max="100" class="form-control" /></div>' +
+        '<div class="form-group"><label for="pv-cx-station">Station (-5 to +5)</label><input id="pv-cx-station" type="number" min="-5" max="5" class="form-control" /></div>' +
       '</div>' +
     '</fieldset>';
 

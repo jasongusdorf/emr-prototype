@@ -212,18 +212,56 @@ function checkStorageQuota() {
 
 var _dataCache = {};
 
+/* ---------- Write Mutex / Locking ---------- */
+var _writeLocks = {};
+function withWriteLock(key, fn) {
+  if (_writeLocks[key]) {
+    console.warn('[EMR] Write lock contention on key: ' + key);
+    // Queue retry after current call stack clears
+    return new Promise(function(resolve) {
+      setTimeout(function() { resolve(withWriteLock(key, fn)); }, 1);
+    });
+  }
+  _writeLocks[key] = true;
+  try {
+    return fn();
+  } finally {
+    _writeLocks[key] = false;
+  }
+}
+
 function loadAll(key, includeDeleted) {
   var cacheKey = key + (includeDeleted ? ':all' : '');
   if (_dataCache[cacheKey]) return _dataCache[cacheKey];
   var arr;
   try {
     arr = _storageAdapter.getAll(key);
+    // Successful parse — save backup
+    try { _storageAdapter.setItem(key + '_backup', JSON.stringify(arr)); } catch(bkErr) { /* backup write failed, ignore */ }
   } catch (e) {
     console.error('[EMR] Data corrupted for key "' + key + '":', e.message);
-    if (typeof showToast === 'function') {
+    // Attempt to restore from backup
+    try {
+      var backupRaw = _storageAdapter.getItem(key + '_backup');
+      if (backupRaw) {
+        arr = JSON.parse(backupRaw);
+        // Restore the main key from backup
+        _storageAdapter.setItem(key, backupRaw);
+        console.warn('[EMR] Restored "' + key + '" from backup (' + arr.length + ' records)');
+        if (typeof showToast === 'function') {
+          showToast('Data recovered from backup for ' + key.replace('emr_', ''), 'warning', 5000);
+        }
+      } else {
+        arr = [];
+      }
+    } catch (restoreErr) {
+      console.error('[EMR] Backup restore also failed for "' + key + '":', restoreErr.message);
+      arr = [];
+    }
+    if (!Array.isArray(arr)) arr = [];
+    if (arr.length === 0 && typeof showToast === 'function') {
       showToast('Data error in ' + key.replace('emr_', '') + ' — some records may be missing', 'error', 5000);
     }
-    return [];
   }
   if (!Array.isArray(arr)) arr = [];
   if (!includeDeleted) {
@@ -482,20 +520,30 @@ function getPatients() { return loadAll(KEYS.patients); }
 function getPatient(id) { return getPatients().find(p => p.id === id) || null; }
 
 function savePatient(data) {
-  /* --- Schema validation (PR-7) --- */
+  /* --- Schema validation (PR-7) — validate on BOTH create and update --- */
   if (!data.id || !getPatient(data.id)) {
     var schemaCheck = validateSchema(data, 'patient');
     if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
   }
-  /* --- Data validation (hardening) --- */
-  // Only validate on new patient creation (no existing id) or if names are explicitly being set
-  if (!data.id || !getPatient(data.id)) {
+  /* --- Data validation (hardening) — validate firstName/lastName on create AND update --- */
+  var isUpdate = data.id && getPatient(data.id);
+  // On create: firstName and lastName are required
+  if (!isUpdate) {
     const reqCheck = validateRequired(data, ['firstName', 'lastName']);
     if (!reqCheck.valid) return { error: true, errors: reqCheck.errors };
     if (typeof data.firstName !== 'string' || data.firstName.trim() === '') {
       return { error: true, errors: ['firstName must be a non-empty string'] };
     }
     if (typeof data.lastName !== 'string' || data.lastName.trim() === '') {
+      return { error: true, errors: ['lastName must be a non-empty string'] };
+    }
+  }
+  // On update: if firstName or lastName is being set, it must be a non-empty string
+  if (isUpdate) {
+    if (data.firstName !== undefined && (typeof data.firstName !== 'string' || data.firstName.trim() === '')) {
+      return { error: true, errors: ['firstName must be a non-empty string'] };
+    }
+    if (data.lastName !== undefined && (typeof data.lastName !== 'string' || data.lastName.trim() === '')) {
       return { error: true, errors: ['lastName must be a non-empty string'] };
     }
   }
@@ -510,41 +558,94 @@ function savePatient(data) {
   }
   /* --- End validation --- */
 
-  const patients = loadAll(KEYS.patients, true);
-  const existing = patients.findIndex(p => p.id === data.id);
-  if (existing >= 0) {
-    patients[existing] = { ...patients[existing], ...data };
-  } else {
-    const newPatient = {
-      id:        generateId(),
-      mrn:       generateMRN(),
-      firstName: '',
-      lastName:  '',
-      dob:       '',
-      sex:       '',
-      phone:     '',
-      insurance: '',
-      email:     '',
-      addressStreet: '',
-      addressCity:   '',
-      addressState:  '',
-      addressZip:    '',
-      emergencyContactName:         '',
-      emergencyContactPhone:        '',
-      emergencyContactRelationship: '',
-      pharmacyName:  '',
-      pharmacyPhone: '',
-      pharmacyFax:   '',
-      panelProviders: [],
-      createdAt: new Date().toISOString(),
-      ...data,
-    };
-    patients.push(newPatient);
+  return withWriteLock(KEYS.patients, function() {
+    const patients = loadAll(KEYS.patients, true);
+    const existing = patients.findIndex(p => p.id === data.id);
+    if (existing >= 0) {
+      patients[existing] = { ...patients[existing], ...data };
+    } else {
+      const newPatient = {
+        id:        generateId(),
+        mrn:       generateMRN(),
+        firstName: '',
+        lastName:  '',
+        dob:       '',
+        sex:       '',
+        phone:     '',
+        insurance: '',
+        email:     '',
+        addressStreet: '',
+        addressCity:   '',
+        addressState:  '',
+        addressZip:    '',
+        emergencyContactName:         '',
+        emergencyContactPhone:        '',
+        emergencyContactRelationship: '',
+        pharmacyName:  '',
+        pharmacyPhone: '',
+        pharmacyFax:   '',
+        panelProviders: [],
+        createdAt: new Date().toISOString(),
+        ...data,
+      };
+      patients.push(newPatient);
+      saveAll(KEYS.patients, patients);
+      return newPatient;
+    }
     saveAll(KEYS.patients, patients);
-    return newPatient;
+    return patients[existing >= 0 ? existing : patients.length - 1];
+  });
+}
+
+/**
+ * _orphanCleanup — removes dangling references when an entity is deleted.
+ * For patients: removes the patient from other patients' panelProviders,
+ * patient lists, and bed assignments.
+ */
+function _orphanCleanup(entityType, id) {
+  if (entityType === 'patient') {
+    // Remove from panelProviders on other patients (unlikely but defensive)
+    // Remove from patient lists
+    var lists = loadAll(KEYS.patientLists, true);
+    var listChanged = false;
+    lists.forEach(function(list) {
+      if (list.patientIds && list.patientIds.indexOf(id) >= 0) {
+        list.patientIds = list.patientIds.filter(function(pid) { return pid !== id; });
+        if (list.patientMeta && list.patientMeta[id]) {
+          delete list.patientMeta[id];
+        }
+        listChanged = true;
+      }
+    });
+    if (listChanged) saveAll(KEYS.patientLists, lists);
+
+    // Deactivate bed assignments for this patient
+    var beds = loadAll(KEYS.bedAssignments, true);
+    var bedChanged = false;
+    beds.forEach(function(bed) {
+      if (bed.patientId === id && bed.active) {
+        bed.active = false;
+        bedChanged = true;
+      }
+    });
+    if (bedChanged) saveAll(KEYS.bedAssignments, beds);
+
+    // Remove from handoff notes references
+    var handoffs = loadAll(KEYS.handoffNotes).filter(function(h) { return h.patientId === id; });
+    handoffs.forEach(function(h) { softDeleteRecord(KEYS.handoffNotes, h.id); });
+
+    // Clean up shared handoffs
+    var sharedHandoffs = loadAll(KEYS.sharedHandoffs, true);
+    var shChanged = false;
+    sharedHandoffs.forEach(function(sh) {
+      if (sh.patientId === id && !sh._deleted) {
+        sh._deleted = true;
+        sh._deletedAt = new Date().toISOString();
+        shChanged = true;
+      }
+    });
+    if (shChanged) saveAll(KEYS.sharedHandoffs, sharedHandoffs);
   }
-  saveAll(KEYS.patients, patients);
-  return patients[existing >= 0 ? existing : patients.length - 1];
 }
 
 function deletePatient(id) {
@@ -582,6 +683,8 @@ function deletePatient(id) {
       softDeleteRecord(ck.key, r.id);
     });
   });
+  // Clean up orphaned references (lists, beds, handoffs)
+  _orphanCleanup('patient', id);
   // Soft-delete the patient record itself
   softDeleteRecord(KEYS.patients, id);
 }
@@ -645,6 +748,10 @@ function saveEncounter(data) {
   if (!data.id || !getEncounter(data.id)) {
     var encReq = validateRequired(data, ['patientId']);
     if (!encReq.valid) return { error: true, errors: encReq.errors };
+    // Null guard: verify patient exists
+    if (data.patientId && !getPatient(data.patientId)) {
+      return { error: true, errors: ['Patient not found for patientId: ' + data.patientId] };
+    }
     var VALID_ENCOUNTER_VISIT_TYPES = ['Outpatient', 'Inpatient', 'Emergency'];
     if (data.visitType && VALID_ENCOUNTER_VISIT_TYPES.indexOf(data.visitType) < 0) {
       console.warn('saveEncounter: non-standard visitType "' + data.visitType + '". Recommended: Outpatient, Inpatient, Emergency.');
@@ -652,30 +759,32 @@ function saveEncounter(data) {
   }
   /* --- End validation --- */
 
-  const encounters = loadAll(KEYS.encounters, true);
-  const existing = encounters.findIndex(e => e.id === data.id);
-  if (existing >= 0) {
-    encounters[existing] = { ...encounters[existing], ...data };
-    saveAll(KEYS.encounters, encounters);
-    return encounters[existing];
-  } else {
-    const newEncounter = {
-      id:          generateId(),
-      patientId:   '',
-      providerId:  '',
-      visitType:   'Outpatient',
-      visitSubtype:'',
-      dateTime:    new Date().toISOString(),
-      status:      'Open',
-      diagnoses:   [],
-      cptCodes:    [],
-      ...data,
-    };
-    encounters.push(newEncounter);
-    saveAll(KEYS.encounters, encounters);
-    logAudit('Encounter Created', 'encounter', newEncounter.id, newEncounter.patientId, newEncounter.visitType);
-    return newEncounter;
-  }
+  return withWriteLock(KEYS.encounters, function() {
+    const encounters = loadAll(KEYS.encounters, true);
+    const existing = encounters.findIndex(e => e.id === data.id);
+    if (existing >= 0) {
+      encounters[existing] = { ...encounters[existing], ...data };
+      saveAll(KEYS.encounters, encounters);
+      return encounters[existing];
+    } else {
+      const newEncounter = {
+        id:          generateId(),
+        patientId:   '',
+        providerId:  '',
+        visitType:   'Outpatient',
+        visitSubtype:'',
+        dateTime:    new Date().toISOString(),
+        status:      'Open',
+        diagnoses:   [],
+        cptCodes:    [],
+        ...data,
+      };
+      encounters.push(newEncounter);
+      saveAll(KEYS.encounters, encounters);
+      logAudit('Encounter Created', 'encounter', newEncounter.id, newEncounter.patientId, newEncounter.visitType);
+      return newEncounter;
+    }
+  });
 }
 
 function deleteEncounter(id) {
@@ -706,43 +815,45 @@ function saveNote(data) {
     var schemaCheck = validateSchema(data, 'note');
     if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
   }
-  const notes = loadAll(KEYS.notes, true);
-  const existing = notes.findIndex(n => n.encounterId === data.encounterId);
-  if (existing >= 0) {
-    const wasUnsigned = !notes[existing].signed;
-    notes[existing] = {
-      ...notes[existing],
-      ...data,
-      lastModified: new Date().toISOString(),
-    };
-    saveAll(KEYS.notes, notes);
-    if (wasUnsigned && notes[existing].signed) {
-      logAudit('Note Signed', 'note', notes[existing].id, notes[existing].encounterId, 'Signed by ' + (notes[existing].signedBy || ''));
+  return withWriteLock(KEYS.notes, function() {
+    const notes = loadAll(KEYS.notes, true);
+    const existing = notes.findIndex(n => n.encounterId === data.encounterId);
+    if (existing >= 0) {
+      const wasUnsigned = !notes[existing].signed;
+      notes[existing] = {
+        ...notes[existing],
+        ...data,
+        lastModified: new Date().toISOString(),
+      };
+      saveAll(KEYS.notes, notes);
+      if (wasUnsigned && notes[existing].signed) {
+        logAudit('Note Signed', 'note', notes[existing].id, notes[existing].encounterId, 'Signed by ' + (notes[existing].signedBy || ''));
+      }
+      return notes[existing];
+    } else {
+      const newNote = {
+        id:             generateId(),
+        encounterId:    '',
+        noteBody:       '',
+        chiefComplaint: '',
+        hpi:            '',
+        ros:            '',
+        physicalExam:   '',
+        assessment:     '',
+        plan:           '',
+        signed:         false,
+        signedBy:       null,
+        signedAt:       null,
+        pinned:         false,
+        lastModified:   new Date().toISOString(),
+        addenda:        [],
+        ...data,
+      };
+      notes.push(newNote);
+      saveAll(KEYS.notes, notes);
+      return newNote;
     }
-    return notes[existing];
-  } else {
-    const newNote = {
-      id:             generateId(),
-      encounterId:    '',
-      noteBody:       '',
-      chiefComplaint: '',
-      hpi:            '',
-      ros:            '',
-      physicalExam:   '',
-      assessment:     '',
-      plan:           '',
-      signed:         false,
-      signedBy:       null,
-      signedAt:       null,
-      pinned:         false,
-      lastModified:   new Date().toISOString(),
-      addenda:        [],
-      ...data,
-    };
-    notes.push(newNote);
-    saveAll(KEYS.notes, notes);
-    return newNote;
-  }
+  });
 }
 
 function deleteNote(encounterId) {
@@ -775,6 +886,13 @@ function saveOrder(data) {
   if (!data.id || !getOrder(data.id)) {
     var ordReq = validateRequired(data, ['encounterId', 'patientId']);
     if (!ordReq.valid) return { error: true, errors: ordReq.errors };
+    // Null guard: verify foreign keys exist
+    if (data.patientId && !getPatient(data.patientId)) {
+      return { error: true, errors: ['Patient not found for patientId: ' + data.patientId] };
+    }
+    if (data.encounterId && !getEncounter(data.encounterId)) {
+      return { error: true, errors: ['Encounter not found for encounterId: ' + data.encounterId] };
+    }
     if (data.type && VALID_ORDER_TYPES.indexOf(data.type) < 0) {
       return { error: true, errors: ['Order type must be one of: ' + VALID_ORDER_TYPES.join(', ')] };
     }
@@ -804,41 +922,43 @@ function saveOrder(data) {
   }
   /* --- End validation --- */
 
-  const orders = loadAll(KEYS.orders, true);
-  const existing = orders.findIndex(o => o.id === data.id);
-  if (existing >= 0) {
-    orders[existing] = { ...orders[existing], ...data };
-    saveAll(KEYS.orders, orders);
-    return orders[existing];
-  } else {
-    const newOrder = {
-      id:          generateId(),
-      encounterId: '',
-      patientId:   '',
-      orderedBy:   '',
-      type:        'Medication',
-      priority:    'Routine',
-      status:      'Pending',
-      signed:      false,
-      signedBy:    '',
-      signedAt:    null,
-      detail:      {},
-      dateTime:    new Date().toISOString(),
-      completedAt: null,
-      notes:       '',
-      acknowledgedBy: null,
-      acknowledgedAt: null,
-      ...data,
-    };
-    orders.push(newOrder);
-    saveAll(KEYS.orders, orders);
-    logAudit('Order Placed', 'order', newOrder.id, newOrder.patientId, newOrder.type);
-    /* --- System audit for order placement (hardening) --- */
-    var orderUser = getSessionUser();
-    logSystemAudit('ORDER_PLACED', orderUser ? orderUser.id : (newOrder.orderedBy || ''), newOrder.patientId, 'Order placed: ' + newOrder.type + ' (id: ' + newOrder.id + ')', orderUser ? orderUser.email : '');
-    /* --- End audit --- */
-    return newOrder;
-  }
+  return withWriteLock(KEYS.orders, function() {
+    const orders = loadAll(KEYS.orders, true);
+    const existing = orders.findIndex(o => o.id === data.id);
+    if (existing >= 0) {
+      orders[existing] = { ...orders[existing], ...data };
+      saveAll(KEYS.orders, orders);
+      return orders[existing];
+    } else {
+      const newOrder = {
+        id:          generateId(),
+        encounterId: '',
+        patientId:   '',
+        orderedBy:   '',
+        type:        'Medication',
+        priority:    'Routine',
+        status:      'Pending',
+        signed:      false,
+        signedBy:    '',
+        signedAt:    null,
+        detail:      {},
+        dateTime:    new Date().toISOString(),
+        completedAt: null,
+        notes:       '',
+        acknowledgedBy: null,
+        acknowledgedAt: null,
+        ...data,
+      };
+      orders.push(newOrder);
+      saveAll(KEYS.orders, orders);
+      logAudit('Order Placed', 'order', newOrder.id, newOrder.patientId, newOrder.type);
+      /* --- System audit for order placement (hardening) --- */
+      var orderUser = getSessionUser();
+      logSystemAudit('ORDER_PLACED', orderUser ? orderUser.id : (newOrder.orderedBy || ''), newOrder.patientId, 'Order placed: ' + newOrder.type + ' (id: ' + newOrder.id + ')', orderUser ? orderUser.email : '');
+      /* --- End audit --- */
+      return newOrder;
+    }
+  });
 }
 
 function deleteOrder(id) {
@@ -1626,47 +1746,72 @@ function getUserByEmail(email) {
 }
 
 function saveUser(data) {
-  const users = loadAll(KEYS.users, true);
-  const existing = users.findIndex(u => u.id === data.id);
-  if (existing >= 0) {
-    users[existing] = { ...users[existing], ...data };
+  return withWriteLock(KEYS.users, function() {
+    const users = loadAll(KEYS.users, true);
+    const existing = users.findIndex(u => u.id === data.id);
+    if (existing >= 0) {
+      users[existing] = { ...users[existing], ...data };
+      saveAll(KEYS.users, users);
+      return users[existing];
+    }
+    const newUser = {
+      id: generateId(),
+      firstName: '',
+      lastName: '',
+      dob: '',
+      npiNumber: '',
+      email: '',
+      phone: '',
+      degree: 'MD',
+      passwordHash: '',
+      salt: '',
+      role: 'user',
+      status: 'pending',
+      mustChangePassword: false,
+      approvedBy: '',
+      approvedAt: '',
+      deactivatedAt: '',
+      lastPasswordChange: '',
+      createdAt: new Date().toISOString(),
+      ...data,
+    };
+    users.push(newUser);
     saveAll(KEYS.users, users);
-    return users[existing];
-  }
-  const newUser = {
-    id: generateId(),
-    firstName: '',
-    lastName: '',
-    dob: '',
-    npiNumber: '',
-    email: '',
-    phone: '',
-    degree: 'MD',
-    passwordHash: '',
-    role: 'user',
-    status: 'pending',
-    mustChangePassword: false,
-    approvedBy: '',
-    approvedAt: '',
-    deactivatedAt: '',
-    lastPasswordChange: '',
-    createdAt: new Date().toISOString(),
-    ...data,
-  };
-  users.push(newUser);
-  saveAll(KEYS.users, users);
-  return newUser;
+    return newUser;
+  });
 }
 
-async function hashPassword(pw) {
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(pw);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+/**
+ * hashPassword — PBKDF2 with random salt (replaces old SHA-256).
+ * Returns { hash: string, salt: string }.
+ * Pass an existing salt to verify; omit for new hash generation.
+ */
+async function hashPassword(password, salt) {
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    throw new Error('Secure hashing unavailable — crypto.subtle requires HTTPS or localhost. Please use a local server.');
   }
-  throw new Error('Secure hashing unavailable — crypto.subtle requires HTTPS or localhost. Please use a local server.');
+  if (!salt) {
+    var saltBytes = crypto.getRandomValues(new Uint8Array(16));
+    salt = Array.from(saltBytes).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  var encoder = new TextEncoder();
+  var keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+  var saltBuffer = encoder.encode(salt);
+  var bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBuffer, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
+  var hashArray = Array.from(new Uint8Array(bits));
+  var hash = hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  return { hash: hash, salt: salt };
+}
+
+/**
+ * _legacyHashPassword — old SHA-256 hash for backward compatibility migration.
+ */
+async function _legacyHashPassword(pw) {
+  var encoder = new TextEncoder();
+  var data = encoder.encode(pw);
+  var hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  var hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
 }
 
 /* ---------- Account Lockout Helpers (hardening) ---------- */
@@ -1719,6 +1864,12 @@ function isAccountLocked(email) {
   return { locked: true, minutesRemaining: remaining };
 }
 
+/* ---------- Session Token Generation (hardening) ---------- */
+function generateSessionToken(userId) {
+  var token = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('sess_' + Date.now() + '_' + Math.random().toString(36).substr(2));
+  return { token: token, userId: userId, createdAt: new Date().toISOString(), loginAt: new Date().toISOString(), lastActivity: new Date().toISOString() };
+}
+
 async function login(email, password) {
   /* --- Account lockout check (hardening) --- */
   var lockStatus = isAccountLocked(email);
@@ -1734,8 +1885,26 @@ async function login(email, password) {
     logSystemAudit('LOGIN_FAILED', '', '', 'Invalid email: ' + email, email);
     return { ok: false, error: 'No user exists with this email.' };
   }
-  const hash = await hashPassword(password);
-  if (hash !== user.passwordHash) {
+
+  /* --- Password verification with PBKDF2 + backward compat migration --- */
+  var passwordMatch = false;
+  if (user.salt) {
+    // New PBKDF2 path
+    var result = await hashPassword(password, user.salt);
+    passwordMatch = (result.hash === user.passwordHash);
+  } else {
+    // Legacy SHA-256 path — migrate on success
+    var legacyHash = await _legacyHashPassword(password);
+    if (legacyHash === user.passwordHash) {
+      passwordMatch = true;
+      // Re-hash with PBKDF2 and save salt
+      var upgraded = await hashPassword(password);
+      saveUser({ id: user.id, passwordHash: upgraded.hash, salt: upgraded.salt });
+      console.log('[EMR] Migrated password hash to PBKDF2 for user: ' + user.email);
+    }
+  }
+
+  if (!passwordMatch) {
     recordFailedLogin(email);
     logSystemAudit('LOGIN_FAILED', user.id, '', 'Wrong password (attempt ' + ((getLoginAttempts()[email] || {}).attempts || 1) + '/' + MAX_LOGIN_ATTEMPTS + ')', user.email);
     var afterLock = isAccountLocked(email);
@@ -1754,10 +1923,19 @@ async function login(email, password) {
     logSystemAudit('LOGIN_FAILED', user.id, '', 'Account deactivated', user.email);
     return { ok: false, error: 'Your account has been deactivated. Please contact an administrator.' };
   }
+  /* --- Temp password expiry check (hardening) --- */
+  if (user.mustChangePassword && user.tempPasswordExpiresAt) {
+    var expiresAt = new Date(user.tempPasswordExpiresAt);
+    if (new Date() >= expiresAt) {
+      logSystemAudit('LOGIN_FAILED', user.id, '', 'Temp password expired', user.email);
+      return { ok: false, error: 'Your temporary password has expired. Please contact an administrator for a new reset.' };
+    }
+  }
   /* --- Clear lockout on successful login (hardening) --- */
   clearLoginAttempts(email);
   /* --- End lockout clear --- */
-  _storageAdapter.setItem(KEYS.session, JSON.stringify({ userId: user.id, loginAt: new Date().toISOString(), lastActivity: new Date().toISOString() }));
+  var sessionObj = generateSessionToken(user.id);
+  _storageAdapter.setItem(KEYS.session, JSON.stringify(sessionObj));
   logSystemAudit('LOGIN', user.id, '', 'Successful login', user.email);
   return { ok: true, user };
 }
@@ -1771,8 +1949,12 @@ function logout() {
 function getSession() {
   try {
     const raw = _storageAdapter.getItem(KEYS.session);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+    if (!raw) return null;
+    var session = JSON.parse(raw);
+    // Validate session token exists
+    if (!session || !session.userId || !session.token) return null;
+    return session;
+  } catch(e) { return null; }
 }
 
 function isAuthenticated() {
@@ -1860,8 +2042,8 @@ async function changePassword(userId, newPassword) {
   var pwCheck = validatePasswordComplexity(newPassword, user.email);
   if (!pwCheck.valid) return { error: true, errors: pwCheck.errors };
   /* --- End validation --- */
-  const passwordHash = await hashPassword(newPassword);
-  saveUser({ id: userId, passwordHash, mustChangePassword: false, lastPasswordChange: new Date().toISOString() });
+  const pwResult = await hashPassword(newPassword);
+  saveUser({ id: userId, passwordHash: pwResult.hash, salt: pwResult.salt, mustChangePassword: false, lastPasswordChange: new Date().toISOString() });
   logSystemAudit('PASSWORD_CHANGED', userId, '', 'Password changed', user.email);
   return true;
 }
@@ -1885,8 +2067,10 @@ async function resetPasswordForUser(userId, initiatorId) {
   const user = getUser(userId);
   if (!user) return null;
   const tempPw = generateTempPassword();
-  const passwordHash = await hashPassword(tempPw);
-  saveUser({ id: userId, passwordHash, mustChangePassword: true });
+  const pwResult = await hashPassword(tempPw);
+  var tempPwExpiry = new Date();
+  tempPwExpiry.setHours(tempPwExpiry.getHours() + 24);
+  saveUser({ id: userId, passwordHash: pwResult.hash, salt: pwResult.salt, mustChangePassword: true, tempPasswordExpiresAt: tempPwExpiry.toISOString() });
   const who = initiatorId ? (getUser(initiatorId) || {}).email || 'admin' : 'self-service';
   logSystemAudit('PASSWORD_RESET', initiatorId || userId, userId, 'Password reset by ' + who, user.email);
   return tempPw;
@@ -2908,7 +3092,7 @@ async function seedAdminIfNeeded() {
   runMigrations();
   const existing = getUserByEmail('admin@clinic.com');
   if (existing) return;
-  const passwordHash = await hashPassword('Admin123');
+  const pwResult = await hashPassword('Admin123');
   const adminId = generateId();
   const adminUser = saveUser({
     id: adminId,
@@ -2919,7 +3103,8 @@ async function seedAdminIfNeeded() {
     email: 'admin@clinic.com',
     phone: '',
     degree: 'MD',
-    passwordHash,
+    passwordHash: pwResult.hash,
+    salt: pwResult.salt,
     role: 'admin',
     status: 'active',
     mustChangePassword: true,

@@ -189,8 +189,8 @@ function renderEncounter(encounterId) {
     title:  'Encounter Note',
     meta:   patName + ' · ' + encounter.status,
     actions: `
-      <a href="${patient ? '#chart/' + patient.id : '#dashboard'}" class="btn btn-secondary btn-sm">← Chart</a>
-      <a href="#orders/${encounterId}" class="btn btn-secondary btn-sm">Orders</a>
+      <a href="${patient ? '#chart/' + esc(patient.id) : '#dashboard'}" class="btn btn-secondary btn-sm">← Chart</a>
+      <a href="#orders/${esc(encounterId)}" class="btn btn-secondary btn-sm">Orders</a>
       <button class="btn btn-secondary btn-sm" id="btn-patient-summary">Patient Summary</button>
     `,
   });
@@ -1679,17 +1679,17 @@ function openDiagnosisEntry(encounter) {
 
   const bodyHTML = `
     <div class="form-group">
-      <label class="form-label">Select Common Code</label>
+      <label class="form-label" for="dx-common">Select Common Code</label>
       <select class="form-control" id="dx-common">${commonOpts}</select>
     </div>
     <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:8px 0">— or enter manually —</div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">ICD-10 Code</label>
+        <label class="form-label" for="dx-code">ICD-10 Code</label>
         <input class="form-control" id="dx-code" placeholder="e.g. I10" />
       </div>
       <div class="form-group">
-        <label class="form-label">Description</label>
+        <label class="form-label" for="dx-desc">Description</label>
         <input class="form-control" id="dx-desc" placeholder="Diagnosis description" />
       </div>
     </div>
@@ -1741,17 +1741,17 @@ function openCPTEntry(encounter) {
 
   const bodyHTML = `
     <div class="form-group">
-      <label class="form-label">Select Common Code</label>
+      <label class="form-label" for="cpt-common">Select Common Code</label>
       <select class="form-control" id="cpt-common">${commonOpts}</select>
     </div>
     <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:8px 0">— or enter manually —</div>
     <div class="form-row">
       <div class="form-group">
-        <label class="form-label">CPT Code</label>
+        <label class="form-label" for="cpt-code">CPT Code</label>
         <input class="form-control" id="cpt-code" placeholder="e.g. 99213" />
       </div>
       <div class="form-group">
-        <label class="form-label">Description</label>
+        <label class="form-label" for="cpt-desc">Description</label>
         <input class="form-control" id="cpt-desc" placeholder="Code description" />
       </div>
     </div>
@@ -2230,7 +2230,7 @@ function _openCoSignRequestModal(encounterId) {
     title: 'Request Co-signature',
     bodyHTML:
       '<div class="form-group">' +
-        '<label class="form-label">Request co-signature from:</label>' +
+        '<label class="form-label" for="cosign-provider">Request co-signature from:</label>' +
         '<select class="form-control" id="cosign-provider">' + optionsHTML + '</select>' +
       '</div>',
     footerHTML:

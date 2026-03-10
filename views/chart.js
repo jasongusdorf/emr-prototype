@@ -1259,7 +1259,7 @@ function buildAllergiesCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table';
-  table.innerHTML = '<thead><tr><th>Allergen</th><th>Type</th><th>Reaction</th><th>Severity</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">Allergen</th><th scope="col">Type</th><th scope="col">Reaction</th><th scope="col">Severity</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   allergies.forEach(a => {
@@ -1633,7 +1633,7 @@ function buildMedicationsCard(patientId, setting) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table';
-  table.innerHTML = '<thead><tr><th>Medication</th><th>Dose / Route</th><th>Frequency</th><th>Status</th><th>Indication</th><th>Start</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">Medication</th><th scope="col">Dose / Route</th><th scope="col">Frequency</th><th scope="col">Status</th><th scope="col">Indication</th><th scope="col">Start</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   [...current, ...past].forEach(med => {
@@ -1818,7 +1818,7 @@ function buildSurgeriesCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table';
-  table.innerHTML = '<thead><tr><th>Procedure</th><th>Date</th><th>Hospital / Facility</th><th>Surgeon</th><th>Notes</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">Procedure</th><th scope="col">Date</th><th scope="col">Hospital / Facility</th><th scope="col">Surgeon</th><th scope="col">Notes</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   surgeries.forEach(surg => {
@@ -2081,7 +2081,7 @@ function buildVitalsTrendCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table vitals-trend-table';
-  table.innerHTML = '<thead><tr><th>Date</th><th>BP</th><th>HR</th><th>RR</th><th>Temp °F</th><th>SpO₂ %</th><th>Wt lbs</th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">Date</th><th scope="col">BP</th><th scope="col">HR</th><th scope="col">RR</th><th scope="col">Temp °F</th><th scope="col">SpO₂ %</th><th scope="col">Wt lbs</th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   displayed.forEach(({ enc, v }) => {
@@ -2152,7 +2152,7 @@ function buildProblemsCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table';
-  table.innerHTML = '<thead><tr><th style="width:4px;padding:0"></th><th>Priority</th><th>Problem</th><th>ICD-10</th><th>Onset</th><th>Status</th><th>Last Review</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th style="width:4px;padding:0"></th><th scope="col">Priority</th><th scope="col">Problem</th><th scope="col">ICD-10</th><th scope="col">Onset</th><th scope="col">Status</th><th scope="col">Last Review</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   problems.forEach(p => {
@@ -2508,7 +2508,7 @@ function _renderLabPanelView(container, results, patientId) {
     if (result.tests && result.tests.length > 0) {
       const tbl = document.createElement('table');
       tbl.className = 'table';
-      tbl.innerHTML = '<thead><tr><th>Test</th><th>Value</th><th>Units</th><th>Reference Range</th><th>Flag</th></tr></thead>';
+      tbl.innerHTML = '<thead><tr><th scope="col">Test</th><th scope="col">Value</th><th scope="col">Units</th><th scope="col">Reference Range</th><th scope="col">Flag</th></tr></thead>';
       const tb = document.createElement('tbody');
       result.tests.forEach(t => {
         const tr = document.createElement('tr');
@@ -2777,7 +2777,7 @@ function _renderLabDateView(container, results, patientId) {
 
       const tbl = document.createElement('table');
       tbl.className = 'table';
-      tbl.innerHTML = '<thead><tr><th>Test</th><th>Value</th><th>Units</th><th>Reference Range</th><th>Flag</th></tr></thead>';
+      tbl.innerHTML = '<thead><tr><th scope="col">Test</th><th scope="col">Value</th><th scope="col">Units</th><th scope="col">Reference Range</th><th scope="col">Flag</th></tr></thead>';
       const tb = document.createElement('tbody');
       result.tests.forEach(t => {
         const tr = document.createElement('tr');
@@ -2932,7 +2932,7 @@ function buildMicroResultsCard(patientId) {
     if (r.gramStain) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Gram Stain:</strong> ' + esc(r.gramStain) + '</div>';
     if (r.organism) detailDiv.innerHTML += '<div style="margin-bottom:8px"><strong>Organism:</strong> ' + esc(r.organism) + '</div>';
     if (r.sensitivities && r.sensitivities.length > 0) {
-      let sensHtml = '<div style="margin-bottom:8px"><strong>Sensitivities:</strong><table class="table" style="margin-top:4px"><thead><tr><th>Antibiotic</th><th>Result</th><th>MIC</th></tr></thead><tbody>';
+      let sensHtml = '<div style="margin-bottom:8px"><strong>Sensitivities:</strong><table class="table" style="margin-top:4px"><thead><tr><th scope="col">Antibiotic</th><th scope="col">Result</th><th scope="col">MIC</th></tr></thead><tbody>';
       r.sensitivities.forEach(s => {
         const cls = s.result === 'Sensitive' ? 'flag-normal' : s.result === 'Resistant' ? 'flag-high' : 'flag-low';
         sensHtml += '<tr><td>' + esc(s.antibiotic) + '</td><td><span class="' + cls + '">' + esc(s.result) + '</span></td><td>' + esc(s.mic || '—') + '</td></tr>';
@@ -3041,7 +3041,7 @@ function buildImmunizationsCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'imm-table';
-  table.innerHTML = '<thead><tr><th>Vaccine</th><th>Date</th><th>Manufacturer</th><th>Lot</th><th>Next Due</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">Vaccine</th><th scope="col">Date</th><th scope="col">Manufacturer</th><th scope="col">Lot</th><th scope="col">Next Due</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   imms.forEach(imm => {
@@ -3326,7 +3326,7 @@ function buildChartOrdersCard(patientId) {
   wrap.className = 'table-wrap';
   const table = document.createElement('table');
   table.className = 'table';
-  table.innerHTML = '<thead><tr><th>Type</th><th>Order</th><th>Duration</th><th>Priority</th><th>Status</th><th>Ordered</th><th>Encounter</th><th></th></tr></thead>';
+  table.innerHTML = '<thead><tr><th scope="col">Type</th><th scope="col">Order</th><th scope="col">Duration</th><th scope="col">Priority</th><th scope="col">Status</th><th scope="col">Ordered</th><th scope="col">Encounter</th><th></th></tr></thead>';
   const tbody = document.createElement('tbody');
 
   allOrders.forEach(order => {
@@ -4432,7 +4432,7 @@ function buildERxTabContent(patientId, container) {
   if (!rxList.length && !meds.length) {
     html += '<p style="text-align:center;padding:32px;color:var(--text-secondary)">No prescriptions on file for this patient.</p>';
   } else {
-    html += '<table class="data-table"><thead><tr><th>Medication</th><th>Sig</th><th>Qty</th><th>Refills</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+    html += '<table class="data-table"><thead><tr><th scope="col">Medication</th><th scope="col">Sig</th><th scope="col">Qty</th><th scope="col">Refills</th><th scope="col">Status</th><th scope="col">Date</th></tr></thead><tbody>';
     rxList.forEach(function(rx) {
       html += '<tr><td style="font-weight:500">' + esc(rx.drugName || rx.name || '') + '</td>' +
         '<td>' + esc(rx.sig || rx.dose || '') + '</td>' +
@@ -4505,8 +4505,8 @@ function buildMARTabContent(patientId, container) {
     '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--badge-danger-bg);display:inline-block"></span> Refused</span>' +
     '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:var(--badge-neutral-bg);display:inline-block"></span> Not Due</span>' +
   '</div>';
-  html += '<div style="overflow-x:auto"><table class="mar-grid"><thead><tr><th style="text-align:left;min-width:180px">Medication</th><th>Freq</th>';
-  hours.forEach(function(h) { html += '<th>' + String(h).padStart(2,'0') + ':00</th>'; });
+  html += '<div style="overflow-x:auto"><table class="mar-grid"><thead><tr><th scope="col" style="text-align:left;min-width:180px">Medication</th><th scope="col">Freq</th>';
+  hours.forEach(function(h) { html += '<th scope="col">' + String(h).padStart(2,'0') + ':00</th>'; });
   html += '</tr></thead><tbody>';
 
   var scheduled = meds.filter(function(m) { return m.frequency !== 'PRN'; });
@@ -4530,7 +4530,7 @@ function buildMARTabContent(patientId, container) {
 
   if (prns.length) {
     html += '<h4 style="margin:16px 0 8px">PRN Medications</h4>';
-    html += '<table class="data-table"><thead><tr><th>Medication</th><th>Indication</th><th>Last Given</th><th></th></tr></thead><tbody>';
+    html += '<table class="data-table"><thead><tr><th scope="col">Medication</th><th scope="col">Indication</th><th scope="col">Last Given</th><th></th></tr></thead><tbody>';
     prns.forEach(function(med) {
       var last = entries.filter(function(e) { return e.medId === med.id && e.status === 'given'; }).sort(function(a,b) { return b.recordedAt > a.recordedAt ? 1 : -1; })[0];
       html += '<tr><td style="font-weight:500">' + esc(med.name || med.drug || '') + ' ' + esc(med.dose || '') + '</td>' +
@@ -4600,7 +4600,7 @@ function buildAssessmentsTabContent(patientId, container) {
             '<strong>' + esc(a.type || 'Assessment') + '</strong>' +
             '<span style="font-size:12px;color:var(--text-secondary)">' + formatDateTime(a.createdAt) + '</span>' +
           '</div>' +
-          (a.score !== undefined ? '<div style="margin-top:4px">Score: <strong>' + a.score + '</strong></div>' : '') +
+          (a.score !== undefined ? '<div style="margin-top:4px">Score: <strong>' + esc(String(a.score)) + '</strong></div>' : '') +
           (a.notes ? '<div style="margin-top:4px;font-size:13px;color:var(--text-secondary)">' + esc(a.notes) + '</div>' : '') +
         '</div>';
       });
@@ -4782,9 +4782,9 @@ function buildIOTabContent(patientId, container) {
 
   function buildTable(cats, direction) {
     var out = '<h4 style="margin:0 0 8px">' + (direction === 'intake' ? 'Intake' : 'Output') + '</h4><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' +
-      '<th style="text-align:left;padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd);min-width:120px">Category</th>';
-    hours.forEach(function(h) { out += '<th style="padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd)">' + String(h).padStart(2,'0') + '</th>'; });
-    out += '<th style="padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd)">Total</th></tr></thead><tbody>';
+      '<th scope="col" style="text-align:left;padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd);min-width:120px">Category</th>';
+    hours.forEach(function(h) { out += '<th scope="col" style="padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd)">' + String(h).padStart(2,'0') + '</th>'; });
+    out += '<th scope="col" style="padding:4px 6px;background:var(--bg-card,#f8f9fa);border:1px solid var(--border,#ddd)">Total</th></tr></thead><tbody>';
     cats.forEach(function(cat) {
       var catTotal = 0;
       out += '<tr><td style="padding:4px 6px;border:1px solid var(--border,#ddd);font-weight:500">' + esc(cat) + '</td>';
@@ -6510,7 +6510,7 @@ function buildPTSubTabContent(patientId, container) {
   if (ptSessions.length > 0) {
     var recentSessions = ptSessions.slice(0, 5);
     html += '<h4 style="margin:12px 0 8px;font-size:14px">Recent Treatment Sessions</h4>';
-    html += '<table class="table" style="font-size:13px"><thead><tr><th>Date</th><th>Duration</th><th>Modalities</th><th>Response</th></tr></thead><tbody>';
+    html += '<table class="table" style="font-size:13px"><thead><tr><th scope="col">Date</th><th scope="col">Duration</th><th scope="col">Modalities</th><th scope="col">Response</th></tr></thead><tbody>';
     recentSessions.forEach(function(s) {
       html += '<tr>';
       html += '<td>' + (s.createdAt ? formatDateTime(s.createdAt) : '—') + '</td>';
@@ -7490,11 +7490,11 @@ function openAuditViewer() {
     // Table
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
     html += '<thead><tr style="background:var(--surface-2,#f8fafc);border-bottom:2px solid var(--border)">';
-    html += '<th style="padding:6px 8px;text-align:left">Timestamp</th>';
-    html += '<th style="padding:6px 8px;text-align:left">User</th>';
-    html += '<th style="padding:6px 8px;text-align:left">Action</th>';
-    html += '<th style="padding:6px 8px;text-align:left">Patient</th>';
-    html += '<th style="padding:6px 8px;text-align:left">Detail</th>';
+    html += '<th scope="col" style="padding:6px 8px;text-align:left">Timestamp</th>';
+    html += '<th scope="col" style="padding:6px 8px;text-align:left">User</th>';
+    html += '<th scope="col" style="padding:6px 8px;text-align:left">Action</th>';
+    html += '<th scope="col" style="padding:6px 8px;text-align:left">Patient</th>';
+    html += '<th scope="col" style="padding:6px 8px;text-align:left">Detail</th>';
     html += '</tr></thead><tbody>';
 
     if (pageLogs.length === 0) {

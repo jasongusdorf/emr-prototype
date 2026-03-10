@@ -429,7 +429,7 @@ function renderPatients() {
   const user = getSessionUser();
   const providerId = currentProv || (user ? user.id : '');
   const prefs = getPatientListPrefs(providerId);
-  const pageSize = prefs.pageSize || 25;
+  const pageSize = prefs.pageSize || 50;
 
   // Pre-cache clinical data for performance
   const _allergyCache = {};
@@ -1706,7 +1706,7 @@ function renderInpatientFlatList(app, patients) {
     wrap.className = 'table-wrap';
     const table = document.createElement('table');
     table.className = 'table';
-    table.innerHTML = '<thead><tr><th>Name</th><th>MRN</th><th>Admission</th><th>Attending</th><th></th></tr></thead>';
+    table.innerHTML = '<thead><tr><th scope="col">Name</th><th scope="col">MRN</th><th scope="col">Admission</th><th scope="col">Attending</th><th></th></tr></thead>';
     const tbody = document.createElement('tbody');
     patients.forEach(pat => {
       const tr = document.createElement('tr');

@@ -111,7 +111,24 @@ let _ordersEncounterId = null;
 let _currentPatientId = null;
 let _showUnackedOnly = false;
 
+/* ---------- Local order cache (perf) ---------- */
+var _cachedOrders = null;
+var _cachedOrdersEncId = null;
+
+function getCachedOrders(encounterId) {
+  if (_cachedOrdersEncId === encounterId && _cachedOrders) return _cachedOrders;
+  _cachedOrders = getOrdersByEncounter(encounterId);
+  _cachedOrdersEncId = encounterId;
+  return _cachedOrders;
+}
+
+function _invalidateOrderCache() {
+  _cachedOrders = null;
+  _cachedOrdersEncId = null;
+}
+
 function renderOrders(encounterId) {
+  _invalidateOrderCache();
   if (typeof _stopAllAutosaves === 'function') _stopAllAutosaves();  // clear encounter autosave if navigating from encounter view
   _ordersEncounterId = encounterId;
   _selectedType      = 'Medication';
@@ -138,8 +155,8 @@ function renderOrders(encounterId) {
     title:  'Orders',
     meta:   patName + ' · ' + (patient ? patient.mrn : ''),
     actions: `
-      <a href="${patient ? '#chart/' + patient.id : '#dashboard'}" class="btn btn-secondary btn-sm">← Chart</a>
-      <a href="#encounter/${encounterId}" class="btn btn-secondary btn-sm">Note</a>
+      <a href="${patient ? '#chart/' + esc(patient.id) : '#dashboard'}" class="btn btn-secondary btn-sm">← Chart</a>
+      <a href="#encounter/${esc(encounterId)}" class="btn btn-secondary btn-sm">Note</a>
       ${isInpatient ? '<button class="btn btn-primary btn-sm" id="btn-order-sets">Order Sets</button>' : ''}
     `,
   });
@@ -207,6 +224,15 @@ function renderOrders(encounterId) {
   layout.appendChild(leftPanel);
   layout.appendChild(rightPanel);
   app.appendChild(layout);
+
+  // Register cleanup for view teardown
+  if (typeof registerCleanup === 'function') {
+    registerCleanup(function() {
+      _invalidateOrderCache();
+      _ordersEncounterId = null;
+      _currentPatientId = null;
+    });
+  }
 }
 
 /* ---------- Order list (left) ---------- */
@@ -250,7 +276,7 @@ function renderOrderList(container, encounterId) {
   body.className = 'card-body';
   body.style.padding = '16px';
 
-  let orders = getOrdersByEncounter(encounterId);
+  let orders = getCachedOrders(encounterId);
 
   // Apply unacknowledged filter
   if (_showUnackedOnly) {
@@ -482,11 +508,11 @@ function openCompletionModal(order) {
     case 'Lab':
       fieldsHTML = `
         <div class="form-group">
-          <label class="form-label">Specimen Collected Time *</label>
+          <label class="form-label" for="comp-lab-time">Specimen Collected Time *</label>
           <input class="form-control" id="comp-lab-time" type="datetime-local" value="${nowLocal}" />
         </div>
         <div class="form-group">
-          <label class="form-label">Collector Name *</label>
+          <label class="form-label" for="comp-lab-collector">Collector Name *</label>
           <input class="form-control" id="comp-lab-collector" type="text" placeholder="Name of collector" value="${esc(userName)}" />
         </div>
       `;
@@ -494,11 +520,11 @@ function openCompletionModal(order) {
     case 'Nursing':
       fieldsHTML = `
         <div class="form-group">
-          <label class="form-label">Intervention Performed Notes *</label>
+          <label class="form-label" for="comp-nsg-notes">Intervention Performed Notes *</label>
           <textarea class="note-textarea" id="comp-nsg-notes" style="min-height:80px" placeholder="Describe what was performed"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Outcome</label>
+          <label class="form-label" for="comp-nsg-outcome">Outcome</label>
           <input class="form-control" id="comp-nsg-outcome" type="text" placeholder="Outcome of intervention" />
         </div>
       `;
@@ -510,7 +536,7 @@ function openCompletionModal(order) {
           <label for="comp-diet-started" class="form-label" style="margin:0">Diet Started</label>
         </div>
         <div class="form-group">
-          <label class="form-label">Started Time</label>
+          <label class="form-label" for="comp-diet-time">Started Time</label>
           <input class="form-control" id="comp-diet-time" type="datetime-local" value="${nowLocal}" />
         </div>
       `;
@@ -518,11 +544,11 @@ function openCompletionModal(order) {
     case 'Activity':
       fieldsHTML = `
         <div class="form-group">
-          <label class="form-label">Tolerance Notes</label>
+          <label class="form-label" for="comp-act-notes">Tolerance Notes</label>
           <textarea class="note-textarea" id="comp-act-notes" style="min-height:80px" placeholder="Notes on patient tolerance"></textarea>
         </div>
         <div class="form-group">
-          <label class="form-label">Patient Response *</label>
+          <label class="form-label" for="comp-act-response">Patient Response *</label>
           <select class="form-control" id="comp-act-response">
             <option>Tolerated Well</option>
             <option>Partially Tolerated</option>
@@ -534,11 +560,11 @@ function openCompletionModal(order) {
     case 'Medication':
       fieldsHTML = `
         <div class="form-group">
-          <label class="form-label">Administered Time *</label>
+          <label class="form-label" for="comp-med-time">Administered Time *</label>
           <input class="form-control" id="comp-med-time" type="datetime-local" value="${nowLocal}" />
         </div>
         <div class="form-group">
-          <label class="form-label">Administered By</label>
+          <label class="form-label" for="comp-med-by">Administered By</label>
           <input class="form-control" id="comp-med-by" type="text" value="${esc(userName)}" />
         </div>
       `;
@@ -546,11 +572,11 @@ function openCompletionModal(order) {
     case 'Imaging':
       fieldsHTML = `
         <div class="form-group">
-          <label class="form-label">Performed Time *</label>
+          <label class="form-label" for="comp-img-time">Performed Time *</label>
           <input class="form-control" id="comp-img-time" type="datetime-local" value="${nowLocal}" />
         </div>
         <div class="form-group">
-          <label class="form-label">Performing Tech</label>
+          <label class="form-label" for="comp-img-tech">Performing Tech</label>
           <input class="form-control" id="comp-img-tech" type="text" placeholder="Technologist name" />
         </div>
       `;
@@ -558,11 +584,11 @@ function openCompletionModal(order) {
     case 'Consult':
       fieldsHTML = `
         <div class="form-group">
-          <label class="form-label">Consultant Name *</label>
+          <label class="form-label" for="comp-con-name">Consultant Name *</label>
           <input class="form-control" id="comp-con-name" type="text" placeholder="Consultant name" />
         </div>
         <div class="form-group">
-          <label class="form-label">Consultation Date *</label>
+          <label class="form-label" for="comp-con-date">Consultation Date *</label>
           <input class="form-control" id="comp-con-date" type="datetime-local" value="${nowLocal}" />
         </div>
       `;
@@ -653,6 +679,7 @@ function openCompletionModal(order) {
 }
 
 function refreshOrderList(containerId) {
+  _invalidateOrderCache();
   const container = document.getElementById(containerId || 'order-list-panel');
   if (container && _ordersEncounterId) {
     renderOrderList(container, _ordersEncounterId);
@@ -754,7 +781,7 @@ function renderOrderEntryForm(container, encounter, patient) {
     </div>
     <div id="vo-fields" hidden style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:8px;background:var(--bg-surface)">
       <div class="form-group" style="margin-bottom:8px">
-        <label class="form-label">Order Given By (name) *</label>
+        <label class="form-label" for="vo-given-by">Order Given By (name) *</label>
         <input class="form-control" id="vo-given-by" type="text" placeholder="Name of ordering provider" />
       </div>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
@@ -832,7 +859,7 @@ function renderTypeFields(container, type) {
 
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Drug Name *</label>
+        <label class="form-label" for="med-drug">Drug Name *</label>
         <div class="med-autocomplete-container">
           <input class="form-control" id="med-drug" placeholder="e.g. Metoprolol" autocomplete="off" />
         </div>
@@ -841,17 +868,17 @@ function renderTypeFields(container, type) {
       <div id="med-dose-pills-container"></div>
       <div class="form-row-3" id="med-dose-row">
         <div class="form-group">
-          <label class="form-label">Dose *</label>
+          <label class="form-label" for="med-dose">Dose *</label>
           <input class="form-control" id="med-dose" placeholder="e.g. 25" type="number" min="0" step="any" />
         </div>
         <div class="form-group">
-          <label class="form-label">Unit</label>
+          <label class="form-label" for="med-unit">Unit</label>
           <select class="form-control" id="med-unit">
             ${MED_UNITS.map(u => `<option>${esc(u)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Route</label>
+          <label class="form-label" for="med-route">Route</label>
           <select class="form-control" id="med-route">
             ${MED_ROUTES.map(r => `<option>${esc(r)}</option>`).join('')}
           </select>
@@ -859,7 +886,7 @@ function renderTypeFields(container, type) {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Frequency</label>
+          <label class="form-label" for="med-freq">Frequency</label>
           <select class="form-control" id="med-freq">
             ${MED_FREQS.map(f => `<option>${esc(f)}</option>`).join('')}
           </select>
@@ -873,7 +900,7 @@ function renderTypeFields(container, type) {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Duration</label>
+          <label class="form-label" for="med-duration">Duration</label>
           <select class="form-control" id="med-duration">
             <option value="">Select duration</option>
             <option value="3">3 days</option>
@@ -890,12 +917,12 @@ function renderTypeFields(container, type) {
           </select>
         </div>
         <div class="form-group" id="med-duration-other-group" style="display:none">
-          <label class="form-label">Custom Duration (days)</label>
+          <label class="form-label" for="med-duration-other">Custom Duration (days)</label>
           <input class="form-control" id="med-duration-other" type="number" min="1" placeholder="Days" />
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Indication</label>
+        <label class="form-label" for="med-indication">Indication</label>
         <input class="form-control" id="med-indication" placeholder="Reason for medication" />
       </div>
       <div id="med-pharmacy-section"></div>
@@ -958,14 +985,14 @@ function renderTypeFields(container, type) {
   else if (type === 'Lab') {
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Search Lab Test *</label>
+        <label class="form-label" for="lab-search">Search Lab Test *</label>
         <div class="med-autocomplete-container">
           <input class="form-control" id="lab-search" placeholder="Type to search labs (e.g. CBC, BMP, TSH)..." autocomplete="off" />
         </div>
       </div>
       <div id="lab-detail-section"></div>
       <div class="form-group">
-        <label class="form-label">Specimen</label>
+        <label class="form-label" for="lab-specimen">Specimen</label>
         <select class="form-control" id="lab-specimen">
           <option>Blood</option>
           <option>Urine</option>
@@ -978,7 +1005,7 @@ function renderTypeFields(container, type) {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Frequency *</label>
+          <label class="form-label" for="lab-frequency">Frequency *</label>
           <select class="form-control" id="lab-frequency">
             <option value="Once">Once</option>
             <option value="Daily">Daily</option>
@@ -990,7 +1017,7 @@ function renderTypeFields(container, type) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Urgency *</label>
+          <label class="form-label" for="lab-urgency">Urgency *</label>
           <select class="form-control" id="lab-urgency">
             <option value="Routine">Routine</option>
             <option value="Urgent">Urgent</option>
@@ -999,7 +1026,7 @@ function renderTypeFields(container, type) {
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Additional Tests (comma-separated)</label>
+        <label class="form-label" for="lab-tests">Additional Tests (comma-separated)</label>
         <input class="form-control" id="lab-tests" placeholder="e.g. Na, K, Cl, CO2" />
       </div>
     `;
@@ -1040,7 +1067,7 @@ function renderTypeFields(container, type) {
   else if (type === 'Imaging') {
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Search Imaging Study *</label>
+        <label class="form-label" for="img-search">Search Imaging Study *</label>
         <div class="med-autocomplete-container">
           <input class="form-control" id="img-search" placeholder="Type to search (e.g. CT Head, MRI Knee, Chest X-Ray)..." autocomplete="off" />
         </div>
@@ -1048,16 +1075,16 @@ function renderTypeFields(container, type) {
       <div id="img-detail-section"></div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Modality</label>
+          <label class="form-label" for="img-modality">Modality</label>
           <input class="form-control" id="img-modality" readonly placeholder="Auto-filled" />
         </div>
         <div class="form-group">
-          <label class="form-label">Body Part</label>
+          <label class="form-label" for="img-body">Body Part</label>
           <input class="form-control" id="img-body" placeholder="e.g. Chest, Brain" />
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Laterality</label>
+        <label class="form-label" for="img-laterality">Laterality</label>
         <select class="form-control" id="img-laterality">
           <option value="N/A">N/A</option>
           <option value="Left">Left</option>
@@ -1066,7 +1093,7 @@ function renderTypeFields(container, type) {
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Clinical Indication *</label>
+        <label class="form-label" for="img-indication">Clinical Indication *</label>
         <input class="form-control" id="img-indication" placeholder="Reason for study" />
       </div>
     `;
@@ -1120,19 +1147,19 @@ function renderTypeFields(container, type) {
   else if (type === 'Consult') {
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Consulting Service *</label>
+        <label class="form-label" for="con-service">Consulting Service *</label>
         <select class="form-control" id="con-service">
           ${CONSULT_SERVICES.map(s => `<option>${esc(s)}</option>`).join('')}
         </select>
       </div>
       <div id="rehab-fields-container"></div>
       <div class="form-group">
-        <label class="form-label">Reason for Consult *</label>
+        <label class="form-label" for="con-reason">Reason for Consult *</label>
         <textarea class="note-textarea" id="con-reason" style="min-height:80px"
           placeholder="Clinical question / reason for consultation"></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">Urgency</label>
+        <label class="form-label" for="con-urgency">Urgency</label>
         <select class="form-control" id="con-urgency">
           <option>Routine</option>
           <option>Urgent</option>
@@ -1153,18 +1180,18 @@ function renderTypeFields(container, type) {
             <div style="font-weight:600;font-size:13px;margin-bottom:8px">Rehabilitation Details</div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Frequency</label>
+                <label class="form-label" for="rehab-frequency">Frequency</label>
                 <select class="form-control" id="rehab-frequency">
                   ${REHAB_FREQUENCIES.map(f => '<option>' + esc(f) + '</option>').join('')}
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Duration</label>
+                <label class="form-label" for="rehab-duration">Duration</label>
                 <input class="form-control" id="rehab-duration" type="text" placeholder="e.g. 4 weeks" />
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">Precautions</label>
+              <label class="form-label" for="rehab-precautions">Precautions</label>
               <textarea class="note-textarea" id="rehab-precautions" style="min-height:60px"
                 placeholder="Weight-bearing, fall risk, aspiration, etc."></textarea>
             </div>
@@ -1187,24 +1214,24 @@ function renderTypeFields(container, type) {
   else if (type === 'Diet') {
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Diet Type *</label>
+        <label class="form-label" for="diet-type">Diet Type *</label>
         <select class="form-control" id="diet-type">
           ${DIET_TYPES.map(d => `<option>${esc(d)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Liquid Thickness</label>
+        <label class="form-label" for="diet-liquid-thickness">Liquid Thickness</label>
         <select class="form-control" id="diet-liquid-thickness">
           <option value="">— Select —</option>
           ${LIQUID_THICKNESS_OPTIONS.map(o => `<option>${esc(o)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Fluid Restriction (mL)</label>
+        <label class="form-label" for="diet-fluid-restriction">Fluid Restriction (mL)</label>
         <input class="form-control" id="diet-fluid-restriction" type="number" min="0" placeholder="e.g. 1500" />
       </div>
       <div class="form-group">
-        <label class="form-label">Instructions</label>
+        <label class="form-label" for="diet-instructions">Instructions</label>
         <textarea class="note-textarea" id="diet-instructions" style="min-height:80px"
           placeholder="Additional dietary instructions or notes"></textarea>
       </div>
@@ -1214,18 +1241,18 @@ function renderTypeFields(container, type) {
   else if (type === 'Nursing') {
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Intervention Description *</label>
+        <label class="form-label" for="nsg-intervention">Intervention Description *</label>
         <textarea class="note-textarea" id="nsg-intervention" style="min-height:80px"
           placeholder="Describe the nursing intervention"></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">Frequency</label>
+        <label class="form-label" for="nsg-frequency">Frequency</label>
         <select class="form-control" id="nsg-frequency">
           ${MED_FREQS.map(f => `<option>${esc(f)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Instructions</label>
+        <label class="form-label" for="nsg-instructions">Instructions</label>
         <textarea class="note-textarea" id="nsg-instructions" style="min-height:80px"
           placeholder="Additional nursing instructions"></textarea>
       </div>
@@ -1235,18 +1262,18 @@ function renderTypeFields(container, type) {
   else if (type === 'Activity') {
     container.innerHTML = `
       <div class="form-group">
-        <label class="form-label">Activity Level *</label>
+        <label class="form-label" for="act-level">Activity Level *</label>
         <select class="form-control" id="act-level">
           ${ACTIVITY_LEVELS.map(l => `<option>${esc(l)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Restrictions</label>
+        <label class="form-label" for="act-restrictions">Restrictions</label>
         <textarea class="note-textarea" id="act-restrictions" style="min-height:80px"
           placeholder="Activity restrictions or precautions"></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">Weight-Bearing</label>
+        <label class="form-label" for="act-weight-bearing">Weight-Bearing</label>
         <select class="form-control" id="act-weight-bearing">
           ${WEIGHT_BEARING_OPTIONS.map(w => `<option>${esc(w)}</option>`).join('')}
         </select>
@@ -1798,7 +1825,7 @@ function _proceedAfterDDI(type, detail, patient, doSave) {
           '<div id="allergy-override-section" style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:12px">' +
           '<h4 style="margin:0 0 8px;font-size:14px">Override with Clinical Justification</h4>' +
           '<div class="form-group">' +
-          '<label class="form-label">Override Reason (required) *</label>' +
+          '<label class="form-label" for="allergy-override-reason">Override Reason (required) *</label>' +
           '<textarea class="form-control" id="allergy-override-reason" rows="3" placeholder="Provide clinical justification for overriding this allergy block..."></textarea>' +
           '</div>' +
           '</div>';
