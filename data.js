@@ -214,18 +214,38 @@ var _dataCache = {};
 
 /* ---------- Write Mutex / Locking ---------- */
 var _writeLocks = {};
+var _lockQueues = {};
+
 function withWriteLock(key, fn) {
   if (_writeLocks[key]) {
-    console.warn('[EMR] Write lock contention on key: ' + key);
-    // Queue retry after current call stack clears
-    return new Promise(function(resolve) {
-      setTimeout(function() { resolve(withWriteLock(key, fn)); }, 1);
+    return new Promise(function(resolve, reject) {
+      if (!_lockQueues[key]) _lockQueues[key] = [];
+      _lockQueues[key].push({ fn: fn, resolve: resolve, reject: reject });
     });
   }
   _writeLocks[key] = true;
   try {
-    return fn();
+    var result = fn();
+    return Promise.resolve(result);
+  } catch (err) {
+    return Promise.reject(err);
   } finally {
+    _processLockQueue(key);
+  }
+}
+
+function _processLockQueue(key) {
+  if (_lockQueues[key] && _lockQueues[key].length > 0) {
+    var next = _lockQueues[key].shift();
+    try {
+      var result = next.fn();
+      next.resolve(result);
+    } catch (err) {
+      next.reject(err);
+    } finally {
+      _processLockQueue(key);
+    }
+  } else {
     _writeLocks[key] = false;
   }
 }
@@ -237,7 +257,12 @@ function loadAll(key, includeDeleted) {
   try {
     arr = _storageAdapter.getAll(key);
     // Successful parse — save backup
-    try { _storageAdapter.setItem(key + '_backup', JSON.stringify(arr)); } catch(bkErr) { /* backup write failed, ignore */ }
+    try { _storageAdapter.setItem(key + '_backup', JSON.stringify(arr)); } catch(bkErr) {
+      console.warn('[EMR] Backup write failed for "' + key + '":', bkErr.message);
+      if (typeof logSystemAudit === 'function') {
+        logSystemAudit('BACKUP_WRITE_FAILED', '', '', 'Backup write failed for ' + key + ': ' + bkErr.message, '');
+      }
+    }
   } catch (e) {
     console.error('[EMR] Data corrupted for key "' + key + '":', e.message);
     // Attempt to restore from backup
@@ -257,6 +282,9 @@ function loadAll(key, includeDeleted) {
     } catch (restoreErr) {
       console.error('[EMR] Backup restore also failed for "' + key + '":', restoreErr.message);
       arr = [];
+      if (typeof showToast === 'function') {
+        showToast('Data for ' + key.replace('emr_', '') + ' is unrecoverable — records may be lost', 'error', 8000);
+      }
     }
     if (!Array.isArray(arr)) arr = [];
     if (arr.length === 0 && typeof showToast === 'function') {
@@ -326,8 +354,10 @@ function getStorageAdapter() {
 }
 
 function saveAll(key, arr) {
-  _invalidateCache(key);
   _storageAdapter.putAll(key, arr);
+  // Update cache in-place instead of invalidating
+  _dataCache[key] = arr.filter(function(r) { return !r._deleted; });
+  _dataCache[key + ':all'] = arr;
 }
 
 function softDeleteRecord(key, id) {
@@ -401,7 +431,7 @@ var ENTITY_SCHEMAS = {
   },
   encounter: {
     required: ['patientId'],
-    enums: { visitType: ['Outpatient', 'Inpatient', 'Emergency', 'Urgent Care'], status: ['Open', 'Signed', 'Cancelled'] }
+    enums: { visitType: ['Outpatient', 'ED', 'Inpatient', 'ICU', 'Emergency', 'Urgent Care'], status: ['Open', 'Signed', 'Cancelled'] }
   },
   order: {
     required: ['patientId', 'type'],
@@ -563,6 +593,8 @@ function savePatient(data) {
     const existing = patients.findIndex(p => p.id === data.id);
     if (existing >= 0) {
       patients[existing] = { ...patients[existing], ...data };
+      saveAll(KEYS.patients, patients);
+      return patients[existing];
     } else {
       const newPatient = {
         id:        generateId(),
@@ -592,8 +624,6 @@ function savePatient(data) {
       saveAll(KEYS.patients, patients);
       return newPatient;
     }
-    saveAll(KEYS.patients, patients);
-    return patients[existing >= 0 ? existing : patients.length - 1];
   });
 }
 
@@ -721,8 +751,18 @@ function saveProvider(data) {
 function deleteProvider(id) {
   // Encounters still reference providerId; renderer falls back to '[Removed Provider]'
   softDeleteRecord(KEYS.providers, id);
+  // Cascade: flag encounters that reference this provider
+  var encounters = loadAll(KEYS.encounters, true);
+  var cascadeCount = 0;
+  encounters.forEach(function(enc) {
+    if (enc.providerId === id && !enc.providerRemoved) {
+      enc.providerRemoved = true;
+      cascadeCount++;
+    }
+  });
+  if (cascadeCount > 0) saveAll(KEYS.encounters, encounters);
   var user = getSessionUser();
-  logSystemAudit('PROVIDER_DELETED', user ? user.id : '', id, 'Provider soft-deleted (id: ' + id + ')', user ? user.email : '');
+  logSystemAudit('PROVIDER_DELETED', user ? user.id : '', id, 'Provider soft-deleted (id: ' + id + '). Flagged ' + cascadeCount + ' encounter(s) with providerRemoved.', user ? user.email : '');
 }
 
 /* ============================================================
@@ -752,9 +792,9 @@ function saveEncounter(data) {
     if (data.patientId && !getPatient(data.patientId)) {
       return { error: true, errors: ['Patient not found for patientId: ' + data.patientId] };
     }
-    var VALID_ENCOUNTER_VISIT_TYPES = ['Outpatient', 'Inpatient', 'Emergency'];
+    var VALID_ENCOUNTER_VISIT_TYPES = ['Outpatient', 'ED', 'Inpatient', 'ICU', 'Emergency'];
     if (data.visitType && VALID_ENCOUNTER_VISIT_TYPES.indexOf(data.visitType) < 0) {
-      console.warn('saveEncounter: non-standard visitType "' + data.visitType + '". Recommended: Outpatient, Inpatient, Emergency.');
+      console.warn('saveEncounter: non-standard visitType "' + data.visitType + '". Recommended: Outpatient, ED, Inpatient, ICU.');
     }
   }
   /* --- End validation --- */
@@ -819,6 +859,30 @@ function saveNote(data) {
     const notes = loadAll(KEYS.notes, true);
     const existing = notes.findIndex(n => n.encounterId === data.encounterId);
     if (existing >= 0) {
+      // Guard: signed notes cannot be modified except via addenda
+      if (notes[existing].signed === true) {
+        var isAddendumOnly = data.addenda !== undefined &&
+          data.signed === undefined && data.signedBy === undefined && data.signedAt === undefined;
+        if (!isAddendumOnly) {
+          // Check if caller is trying to change protected fields on a signed note
+          var protectedChange = false;
+          if (data.signed !== undefined && data.signed !== notes[existing].signed) protectedChange = true;
+          if (data.signedBy !== undefined && data.signedBy !== notes[existing].signedBy) protectedChange = true;
+          if (data.signedAt !== undefined && data.signedAt !== notes[existing].signedAt) protectedChange = true;
+          // Allow addenda updates even if other fields present
+          var hasNonAddendaContentChange = false;
+          var noteContentFields = ['noteBody', 'chiefComplaint', 'hpi', 'ros', 'physicalExam', 'assessment', 'plan'];
+          for (var i = 0; i < noteContentFields.length; i++) {
+            if (data[noteContentFields[i]] !== undefined && data[noteContentFields[i]] !== notes[existing][noteContentFields[i]]) {
+              hasNonAddendaContentChange = true;
+              break;
+            }
+          }
+          if (protectedChange || hasNonAddendaContentChange) {
+            return { error: true, errors: ['Cannot modify a signed note. Use addenda instead.'] };
+          }
+        }
+      }
       const wasUnsigned = !notes[existing].signed;
       notes[existing] = {
         ...notes[existing],
@@ -876,10 +940,14 @@ function getOrdersByEncounter(encounterId) {
 function getOrder(id) { return getOrders().find(o => o.id === id) || null; }
 
 function saveOrder(data) {
-  /* --- Schema validation (PR-7) --- */
-  if (!data.id || !getOrder(data.id)) {
+  /* --- Schema validation (PR-7) — validate on BOTH create and update --- */
+  var existingOrder = data.id ? getOrder(data.id) : null;
+  if (!existingOrder) {
     var schemaCheck = validateSchema(data, 'order');
     if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  } else {
+    var updateCheck = validateSchema(Object.assign({}, existingOrder, data), 'order');
+    if (!updateCheck.valid) return { error: true, errors: updateCheck.errors };
   }
   /* --- Data validation (hardening) --- */
   var VALID_ORDER_TYPES = ['Medication', 'Lab', 'Imaging', 'Consult', 'Diet', 'Nursing', 'Activity'];
@@ -972,9 +1040,20 @@ function deleteOrdersByEncounter(encounterId) {
 }
 
 function updateOrderStatus(id, status) {
+  var VALID_TRANSITIONS = {
+    'Pending': ['Active', 'Completed', 'Cancelled'],
+    'Active': ['Completed', 'Cancelled', 'Pending'],
+    'Completed': [],
+    'Cancelled': []
+  };
   const orders = loadAll(KEYS.orders, true);
   const idx = orders.findIndex(o => o.id === id);
   if (idx < 0) return null;
+  var currentStatus = orders[idx].status || 'Pending';
+  var allowed = VALID_TRANSITIONS[currentStatus];
+  if (allowed && allowed.indexOf(status) === -1) {
+    return { error: 'Invalid status transition from ' + currentStatus + ' to ' + status };
+  }
   orders[idx].status = status;
   if (status === 'Completed') orders[idx].completedAt = new Date().toISOString();
   saveAll(KEYS.orders, orders);
@@ -1100,10 +1179,14 @@ function getPatientAllergies(patientId) {
 }
 
 function savePatientAllergy(data) {
-  /* --- Schema validation (PR-7) --- */
-  if (!data.id || loadAll(KEYS.allergies).findIndex(function(a) { return a.id === data.id; }) < 0) {
+  /* --- Schema validation (PR-7) — validate on BOTH create and update --- */
+  var isAllergyUpdate = data.id && loadAll(KEYS.allergies).findIndex(function(a) { return a.id === data.id; }) >= 0;
+  if (!isAllergyUpdate) {
     var schemaCheck = validateSchema(data, 'allergy');
     if (!schemaCheck.valid) return { error: true, errors: schemaCheck.errors };
+  } else {
+    var updateCheck = validateSchema(Object.assign({}, loadAll(KEYS.allergies).find(function(a) { return a.id === data.id; }), data), 'allergy');
+    if (!updateCheck.valid) return { error: true, errors: updateCheck.errors };
   }
   const all = loadAll(KEYS.allergies, true);
   const idx = all.findIndex(a => a.id === data.id);
@@ -1604,8 +1687,12 @@ function getMedRec(encounterId) {
   return loadAll(KEYS.medRec).filter(r => r.encounterId === encounterId);
 }
 
-function saveMedRec(encounterId, records) {
-  const all = loadAll(KEYS.medRec, true).filter(r => r.encounterId !== encounterId || r._deleted);
+function saveMedRec(encounterId, patientId, records) {
+  if (!patientId || (typeof patientId === 'string' && patientId.trim() === '')) {
+    console.error('[EMR] saveMedRec: patientId is required');
+    return;
+  }
+  const all = loadAll(KEYS.medRec, true).filter(r => r.encounterId !== encounterId);
   records.forEach(r => {
     all.push({
       id:          generateId(),
@@ -1614,10 +1701,11 @@ function saveMedRec(encounterId, records) {
       medName:     r.medName || '',
       action:      r.action || 'Continued',
       notes:       r.notes || '',
-      patientId:   r.patientId || '',
+      patientId:   patientId,
     });
   });
   saveAll(KEYS.medRec, all);
+  return { success: true, count: records.length };
 }
 
 /* ============================================================
@@ -1797,7 +1885,7 @@ async function hashPassword(password, salt) {
   var encoder = new TextEncoder();
   var keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
   var saltBuffer = encoder.encode(salt);
-  var bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBuffer, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
+  var bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBuffer, iterations: 250000, hash: 'SHA-256' }, keyMaterial, 256);
   var hashArray = Array.from(new Uint8Array(bits));
   var hash = hashArray.map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
   return { hash: hash, salt: salt };
@@ -1866,7 +1954,14 @@ function isAccountLocked(email) {
 
 /* ---------- Session Token Generation (hardening) ---------- */
 function generateSessionToken(userId) {
-  var token = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('sess_' + Date.now() + '_' + Math.random().toString(36).substr(2));
+  var token;
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    token = crypto.randomUUID();
+  } else {
+    var arr = new Uint8Array(16);
+    crypto.getRandomValues(arr);
+    token = Array.from(arr, function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
   return { token: token, userId: userId, createdAt: new Date().toISOString(), loginAt: new Date().toISOString(), lastActivity: new Date().toISOString() };
 }
 
@@ -2053,14 +2148,25 @@ function generateTempPassword() {
   const lower = 'abcdefghjkmnpqrstuvwxyz';
   const digits = '23456789';
   const specials = '!@#$%^&*_+-=';
+  function secureRandom(max) {
+    var arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    return arr[0] % max;
+  }
   let pw = '';
-  pw += upper[Math.floor(Math.random() * upper.length)];
-  pw += lower[Math.floor(Math.random() * lower.length)];
-  pw += digits[Math.floor(Math.random() * digits.length)];
-  pw += specials[Math.floor(Math.random() * specials.length)];
+  pw += upper[secureRandom(upper.length)];
+  pw += lower[secureRandom(lower.length)];
+  pw += digits[secureRandom(digits.length)];
+  pw += specials[secureRandom(specials.length)];
   const all = upper + lower + digits + specials;
-  for (let i = 0; i < 4; i++) pw += all[Math.floor(Math.random() * all.length)];
-  return pw.split('').sort(() => Math.random() - 0.5).join('');
+  for (let i = 0; i < 8; i++) pw += all[secureRandom(all.length)];
+  // Fisher-Yates shuffle using crypto
+  var chars = pw.split('');
+  for (var j = chars.length - 1; j > 0; j--) {
+    var k = secureRandom(j + 1);
+    var tmp = chars[j]; chars[j] = chars[k]; chars[k] = tmp;
+  }
+  return chars.join('');
 }
 
 async function resetPasswordForUser(userId, initiatorId) {
@@ -2354,6 +2460,691 @@ function markMessageRead(messageId) {
 }
 
 /* ============================================================
+   Chat / Message — Advanced Features
+   ============================================================ */
+
+/**
+ * Search patient messages by query text and optional filters.
+ * @param {string} query - Text to search in subject + body (case-insensitive)
+ * @param {Object} [filters] - Optional filters: { patientId, type, dateFrom, dateTo, status, fromId }
+ * @returns {Array} Matching messages sorted by relevance (exact match > partial)
+ */
+function searchMessages(query, filters) {
+  if (!query || typeof query !== 'string' || query.trim() === '') {
+    return { error: true, errors: ['Search query is required'] };
+  }
+  var all = loadAll(KEYS.messages);
+  var q = query.trim().toLowerCase();
+  var filtered = all;
+
+  if (filters) {
+    if (filters.patientId) {
+      filtered = filtered.filter(function(m) { return m.patientId === filters.patientId; });
+    }
+    if (filters.type) {
+      filtered = filtered.filter(function(m) { return m.type === filters.type; });
+    }
+    if (filters.dateFrom) {
+      var fromDate = new Date(filters.dateFrom);
+      filtered = filtered.filter(function(m) { return new Date(m.createdAt) >= fromDate; });
+    }
+    if (filters.dateTo) {
+      var toDate = new Date(filters.dateTo);
+      filtered = filtered.filter(function(m) { return new Date(m.createdAt) <= toDate; });
+    }
+    if (filters.status) {
+      filtered = filtered.filter(function(m) { return m.status === filters.status; });
+    }
+    if (filters.fromId) {
+      filtered = filtered.filter(function(m) { return m.fromId === filters.fromId; });
+    }
+  }
+
+  var results = [];
+  for (var i = 0; i < filtered.length; i++) {
+    var m = filtered[i];
+    var subjectLower = (m.subject || '').toLowerCase();
+    var bodyLower = (m.body || '').toLowerCase();
+    var exactSubject = subjectLower === q;
+    var exactBody = bodyLower === q;
+    var partialSubject = subjectLower.indexOf(q) >= 0;
+    var partialBody = bodyLower.indexOf(q) >= 0;
+
+    if (exactSubject || exactBody || partialSubject || partialBody) {
+      var score = 0;
+      if (exactSubject) score += 4;
+      if (exactBody) score += 3;
+      if (partialSubject) score += 2;
+      if (partialBody) score += 1;
+      results.push({ message: m, _score: score });
+    }
+  }
+
+  results.sort(function(a, b) { return b._score - a._score; });
+  return results.map(function(r) { return r.message; });
+}
+
+/**
+ * Search within a specific chat conversation by query text.
+ * @param {string} chatId - The chat ID to search within
+ * @param {string} query - Text to search in message body (case-insensitive)
+ * @returns {Array} Matching messages with surrounding context (prevMessageId, nextMessageId)
+ */
+function searchChatMessages(chatId, query) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  if (!query || typeof query !== 'string' || query.trim() === '') {
+    return { error: true, errors: ['Search query is required'] };
+  }
+  var all = loadAll(KEYS.chatMessages).filter(function(m) { return m.chatId === chatId; });
+  all.sort(function(a, b) { return new Date(a.timestamp) - new Date(b.timestamp); });
+
+  var q = query.trim().toLowerCase();
+  var results = [];
+
+  for (var i = 0; i < all.length; i++) {
+    var bodyLower = (all[i].body || '').toLowerCase();
+    if (bodyLower.indexOf(q) >= 0) {
+      var prevId = i > 0 ? all[i - 1].id : null;
+      var nextId = i < all.length - 1 ? all[i + 1].id : null;
+      results.push({
+        message: all[i],
+        prevMessageId: prevId,
+        nextMessageId: nextId
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Pin a chat message.
+ * @param {string} messageId - The chat message ID to pin
+ * @param {string} providerId - The provider pinning the message
+ * @returns {Object} The updated message, or error
+ */
+function pinChatMessage(messageId, providerId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.chatMessages, function() {
+    var all = loadAll(KEYS.chatMessages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    all[idx].pinned = true;
+    all[idx].pinnedAt = new Date().toISOString();
+    all[idx].pinnedBy = providerId;
+    saveAll(KEYS.chatMessages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Unpin a chat message.
+ * @param {string} messageId - The chat message ID to unpin
+ * @returns {Object} The updated message, or error
+ */
+function unpinChatMessage(messageId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+
+  return withWriteLock(KEYS.chatMessages, function() {
+    var all = loadAll(KEYS.chatMessages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    all[idx].pinned = false;
+    all[idx].pinnedAt = null;
+    all[idx].pinnedBy = null;
+    saveAll(KEYS.chatMessages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Get all pinned messages in a chat, sorted by pin date (newest first).
+ * @param {string} chatId - The chat ID
+ * @returns {Array} Pinned messages sorted by pinnedAt descending
+ */
+function getPinnedMessages(chatId) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  var all = loadAll(KEYS.chatMessages).filter(function(m) {
+    return m.chatId === chatId && m.pinned === true;
+  });
+  return all.sort(function(a, b) { return new Date(b.pinnedAt) - new Date(a.pinnedAt); });
+}
+
+/**
+ * Add a reaction to a chat message. Prevents duplicate reactions (same emoji + same provider).
+ * @param {string} messageId - The chat message ID
+ * @param {string} emoji - The emoji reaction
+ * @param {string} providerId - The reacting provider's ID
+ * @param {string} providerName - The reacting provider's display name
+ * @returns {Object} The updated message, or error
+ */
+function addChatReaction(messageId, emoji, providerId, providerName) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+  if (!emoji) return { error: true, errors: ['emoji is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.chatMessages, function() {
+    var all = loadAll(KEYS.chatMessages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    if (!Array.isArray(all[idx].reactions)) all[idx].reactions = [];
+
+    var duplicate = all[idx].reactions.find(function(r) {
+      return r.emoji === emoji && r.providerId === providerId;
+    });
+    if (duplicate) return { error: true, errors: ['Reaction already exists'] };
+
+    all[idx].reactions.push({
+      emoji: emoji,
+      providerId: providerId,
+      providerName: providerName || '',
+      timestamp: new Date().toISOString()
+    });
+    saveAll(KEYS.chatMessages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Remove a reaction from a chat message.
+ * @param {string} messageId - The chat message ID
+ * @param {string} emoji - The emoji reaction to remove
+ * @param {string} providerId - The provider who placed the reaction
+ * @returns {Object} The updated message, or error
+ */
+function removeChatReaction(messageId, emoji, providerId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+  if (!emoji) return { error: true, errors: ['emoji is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.chatMessages, function() {
+    var all = loadAll(KEYS.chatMessages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    if (!Array.isArray(all[idx].reactions)) all[idx].reactions = [];
+
+    var before = all[idx].reactions.length;
+    all[idx].reactions = all[idx].reactions.filter(function(r) {
+      return !(r.emoji === emoji && r.providerId === providerId);
+    });
+    if (all[idx].reactions.length === before) {
+      return { error: true, errors: ['Reaction not found'] };
+    }
+
+    saveAll(KEYS.chatMessages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Edit a chat message. Only the sender may edit, and only within 5 minutes of the original timestamp.
+ * Keeps originalBody for audit trail.
+ * @param {string} messageId - The chat message ID to edit
+ * @param {string} newBody - The new message body
+ * @param {string} providerId - The provider attempting to edit
+ * @returns {Object} The updated message, or error
+ */
+function editChatMessage(messageId, newBody, providerId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+  if (!newBody || typeof newBody !== 'string' || newBody.trim() === '') {
+    return { error: true, errors: ['newBody is required'] };
+  }
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.chatMessages, function() {
+    var all = loadAll(KEYS.chatMessages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    var msg = all[idx];
+
+    if (msg.senderId !== providerId) {
+      return { error: true, errors: ['Not authorized: only the sender can edit this message'] };
+    }
+
+    var fiveMinutes = 5 * 60 * 1000;
+    var elapsed = Date.now() - new Date(msg.timestamp).getTime();
+    if (elapsed > fiveMinutes) {
+      return { error: true, errors: ['Edit window expired: messages can only be edited within 5 minutes'] };
+    }
+
+    if (!msg.originalBody) {
+      msg.originalBody = msg.body;
+    }
+    msg.editedBody = newBody.trim();
+    msg.body = newBody.trim();
+    msg.editedAt = new Date().toISOString();
+
+    all[idx] = msg;
+    saveAll(KEYS.chatMessages, all);
+    return msg;
+  });
+}
+
+/**
+ * Set typing status for a provider in a chat.
+ * Stores in localStorage key 'emr_chat_typing'.
+ * @param {string} chatId - The chat ID
+ * @param {string} providerId - The provider ID
+ * @param {boolean} isTyping - Whether the provider is currently typing
+ */
+function setTypingStatus(chatId, providerId, isTyping) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  var raw = localStorage.getItem('emr_chat_typing');
+  var data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
+
+  if (!data[chatId]) data[chatId] = {};
+
+  if (isTyping) {
+    var provider = typeof getProvider === 'function' ? getProvider(providerId) : null;
+    var providerName = provider ? ((provider.firstName || '') + ' ' + (provider.lastName || '')).trim() : '';
+    data[chatId][providerId] = {
+      providerId: providerId,
+      providerName: providerName,
+      timestamp: Date.now()
+    };
+  } else {
+    delete data[chatId][providerId];
+  }
+
+  localStorage.setItem('emr_chat_typing', JSON.stringify(data));
+}
+
+/**
+ * Get currently typing providers for a chat. Auto-expires entries older than 4 seconds.
+ * @param {string} chatId - The chat ID
+ * @returns {Array} Array of { providerId, providerName } currently typing
+ */
+function getTypingStatus(chatId) {
+  if (!chatId) return [];
+
+  var raw = localStorage.getItem('emr_chat_typing');
+  var data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
+
+  if (!data[chatId]) return [];
+
+  var now = Date.now();
+  var expiryMs = 4000;
+  var result = [];
+  var changed = false;
+
+  var keys = Object.keys(data[chatId]);
+  for (var i = 0; i < keys.length; i++) {
+    var entry = data[chatId][keys[i]];
+    if (now - entry.timestamp > expiryMs) {
+      delete data[chatId][keys[i]];
+      changed = true;
+    } else {
+      result.push({ providerId: entry.providerId, providerName: entry.providerName });
+    }
+  }
+
+  if (changed) {
+    localStorage.setItem('emr_chat_typing', JSON.stringify(data));
+  }
+
+  return result;
+}
+
+/**
+ * Mark a chat message as delivered for a specific provider.
+ * @param {string} messageId - The chat message ID
+ * @param {string} providerId - The provider who received the message
+ * @returns {Object} The updated message, or error
+ */
+function markChatMessageDelivered(messageId, providerId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.chatMessages, function() {
+    var all = loadAll(KEYS.chatMessages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    if (!Array.isArray(all[idx].deliveredTo)) all[idx].deliveredTo = [];
+
+    var alreadyDelivered = all[idx].deliveredTo.find(function(d) {
+      return d.providerId === providerId;
+    });
+    if (!alreadyDelivered) {
+      all[idx].deliveredTo.push({
+        providerId: providerId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (all[idx].status === 'sending' || all[idx].status === 'sent') {
+      all[idx].status = 'delivered';
+    }
+
+    saveAll(KEYS.chatMessages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Get the delivery status of a chat message.
+ * Status levels: "sending" → "sent" → "delivered" → "read"
+ * @param {string} messageId - The chat message ID
+ * @returns {Object} { status, deliveredTo } or error
+ */
+function getChatMessageStatus(messageId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+
+  var all = loadAll(KEYS.chatMessages);
+  var msg = all.find(function(m) { return m.id === messageId; });
+  if (!msg) return { error: true, errors: ['Message not found'] };
+
+  return {
+    status: msg.status || 'sent',
+    deliveredTo: Array.isArray(msg.deliveredTo) ? msg.deliveredTo : []
+  };
+}
+
+/**
+ * Archive a patient message.
+ * @param {string} messageId - The message ID to archive
+ * @param {string} providerId - The provider archiving the message
+ * @returns {Object} The updated message, or error
+ */
+function archiveMessage(messageId, providerId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.messages, function() {
+    var all = loadAll(KEYS.messages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    all[idx].archivedAt = new Date().toISOString();
+    all[idx].archivedBy = providerId;
+    saveAll(KEYS.messages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Unarchive a patient message.
+ * @param {string} messageId - The message ID to unarchive
+ * @returns {Object} The updated message, or error
+ */
+function unarchiveMessage(messageId) {
+  if (!messageId) return { error: true, errors: ['messageId is required'] };
+
+  return withWriteLock(KEYS.messages, function() {
+    var all = loadAll(KEYS.messages, true);
+    var idx = all.findIndex(function(m) { return m.id === messageId; });
+    if (idx < 0) return { error: true, errors: ['Message not found'] };
+
+    all[idx].archivedAt = null;
+    all[idx].archivedBy = null;
+    saveAll(KEYS.messages, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Get archived messages for a specific provider.
+ * @param {string} providerId - The provider whose archived messages to retrieve
+ * @returns {Array} Archived messages for the provider, sorted by archive date descending
+ */
+function getArchivedMessages(providerId) {
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+  var all = loadAll(KEYS.messages);
+  return all.filter(function(m) {
+    return m.archivedBy === providerId && m.archivedAt;
+  }).sort(function(a, b) {
+    return new Date(b.archivedAt) - new Date(a.archivedAt);
+  });
+}
+
+/**
+ * Mute a chat for a provider, optionally until a specific date.
+ * @param {string} chatId - The chat ID to mute
+ * @param {string} providerId - The provider muting the chat
+ * @param {string|null} until - ISO date string or null for indefinite
+ * @returns {Object} The updated chat, or error
+ */
+function muteChat(chatId, providerId, until) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.secureChats, function() {
+    var all = loadAll(KEYS.secureChats, true);
+    var idx = all.findIndex(function(c) { return c.id === chatId; });
+    if (idx < 0) return { error: true, errors: ['Chat not found'] };
+
+    if (!Array.isArray(all[idx].mutedBy)) all[idx].mutedBy = [];
+
+    var existingIdx = -1;
+    for (var i = 0; i < all[idx].mutedBy.length; i++) {
+      if (all[idx].mutedBy[i].providerId === providerId) {
+        existingIdx = i;
+        break;
+      }
+    }
+
+    var muteEntry = { providerId: providerId, until: until || null };
+    if (existingIdx >= 0) {
+      all[idx].mutedBy[existingIdx] = muteEntry;
+    } else {
+      all[idx].mutedBy.push(muteEntry);
+    }
+
+    saveAll(KEYS.secureChats, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Unmute a chat for a provider.
+ * @param {string} chatId - The chat ID to unmute
+ * @param {string} providerId - The provider unmuting the chat
+ * @returns {Object} The updated chat, or error
+ */
+function unmuteChat(chatId, providerId) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  return withWriteLock(KEYS.secureChats, function() {
+    var all = loadAll(KEYS.secureChats, true);
+    var idx = all.findIndex(function(c) { return c.id === chatId; });
+    if (idx < 0) return { error: true, errors: ['Chat not found'] };
+
+    if (!Array.isArray(all[idx].mutedBy)) all[idx].mutedBy = [];
+
+    all[idx].mutedBy = all[idx].mutedBy.filter(function(entry) {
+      return entry.providerId !== providerId;
+    });
+
+    saveAll(KEYS.secureChats, all);
+    return all[idx];
+  });
+}
+
+/**
+ * Check if a chat is muted for a specific provider. Checks expiration.
+ * @param {string} chatId - The chat ID
+ * @param {string} providerId - The provider to check
+ * @returns {boolean} True if the chat is currently muted for the provider
+ */
+function isChatMuted(chatId, providerId) {
+  if (!chatId || !providerId) return false;
+
+  var all = loadAll(KEYS.secureChats);
+  var chat = all.find(function(c) { return c.id === chatId; });
+  if (!chat || !Array.isArray(chat.mutedBy)) return false;
+
+  var entry = chat.mutedBy.find(function(e) { return e.providerId === providerId; });
+  if (!entry) return false;
+
+  if (entry.until === null || entry.until === undefined) return true;
+
+  return new Date(entry.until) > new Date();
+}
+
+/**
+ * Save a draft message for a chat conversation.
+ * Stored in localStorage key 'emr_chat_drafts' keyed by chatId_providerId.
+ * @param {string} chatId - The chat ID
+ * @param {string} providerId - The provider authoring the draft
+ * @param {string} text - The draft text
+ */
+function saveChatDraft(chatId, providerId, text) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  var raw = localStorage.getItem('emr_chat_drafts');
+  var drafts = {};
+  try { drafts = raw ? JSON.parse(raw) : {}; } catch (e) { drafts = {}; }
+
+  var draftKey = chatId + '_' + providerId;
+  drafts[draftKey] = {
+    text: text || '',
+    updatedAt: new Date().toISOString()
+  };
+
+  localStorage.setItem('emr_chat_drafts', JSON.stringify(drafts));
+  return { success: true };
+}
+
+/**
+ * Get a draft message for a chat conversation.
+ * @param {string} chatId - The chat ID
+ * @param {string} providerId - The provider
+ * @returns {string|null} The draft text, or null if none
+ */
+function getChatDraft(chatId, providerId) {
+  if (!chatId || !providerId) return null;
+
+  var raw = localStorage.getItem('emr_chat_drafts');
+  var drafts = {};
+  try { drafts = raw ? JSON.parse(raw) : {}; } catch (e) { drafts = {}; }
+
+  var draftKey = chatId + '_' + providerId;
+  var entry = drafts[draftKey];
+  return entry ? entry.text : null;
+}
+
+/**
+ * Clear a draft message for a chat conversation.
+ * @param {string} chatId - The chat ID
+ * @param {string} providerId - The provider
+ */
+function clearChatDraft(chatId, providerId) {
+  if (!chatId) return { error: true, errors: ['chatId is required'] };
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  var raw = localStorage.getItem('emr_chat_drafts');
+  var drafts = {};
+  try { drafts = raw ? JSON.parse(raw) : {}; } catch (e) { drafts = {}; }
+
+  var draftKey = chatId + '_' + providerId;
+  delete drafts[draftKey];
+
+  localStorage.setItem('emr_chat_drafts', JSON.stringify(drafts));
+  return { success: true };
+}
+
+/**
+ * Get chat statistics for a provider.
+ * @param {string} providerId - The provider ID
+ * @returns {Object} { totalChats, totalMessages, messagesThisWeek, mostActiveChat, averageResponseTime }
+ */
+function getChatStats(providerId) {
+  if (!providerId) return { error: true, errors: ['providerId is required'] };
+
+  var chats = loadAll(KEYS.secureChats);
+  var allMessages = loadAll(KEYS.chatMessages);
+
+  /* totalChats: chats the provider is a participant in */
+  var providerChats = chats.filter(function(c) {
+    return Array.isArray(c.participants) && c.participants.indexOf(providerId) >= 0;
+  });
+  var totalChats = providerChats.length;
+
+  /* totalMessages: messages sent by provider */
+  var providerMessages = allMessages.filter(function(m) {
+    return m.senderId === providerId;
+  });
+  var totalMessages = providerMessages.length;
+
+  /* messagesThisWeek: messages sent by provider in the current week (Mon-Sun) */
+  var now = new Date();
+  var dayOfWeek = now.getDay();
+  var diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  var weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+
+  var messagesThisWeek = providerMessages.filter(function(m) {
+    return new Date(m.timestamp) >= weekStart;
+  }).length;
+
+  /* mostActiveChat: chatId with the most messages from this provider */
+  var chatCounts = {};
+  for (var i = 0; i < providerMessages.length; i++) {
+    var cid = providerMessages[i].chatId;
+    if (cid) {
+      chatCounts[cid] = (chatCounts[cid] || 0) + 1;
+    }
+  }
+  var mostActiveChat = null;
+  var maxCount = 0;
+  var chatIds = Object.keys(chatCounts);
+  for (var j = 0; j < chatIds.length; j++) {
+    if (chatCounts[chatIds[j]] > maxCount) {
+      maxCount = chatCounts[chatIds[j]];
+      mostActiveChat = chatIds[j];
+    }
+  }
+
+  /* averageResponseTime: average time between consecutive messages in provider's chats (minutes) */
+  var totalResponseTime = 0;
+  var responseCount = 0;
+
+  for (var k = 0; k < providerChats.length; k++) {
+    var chatId = providerChats[k].id;
+    var chatMsgs = allMessages.filter(function(m) { return m.chatId === chatId; });
+    chatMsgs.sort(function(a, b) { return new Date(a.timestamp) - new Date(b.timestamp); });
+
+    for (var l = 1; l < chatMsgs.length; l++) {
+      var prev = chatMsgs[l - 1];
+      var curr = chatMsgs[l];
+      /* Only count responses TO the provider or FROM the provider */
+      if (curr.senderId === providerId && prev.senderId !== providerId) {
+        var diff = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
+        if (diff > 0) {
+          totalResponseTime += diff;
+          responseCount++;
+        }
+      }
+    }
+  }
+
+  var averageResponseTime = responseCount > 0
+    ? Math.round((totalResponseTime / responseCount) / 60000 * 100) / 100
+    : 0;
+
+  return {
+    totalChats: totalChats,
+    totalMessages: totalMessages,
+    messagesThisWeek: messagesThisWeek,
+    mostActiveChat: mostActiveChat,
+    averageResponseTime: averageResponseTime
+  };
+}
+
+/* ============================================================
    Claims / Billing
    ============================================================ */
 
@@ -2447,8 +3238,8 @@ function generateClaimFromEncounter(encounterId) {
 
   // Determine place of service
   var pos = '11';
-  if (enc.visitType === 'Inpatient') pos = '21';
-  else if (enc.visitType === 'Emergency') pos = '23';
+  if (enc.visitType === 'Inpatient' || enc.visitType === 'ICU') pos = '21';
+  else if (enc.visitType === 'ED' || enc.visitType === 'Emergency') pos = '23';
 
   return saveClaim({
     encounterId: encounterId,
@@ -2890,7 +3681,8 @@ function evaluateSmartCriteria(criteria) {
 
 function _calcPatientAge(dob) {
   if (!dob) return null;
-  const d = new Date(dob + 'T00:00:00');
+  var parts = dob.split('-');
+  var d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
   if (isNaN(d)) return null;
   const today = new Date();
   let age = today.getFullYear() - d.getFullYear();
@@ -3121,8 +3913,54 @@ async function seedAdminIfNeeded() {
   });
 }
 
+async function seedPrimaryUser() {
+  var existing = getUserByEmail('jasongusdorf@gmail.com');
+  if (existing) return;
+  var pwResult = await hashPassword('Testcode123!');
+  var userId = generateId();
+  // Write directly to localStorage to avoid withWriteLock Promise issues during seed
+  var users = loadAll(KEYS.users, true);
+  var newUser = {
+    id: userId,
+    firstName: 'Jason',
+    lastName: 'Gusdorf',
+    dob: '',
+    npiNumber: '',
+    email: 'jasongusdorf@gmail.com',
+    phone: '',
+    degree: 'MD',
+    passwordHash: pwResult.hash,
+    salt: pwResult.salt,
+    role: 'admin',
+    status: 'active',
+    mustChangePassword: false,
+    approvedBy: '',
+    approvedAt: '',
+    deactivatedAt: '',
+    lastPasswordChange: '',
+    createdAt: new Date().toISOString(),
+  };
+  users.push(newUser);
+  saveAll(KEYS.users, users);
+
+  var providers = loadAll(KEYS.providers, true);
+  providers.push({
+    id: userId,
+    firstName: 'Jason',
+    lastName: 'Gusdorf',
+    degree: 'MD',
+    role: 'Admin',
+    npiNumber: '',
+    email: 'jasongusdorf@gmail.com',
+    phone: '',
+    createdAt: new Date().toISOString(),
+  });
+  saveAll(KEYS.providers, providers);
+}
+
 async function seedIfEmpty() {
   await seedAdminIfNeeded();
+  await seedPrimaryUser();
   if (getPatients().length > 0) return; // already seeded
 
   // Providers

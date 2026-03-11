@@ -56,7 +56,7 @@ var IO_OUTPUT_CATS = ['Urine','Stool','Emesis','NG Suction','Drain','Blood Loss'
 var IO_INFUSIONS_KEY = 'emr_continuous_infusions';
 
 function _getInfusions(patientId) {
-  var raw = localStorage.getItem(IO_INFUSIONS_KEY);
+  var raw = getStorageAdapter().getItem(IO_INFUSIONS_KEY);
   var all = raw ? JSON.parse(raw) : [];
   return all.filter(function(inf) { return inf.patientId === patientId && !inf._deleted; });
 }
@@ -64,15 +64,15 @@ function _getInfusions(patientId) {
 function _saveInfusion(data) {
   if (!data.id) data.id = generateId();
   data.createdAt = data.createdAt || new Date().toISOString();
-  var raw = localStorage.getItem(IO_INFUSIONS_KEY);
+  var raw = getStorageAdapter().getItem(IO_INFUSIONS_KEY);
   var all = raw ? JSON.parse(raw) : [];
   all.push(data);
-  localStorage.setItem(IO_INFUSIONS_KEY, JSON.stringify(all));
+  getStorageAdapter().setItem(IO_INFUSIONS_KEY, JSON.stringify(all));
   return data;
 }
 
 function _updateInfusion(id, updates) {
-  var raw = localStorage.getItem(IO_INFUSIONS_KEY);
+  var raw = getStorageAdapter().getItem(IO_INFUSIONS_KEY);
   var all = raw ? JSON.parse(raw) : [];
   for (var i = 0; i < all.length; i++) {
     if (all[i].id === id) {
@@ -80,7 +80,7 @@ function _updateInfusion(id, updates) {
       break;
     }
   }
-  localStorage.setItem(IO_INFUSIONS_KEY, JSON.stringify(all));
+  getStorageAdapter().setItem(IO_INFUSIONS_KEY, JSON.stringify(all));
 }
 
 function _calcInfusionVolume(inf) {
@@ -106,7 +106,7 @@ function _calcInfusionHourlyVolume(inf, hour, dateStr) {
 var IO_FLUID_RESTRICT_KEY = 'emr_fluid_restrictions';
 
 function _getFluidRestriction(patientId) {
-  var raw = localStorage.getItem(IO_FLUID_RESTRICT_KEY);
+  var raw = getStorageAdapter().getItem(IO_FLUID_RESTRICT_KEY);
   var all = raw ? JSON.parse(raw) : [];
   var rec = null;
   all.forEach(function(r) {
@@ -120,14 +120,14 @@ function _getFluidRestriction(patientId) {
 function _saveFluidRestriction(data) {
   if (!data.id) data.id = generateId();
   data.createdAt = data.createdAt || new Date().toISOString();
-  var raw = localStorage.getItem(IO_FLUID_RESTRICT_KEY);
+  var raw = getStorageAdapter().getItem(IO_FLUID_RESTRICT_KEY);
   var all = raw ? JSON.parse(raw) : [];
   // Soft-delete any previous restriction for this patient
   all.forEach(function(r) {
     if (r.patientId === data.patientId && !r._deleted) r._deleted = true;
   });
   all.push(data);
-  localStorage.setItem(IO_FLUID_RESTRICT_KEY, JSON.stringify(all));
+  getStorageAdapter().setItem(IO_FLUID_RESTRICT_KEY, JSON.stringify(all));
   return data;
 }
 

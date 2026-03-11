@@ -8,6 +8,8 @@ var SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 var SESSION_WARNING_MS = 2 * 60 * 1000;  // 2 minutes before timeout
 var MODAL_FOCUS_DELAY_MS = 50;
 var TOAST_DEFAULT_DURATION_MS = 3000;
+var SESSION_GRACE_MS = 60000;           // 1 min grace after timeout
+var ACTIVITY_THROTTLE_MS = 10000;       // throttle activity checks to 10 seconds
 
 /* ---------- DOMPurify-lite Sanitizer ---------- */
 function sanitizeHTML(html) {
@@ -21,7 +23,11 @@ function sanitizeHTML(html) {
     .replace(/<iframe\b[^>]*>.*?<\/iframe>/gi, '')
     .replace(/<object\b[^>]*>.*?<\/object>/gi, '')
     .replace(/<embed\b[^>]*>/gi, '')
-    .replace(/<link\b[^>]*>/gi, '');
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, '')
+    .replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, '')
+    .replace(/data\s*:/gi, 'data-blocked:')
+    .replace(/vbscript\s*:/gi, '');
 }
 window.sanitizeHTML = sanitizeHTML;
 
@@ -60,6 +66,7 @@ function setActiveNav(name) {
 let _modalCloseCallback = null;
 let _modalFocusTrap = null;
 let _modalStack = [];
+let _modalCurrentTriggerEl = null;
 
 function _buildFocusTrap(modal) {
   return function(e) {
@@ -68,7 +75,7 @@ function _buildFocusTrap(modal) {
       if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'BUTTON')) return;
       const footer = document.getElementById('modal-footer');
       const primary = footer && (footer.querySelector('.btn-success, .btn-primary, .btn-danger'));
-      if (primary) { e.preventDefault(); primary.click(); }
+      if (primary && !primary.disabled) { e.preventDefault(); primary.click(); }
       return;
     }
     if (e.key !== 'Tab') return;
@@ -84,11 +91,21 @@ function _buildFocusTrap(modal) {
   };
 }
 
+var MAX_MODAL_DEPTH = 5;
+
 function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
+  if (_modalStack.length >= MAX_MODAL_DEPTH) {
+    console.warn('[EMR] Modal stack depth limit reached');
+    return;
+  }
+
   const backdrop = document.getElementById('modal-backdrop');
   const modal    = document.getElementById('modal');
   const bodyEl   = document.getElementById('modal-body');
   const footerEl = document.getElementById('modal-footer');
+
+  // Store the element that triggered the modal for focus restoration
+  var _modalTriggerEl = document.activeElement;
 
   // Stack current modal if one is already open
   if (!backdrop.classList.contains('hidden')) {
@@ -102,7 +119,8 @@ function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
       footer: savedFooter,
       size: modal.className,
       onClose: _modalCloseCallback,
-      focusTrap: _modalFocusTrap
+      focusTrap: _modalFocusTrap,
+      triggerEl: _modalCurrentTriggerEl
     });
     if (_modalFocusTrap) document.removeEventListener('keydown', _modalFocusTrap);
   }
@@ -114,6 +132,7 @@ function openModal({ title, bodyHTML, footerHTML, size = '', onClose = null }) {
   modal.className = 'modal' + (size ? ' modal-' + size : '');
   backdrop.classList.remove('hidden');
   _modalCloseCallback = onClose;
+  _modalCurrentTriggerEl = _modalTriggerEl;
 
   // Focus first input
   const first = modal.querySelector('input, select, textarea, button');
@@ -161,17 +180,24 @@ function closeModal() {
     modal.className = prev.size;
     _modalCloseCallback = prev.onClose;
     _modalFocusTrap = prev.focusTrap;
+    _modalCurrentTriggerEl = prev.triggerEl;
     if (_modalFocusTrap) document.addEventListener('keydown', _modalFocusTrap);
     const first = modal.querySelector('input, select, textarea, button');
     if (first) setTimeout(() => first.focus(), MODAL_FOCUS_DELAY_MS);
   } else {
     document.getElementById('modal-backdrop').classList.add('hidden');
+    var _restoreTrigger = _modalCurrentTriggerEl;
+    _modalCurrentTriggerEl = null;
+    if (_restoreTrigger) {
+      setTimeout(function() { _restoreTrigger.focus(); }, MODAL_FOCUS_DELAY_MS);
+    }
   }
 }
 
 function closeAllModals() {
   _modalStack = [];
   _modalCloseCallback = null;
+  _modalCurrentTriggerEl = null;
   document.getElementById('modal-body').innerHTML = '';
   document.getElementById('modal-footer').innerHTML = '';
   if (_modalFocusTrap) { document.removeEventListener('keydown', _modalFocusTrap); _modalFocusTrap = null; }
@@ -184,8 +210,26 @@ function showToast(message, type = 'default', duration = TOAST_DEFAULT_DURATION_
   const toast = document.createElement('div');
   toast.className = 'toast' + (type !== 'default' ? ' toast-' + type : '');
   toast.textContent = message;
+
+  if (type === 'error') {
+    // Error toasts are persistent — add a close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close-btn';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.style.cssText = 'background:none;border:none;color:inherit;font-size:18px;cursor:pointer;margin-left:12px;padding:0 4px;line-height:1;opacity:0.8;';
+    closeBtn.addEventListener('click', function() { toast.remove(); });
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.justifyContent = 'space-between';
+    toast.appendChild(closeBtn);
+    // No auto-dismiss for errors
+  } else {
+    var toastDuration = type === 'warning' ? 6000 : duration;
+    setTimeout(function() { toast.remove(); }, toastDuration);
+  }
+
   container.appendChild(toast);
-  setTimeout(() => { toast.remove(); }, duration);
 }
 
 /* ---------- Confirm ---------- */
@@ -259,8 +303,27 @@ function confirmAction({ title, message, confirmLabel = 'Confirm', danger = fals
   overlay.appendChild(box);
   document.body.appendChild(overlay);
 
-  // Close on backdrop click
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Escape key handler
+  function handleEscape(e) {
+    if (e.key === 'Escape') {
+      overlay.remove();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  }
+  document.addEventListener('keydown', handleEscape);
+
+  // Close on backdrop click (also clean up escape handler)
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) {
+      overlay.remove();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  });
+
+  // Clean up escape handler when buttons are clicked
+  cancelBtn.addEventListener('click', function() { document.removeEventListener('keydown', handleEscape); });
+  confirmBtn.addEventListener('click', function() { document.removeEventListener('keydown', handleEscape); });
+
   confirmBtn.focus();
 }
 
@@ -282,21 +345,7 @@ function applyEncounterMode() {
 }
 
 function initEncounterModeToggle() {
-  const toggle = document.querySelector('.encounter-mode-toggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', e => {
-    const btn = e.target.closest('.mode-btn');
-    if (!btn) return;
-    const mode = btn.dataset.mode;
-    setEncounterMode(mode);
-    applyEncounterMode();
-    // If on schedule in inpatient mode, redirect
-    if (mode === 'inpatient' && location.hash === '#schedule') {
-      navigate('#dashboard');
-    } else {
-      route();
-    }
-  });
+  // Mode is now selected at login — just apply the saved mode
   applyEncounterMode();
 }
 
@@ -850,6 +899,7 @@ function handlePostLogin(user) {
     return;
   }
   showApp();
+  location.hash = '#dashboard';
   initAppAfterAuth();
 }
 
@@ -870,6 +920,7 @@ function showForcePasswordChangeScreen() {
 /* ---------- Session timeout (7c: 15 min inactivity, modal warning) ---------- */
 let _sessionTimeoutInterval = null;
 let _sessionActivityHandler = null;
+var _sessionThrottledHandler = null;
 let _sessionWarningShown = false;
 let _lastActivity = Date.now();
 
@@ -887,23 +938,23 @@ function startSessionTimer() {
   };
 
   let _activityThrottle = null;
-  const throttledHandler = () => {
+  _sessionThrottledHandler = () => {
     if (_activityThrottle) return;
     _activityThrottle = setTimeout(() => {
       _sessionActivityHandler();
       _activityThrottle = null;
-    }, 10000); // throttle to 10 seconds
+    }, ACTIVITY_THROTTLE_MS);
   };
 
   ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(evt => {
-    document.addEventListener(evt, throttledHandler, { passive: true });
+    document.addEventListener(evt, _sessionThrottledHandler, { passive: true });
   });
 
   // Check every 60 seconds
   _sessionTimeoutInterval = setInterval(() => {
     const elapsed = Date.now() - _lastActivity;
     const timeoutMs = SESSION_TIMEOUT_MS;
-    const forceLogoutMs = SESSION_TIMEOUT_MS + 60000; // 1 min grace after timeout
+    const forceLogoutMs = SESSION_TIMEOUT_MS + SESSION_GRACE_MS;
     const warningMs = SESSION_TIMEOUT_MS - SESSION_WARNING_MS;
 
     // Force logout (warning was not dismissed within grace period)
@@ -913,7 +964,7 @@ function startSessionTimer() {
       closeAllModals();
       logout();
       showLogin();
-      showToast('Your session has expired due to inactivity.', 'error', 5000);
+      showToast('Your session has expired due to inactivity.', 'error', TOAST_DEFAULT_DURATION_MS);
       return;
     }
 
@@ -924,7 +975,7 @@ function startSessionTimer() {
       closeAllModals();
       logout();
       showLogin();
-      showToast('Your session has expired due to inactivity.', 'error', 5000);
+      showToast('Your session has expired due to inactivity.', 'error', TOAST_DEFAULT_DURATION_MS);
       return;
     }
 
@@ -955,20 +1006,18 @@ function startSessionTimer() {
     }
   }, 60000);
 
-  // Store handler ref for cleanup
-  _sessionTimeoutInterval._throttledHandler = throttledHandler;
 }
 
 function stopSessionTimer() {
   if (_sessionTimeoutInterval) {
-    const handler = _sessionTimeoutInterval._throttledHandler;
     clearInterval(_sessionTimeoutInterval);
-    if (handler) {
-      ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(evt => {
-        document.removeEventListener(evt, handler);
-      });
-    }
     _sessionTimeoutInterval = null;
+  }
+  if (_sessionThrottledHandler) {
+    ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(evt => {
+      document.removeEventListener(evt, _sessionThrottledHandler);
+    });
+    _sessionThrottledHandler = null;
   }
   _sessionActivityHandler = null;
 }
@@ -1127,7 +1176,7 @@ function initRegisterForm() {
     form.reset();
     document.getElementById('register-form').classList.add('hidden');
     document.getElementById('login-form').classList.remove('hidden');
-    showToast('Account created! An administrator must approve your account before you can sign in.', 'success', 5000);
+    showToast('Account created! An administrator must approve your account before you can sign in.', 'success', TOAST_DEFAULT_DURATION_MS);
   });
 
   document.getElementById('show-login').addEventListener('click', e => {
@@ -1191,6 +1240,8 @@ function initSidebarSearch() {
   const input = document.getElementById('sidebar-search');
   const results = document.getElementById('sidebar-search-results');
   if (!input || !results) return;
+
+  input.setAttribute('autocomplete', 'off');
 
   input.addEventListener('input', () => {
     clearTimeout(_sidebarSearchTimer);
@@ -1779,6 +1830,16 @@ if (skipLink) {
 
 /* ---------- Init ---------- */
 async function init() {
+  // Connect to PocketBase if available (falls back to localStorage silently)
+  if (typeof initPocketBase === 'function') {
+    try {
+      var pbOk = await initPocketBase();
+      if (pbOk) console.log('[EMR] Running on PocketBase backend');
+    } catch (err) {
+      console.warn('[EMR] PocketBase init failed, using localStorage:', err.message);
+    }
+  }
+
   try {
   await seedIfEmpty();
   seedExtraPatients();
@@ -1854,16 +1915,14 @@ function initForgotPassword() {
 
       const user = getUserByEmail(email);
       if (!user) {
+        // Artificial delay to prevent timing attacks
+        await new Promise(function(r) { setTimeout(r, 200 + Math.floor(Math.random() * 600)); });
         showToast('If an account exists with that email, a reset has been initiated.', 'success');
         return;
       }
 
-      const tempPw = await resetPasswordForUser(user.id, null);
-      if (tempPw) {
-        document.getElementById('forgot-temp-pw').textContent = tempPw;
-        document.getElementById('forgot-result').classList.remove('hidden');
-        showToast('Temporary password generated.', 'success');
-      }
+      await resetPasswordForUser(user.id, null);
+      showToast('If an account exists with that email, a reset has been initiated.', 'success');
     });
   }
 }
@@ -2120,7 +2179,7 @@ function refreshRightPanel() {
     // Patient search
     html += '<div class="rp-section" style="margin-top:12px;">';
     html += '<div class="rp-section-title">Find Patient</div>';
-    html += '<input type="text" class="form-control" id="rp-patient-search" placeholder="Search by name or MRN..." style="font-size:13px;" />';
+    html += '<input type="text" class="form-control" id="rp-patient-search" placeholder="Search by name or MRN..." autocomplete="off" style="font-size:13px;" />';
     html += '<div id="rp-patient-results" style="margin-top:8px;"></div>';
     html += '</div>';
   }

@@ -3,6 +3,40 @@
    + Summary bar, alerts, upcoming appointments, My Patients
    ============================================================ */
 
+/* ---------- Dashboard stats cache (perf — avoids N+1 on every render) ---------- */
+var _dashStatsCache = null;
+var _dashStatsCacheTime = 0;
+var DASH_CACHE_TTL = 30000; // 30 seconds
+
+function getDashboardStats(isInpatient) {
+  var now = Date.now();
+  if (_dashStatsCache && now - _dashStatsCacheTime < DASH_CACHE_TTL) {
+    return _dashStatsCache;
+  }
+  var encounters = getEncounters();
+  var notes = getNotes();
+  var orders = getOrders();
+
+  var inpatientEncs = encounters.filter(function(e) {
+    return (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled';
+  });
+  var inpatientEncIds = new Set(inpatientEncs.map(function(e) { return e.id; }));
+
+  _dashStatsCache = {
+    encounters: encounters,
+    notes: notes,
+    orders: orders,
+    inpatientEncs: inpatientEncs,
+    inpatientEncIds: inpatientEncIds,
+    unsignedNotesInpatient: notes.filter(function(n) { return !n.signed && inpatientEncIds.has(n.encounterId); }).length,
+    pendingOrdersInpatient: orders.filter(function(o) { return o.status === 'Pending' && inpatientEncIds.has(o.encounterId); }).length,
+    unsignedNotesAll: notes.filter(function(n) { return !n.signed; }).length,
+    pendingOrdersAll: orders.filter(function(o) { return o.status === 'Pending'; }).length,
+  };
+  _dashStatsCacheTime = now;
+  return _dashStatsCache;
+}
+
 let _dashMyPatientsOnly = false;
 
 /* WS8d: Inject PT/SLP/Aspiration columns into PATIENT_COLUMNS at load time */
@@ -39,9 +73,9 @@ function renderDashboard() {
 
   const allPatients = isInpatient
     ? getPatientsWithActiveInpatientEncounters().sort((a, b) =>
-        (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName))
+        ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')))
     : getPatients().sort((a, b) =>
-        (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName));
+        ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
 
   // ===== Physician Header =====
   const currentUser = getSessionUser();
@@ -52,11 +86,13 @@ function renderDashboard() {
 
     const nameEl = document.createElement('div');
     nameEl.className = 'dashboard-physician-name';
-    nameEl.textContent = currentProvider.firstName + ' ' + currentProvider.lastName + ', ' + currentProvider.degree;
+    nameEl.textContent = (currentProvider.firstName || '') + ' ' + (currentProvider.lastName || '') + ', ' + (currentProvider.degree || '');
 
     physicianHeader.appendChild(nameEl);
 
+    // UI preference — stays in localStorage
     const clinicType = !isInpatient ? (localStorage.getItem('emr_op_clinic_type') || '') : '';
+    // UI preference — stays in localStorage
     const clinicName = !isInpatient ? (localStorage.getItem('emr_op_clinic_name') || '') : '';
     const clinicText = [clinicType, clinicName].filter(Boolean).join(' · ');
 
@@ -76,7 +112,9 @@ function renderDashboard() {
     cogBtn.title = 'Edit clinic location';
     cogBtn.textContent = '';
     cogBtn.addEventListener('click', () => {
+      // UI preference — stays in localStorage
       const curType = localStorage.getItem(typeKey) || '';
+      // UI preference — stays in localStorage
       const curName = localStorage.getItem(nameKey) || '';
       const opts = types.map(t => '<option value="' + esc(t) + '"' + (curType === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
       openModal({
@@ -93,8 +131,8 @@ function renderDashboard() {
         footerHTML: '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="cog-save">Save</button>',
       });
       document.getElementById('cog-save').addEventListener('click', () => {
-        localStorage.setItem(typeKey, document.getElementById('cog-type').value);
-        localStorage.setItem(nameKey, document.getElementById('cog-name').value.trim());
+        localStorage.setItem(typeKey, document.getElementById('cog-type').value); // UI preference — stays in localStorage
+        localStorage.setItem(nameKey, document.getElementById('cog-name').value.trim()); // UI preference — stays in localStorage
         closeModal();
         renderDashboard();
       });
@@ -105,26 +143,44 @@ function renderDashboard() {
     app.appendChild(physicianHeader);
   }
 
+  // ===== Encounter Mode Toggle =====
+  var modeToggle = document.createElement('div');
+  modeToggle.className = 'dashboard-mode-toggle';
+  modeToggle.innerHTML = '<span class="dashboard-mode-label">Encounter Mode:</span>' +
+    '<div class="login-mode-toggle">' +
+    '<button type="button" class="login-mode-btn' + (mode === 'outpatient' ? ' active' : '') + '" data-mode="outpatient">Outpatient</button>' +
+    '<button type="button" class="login-mode-btn' + (mode === 'inpatient' ? ' active' : '') + '" data-mode="inpatient">Inpatient</button>' +
+    '</div>';
+  modeToggle.querySelectorAll('.login-mode-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var newMode = btn.dataset.mode;
+      if (newMode === mode) return;
+      setEncounterMode(newMode);
+      if (typeof applyEncounterMode === 'function') applyEncounterMode();
+      renderDashboard();
+    });
+  });
+  app.appendChild(modeToggle);
+
   // ===== Summary Bar =====
   const summaryBar = document.createElement('div');
   summaryBar.className = 'dashboard-summary-bar';
 
+  const dashStats = getDashboardStats(isInpatient);
+
   let stats;
   if (isInpatient) {
-    const inpatientEncs = getEncounters().filter(e =>
-      (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Signed' && e.status !== 'Cancelled');
-    const inpatientEncIds = new Set(inpatientEncs.map(e => e.id));
-    const unsignedCount = getNotes().filter(n => !n.signed && inpatientEncIds.has(n.encounterId)).length;
-    const pendingOrdersCount = getOrders().filter(o => o.status === 'Pending' && inpatientEncIds.has(o.encounterId)).length;
+    const unsignedCount = dashStats.unsignedNotesInpatient;
+    const pendingOrdersCount = dashStats.pendingOrdersInpatient;
     stats = [
       { value: allPatients.length, label: 'Census Count', cls: '' },
-      { value: inpatientEncs.length, label: 'Active Admissions', cls: '' },
+      { value: dashStats.inpatientEncs.length, label: 'Active Admissions', cls: '' },
       { value: unsignedCount, label: 'Unsigned Notes', cls: unsignedCount > 0 ? 'stat-warning' : '' },
       { value: pendingOrdersCount, label: 'Pending Orders', cls: pendingOrdersCount > 0 ? 'stat-warning' : '' },
     ];
   } else {
-    const unsignedCount = getNotes().filter(n => !n.signed).length;
-    const pendingOrdersCount = getOrders().filter(o => o.status === 'Pending').length;
+    const unsignedCount = dashStats.unsignedNotesAll;
+    const pendingOrdersCount = dashStats.pendingOrdersAll;
     stats = [
       { value: unsignedCount,      label: 'Unsigned Notes', cls: unsignedCount > 0 ? 'stat-warning' : '' },
       { value: pendingOrdersCount, label: 'Pending Orders', cls: pendingOrdersCount > 0 ? 'stat-warning' : '' },
@@ -307,7 +363,9 @@ function renderDashboard() {
   const typeKey = isInpatient ? 'emr_ip_service_type' : 'emr_op_clinic_type';
   const nameKey = isInpatient ? 'emr_ip_service_name' : 'emr_op_clinic_name';
 
+  // UI preference — stays in localStorage
   const savedType = localStorage.getItem(typeKey) || '';
+  // UI preference — stays in localStorage
   const savedName = localStorage.getItem(nameKey) || '';
 
   const infoBody = document.createElement('div');
@@ -315,7 +373,9 @@ function renderDashboard() {
 
   function renderInfoBody() {
     infoBody.innerHTML = '';
+    // UI preference — stays in localStorage
     const curType = localStorage.getItem(typeKey) || '';
+    // UI preference — stays in localStorage
     const curName = localStorage.getItem(nameKey) || '';
 
     if (curType && curName) {
@@ -358,9 +418,9 @@ function renderDashboard() {
     const typeSelect = document.createElement('select');
     typeSelect.className = 'form-control';
     typeSelect.innerHTML = '<option value="">— Select —</option>' +
-      types.map(t => '<option value="' + t + '"' + ((localStorage.getItem(typeKey) || '') === t ? ' selected' : '') + '>' + t + '</option>').join('');
+      types.map(t => '<option value="' + t + '"' + ((localStorage.getItem(typeKey) || '') === t ? ' selected' : '') + '>' + t + '</option>').join(''); // UI preference — stays in localStorage
     typeSelect.addEventListener('change', () => {
-      localStorage.setItem(typeKey, typeSelect.value);
+      localStorage.setItem(typeKey, typeSelect.value); // UI preference — stays in localStorage
       if (typeSelect.value && nameInput.value.trim()) { renderInfoBody(); renderDashboard(); }
     });
     typeGroup.appendChild(typeLabel);
@@ -375,9 +435,9 @@ function renderDashboard() {
     const nameInput = document.createElement('input');
     nameInput.className = 'form-control';
     nameInput.placeholder = isInpatient ? 'e.g. Cardiology Team A' : 'e.g. Downtown Internal Medicine';
-    nameInput.value = localStorage.getItem(nameKey) || '';
+    nameInput.value = localStorage.getItem(nameKey) || ''; // UI preference — stays in localStorage
     nameInput.addEventListener('input', () => {
-      localStorage.setItem(nameKey, nameInput.value.trim());
+      localStorage.setItem(nameKey, nameInput.value.trim()); // UI preference — stays in localStorage
       if (typeSelect.value && nameInput.value.trim()) { renderInfoBody(); renderDashboard(); }
     });
     nameGroup.appendChild(nameLabel);
@@ -398,6 +458,12 @@ function renderDashboard() {
     newPatBtn.addEventListener('click', () => openNewPatientModal());
   }
 
+  // Cleanup: clear dashboard stats cache on route change
+  if (typeof registerCleanup === 'function') {
+    registerCleanup(function() {
+      _dashStatsCache = null;
+    });
+  }
 }
 
 /* ============================================================
@@ -423,7 +489,7 @@ function renderPatients() {
   setActiveNav('patients');
 
   const allPatients = getPatients().sort((a, b) =>
-    (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName));
+    ((a.lastName || '') + (a.firstName || '')).localeCompare((b.lastName || '') + (b.firstName || '')));
 
   const currentProv = getCurrentProvider();
   const user = getSessionUser();
@@ -1013,7 +1079,7 @@ function renderPatients() {
   // ===== Multi-column sort =====
   function getSortValue(pat, col) {
     switch (col) {
-      case 'name': return (pat.lastName + pat.firstName).toLowerCase();
+      case 'name': return ((pat.lastName || '') + (pat.firstName || '')).toLowerCase();
       case 'age': { const a = calcAge(pat.dob); return typeof a === 'number' ? a : -1; }
       case 'dob': return pat.dob || '';
       case 'lastEncounter': return getLastEncDate(pat.id) || '';

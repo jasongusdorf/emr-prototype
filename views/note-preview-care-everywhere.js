@@ -1191,7 +1191,7 @@ function _generateFakeRecordData(recordType, patient) {
       return labs[Math.floor(Math.random() * labs.length)];
 
     case 'encounter':
-      var types = ['Outpatient', 'Emergency', 'Inpatient'];
+      var types = ['Outpatient', 'ED', 'Inpatient', 'ICU'];
       return {
         visitType: types[Math.floor(Math.random() * types.length)],
         date: dateStr,

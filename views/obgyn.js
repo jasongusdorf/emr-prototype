@@ -216,19 +216,27 @@ function hasOBGYNRelevance(patientId) {
   return false;
 }
 
+/* ---------- Utility: timezone-safe date parsing ---------- */
+function _parseLocalDate(dateStr) {
+  if (!dateStr) return null;
+  var parts = dateStr.split('-');
+  return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+}
+
 /* ---------- Utility: EDD calculation ---------- */
 function calculateEDD(lmp) {
   if (!lmp) return null;
-  var d = new Date(lmp);
+  var d = _parseLocalDate(lmp);
   d.setDate(d.getDate() + 280); // Naegele's rule: +280 days
   return d;
 }
 
 function calculateEGA(lmp) {
   if (!lmp) return '';
+  var start = _parseLocalDate(lmp);
   var now = new Date();
-  var start = new Date(lmp);
-  var diffMs = now - start;
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var diffMs = today - start;
   var totalDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   var weeks = Math.floor(totalDays / 7);
   var days = totalDays % 7;
@@ -264,7 +272,7 @@ function buildPrenatalTab(card, patient) {
   records.forEach(function(rec) {
     var section = document.createElement('div');
     section.className = 'specialty-record-card';
-    var edd = rec.edd ? new Date(rec.edd).toLocaleDateString() : (rec.lmp ? calculateEDD(rec.lmp).toLocaleDateString() : '—');
+    var edd = rec.edd ? _parseLocalDate(rec.edd).toLocaleDateString() : (rec.lmp ? calculateEDD(rec.lmp).toLocaleDateString() : '—');
     var ega = rec.lmp ? calculateEGA(rec.lmp) : '—';
     var gtpal = formatGTPAL(rec);
 
@@ -618,7 +626,7 @@ function buildVisitScheduleTab(card, patient) {
     return;
   }
 
-  var lmpDate = new Date(lmp);
+  var lmpDate = _parseLocalDate(lmp);
   var visits = rec.visits || [];
   var visitDates = visits.map(function(v) { return v.date; });
 
@@ -631,7 +639,7 @@ function buildVisitScheduleTab(card, patient) {
     var targetStr = targetDate.toISOString().slice(0, 10);
     var completed = visitDates.some(function(d) {
       if (!d) return false;
-      var vd = new Date(d);
+      var vd = _parseLocalDate(d);
       var diff = Math.abs(vd - targetDate) / (1000 * 60 * 60 * 24);
       return diff < 10; // within 10 days
     });
@@ -1221,8 +1229,8 @@ function buildPostpartumTab(card, patient) {
     /* 6m: postpartum timing */
     var timingHtml = '';
     if (latestDelivery && latestDelivery.deliveryDate && a.assessmentDate) {
-      var delivDate = new Date(latestDelivery.deliveryDate);
-      var assessDate = new Date(a.assessmentDate);
+      var delivDate = _parseLocalDate(latestDelivery.deliveryDate);
+      var assessDate = _parseLocalDate(a.assessmentDate);
       var daysPP = Math.floor((assessDate - delivDate) / (1000 * 60 * 60 * 24));
       if (daysPP >= 0) {
         timingHtml = '<span class="badge badge-info" style="margin-left:8px;">' + daysPP + ' days postpartum</span>';
@@ -1249,7 +1257,7 @@ function buildPostpartumTab(card, patient) {
 
   /* 6m: Show recommended PP visit windows */
   if (latestDelivery && latestDelivery.deliveryDate) {
-    var delivDate = new Date(latestDelivery.deliveryDate);
+    var delivDate = _parseLocalDate(latestDelivery.deliveryDate);
     var now = new Date();
     var daysSinceDelivery = Math.floor((now - delivDate) / (1000 * 60 * 60 * 24));
 
@@ -1285,7 +1293,7 @@ function openPostpartumModal(patientId, existing) {
   var latestDelivery = deliveries.length > 0 ? deliveries[deliveries.length - 1] : null;
   var ppTimingHtml = '';
   if (latestDelivery && latestDelivery.deliveryDate) {
-    var delivDate = new Date(latestDelivery.deliveryDate);
+    var delivDate = _parseLocalDate(latestDelivery.deliveryDate);
     var now = new Date();
     var daysPP = Math.floor((now - delivDate) / (1000 * 60 * 60 * 24));
     if (daysPP >= 0) {
@@ -1670,7 +1678,7 @@ function buildOBGYNChartSection(patientId) {
   if (prenatal.length > 0) {
     var rec = prenatal[prenatal.length - 1];
     var ega = rec.lmp ? calculateEGA(rec.lmp) : '';
-    var edd = rec.edd ? new Date(rec.edd).toLocaleDateString() : '';
+    var edd = rec.edd ? _parseLocalDate(rec.edd).toLocaleDateString() : '';
     var gtpal = formatGTPAL(rec);
     var highRiskBadge = rec.highRisk ? ' <span class="badge badge-danger" style="background:var(--danger);color:#fff;">HIGH RISK</span>' : '';
     section.innerHTML += '<p style="margin:8px 0;"><strong>Current Pregnancy:</strong> ' + esc(gtpal) + highRiskBadge +

@@ -231,6 +231,9 @@ function renderOrders(encounterId) {
       _invalidateOrderCache();
       _ordersEncounterId = null;
       _currentPatientId = null;
+      _selectedType = 'Medication';
+      _selectedPriority = 'Routine';
+      _showUnackedOnly = false;
     });
   }
 }
@@ -295,7 +298,8 @@ function renderOrderList(container, encounterId) {
   const groups = {};
   ORDER_TYPES.forEach(t => { groups[t] = []; });
   orders.forEach(o => {
-    if (groups[o.type]) groups[o.type].push(o);
+    var type = o.type || 'Medication';
+    if (groups[type]) groups[type].push(o);
   });
 
   ORDER_TYPES.forEach(type => {
@@ -328,11 +332,11 @@ function renderOrderList(container, encounterId) {
       badges.style.flexWrap = 'wrap';
 
       const prioBadge = document.createElement('span');
-      prioBadge.className = 'badge badge-' + order.priority.toLowerCase();
-      prioBadge.textContent = order.priority;
+      prioBadge.className = 'badge badge-' + (order.priority || 'routine').toLowerCase();
+      prioBadge.textContent = order.priority || 'Routine';
 
       const statusBadge = document.createElement('span');
-      statusBadge.className = 'badge badge-' + order.status.toLowerCase();
+      statusBadge.className = 'badge badge-' + (order.status || 'pending').toLowerCase();
       statusBadge.textContent = order.status;
 
       badges.appendChild(prioBadge);
@@ -1555,7 +1559,7 @@ function getOrderDisplayName(order) {
     case 'Diet':       return d.dietType ? 'Diet: ' + d.dietType : 'Diet';
     case 'Nursing':    return d.intervention ? 'Nursing: ' + (d.intervention.length > 40 ? d.intervention.slice(0, 40) + '…' : d.intervention) : 'Nursing';
     case 'Activity':   return d.level ? 'Activity: ' + d.level : 'Activity';
-    default:           return order.type;
+    default:           return order.type || 'Order';
   }
 }
 

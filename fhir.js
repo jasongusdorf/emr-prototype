@@ -62,7 +62,7 @@ var FHIR = (function() {
   }
 
   function mapEncounterClass(visitType) {
-    var map = { 'Outpatient': 'AMB', 'Inpatient': 'IMP', 'Emergency': 'EMER', 'Urgent Care': 'AMB' };
+    var map = { 'Outpatient': 'AMB', 'Inpatient': 'IMP', 'ICU': 'IMP', 'ED': 'EMER', 'Emergency': 'EMER', 'Urgent Care': 'AMB' };
     return map[visitType] || 'AMB';
   }
 

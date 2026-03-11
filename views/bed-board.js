@@ -82,8 +82,10 @@ var BB_DEFAULT_UNITS = [
 ];
 
 /* --- 4f: Helper to get badge data for a patient --- */
-function _bbGetBadgeData(patient, patientId) {
+/* cachedOrders parameter avoids repeated getOrders() calls when iterating beds */
+function _bbGetBadgeData(patient, patientId, cachedOrders) {
   var badges = {};
+  var allOrders = cachedOrders || [];
 
   // Code status
   badges.codeStatus = (patient && patient.codeStatus) ? patient.codeStatus : 'Full Code';
@@ -102,24 +104,24 @@ function _bbGetBadgeData(patient, patientId) {
   // Isolation type
   badges.isolation = (patient && patient.isolation) ? patient.isolation : null;
 
-  // Diet (from active Diet orders)
+  // Diet (from active Diet orders) — use cached orders
   badges.diet = null;
   try {
-    var orders = getOrders().filter(function(o) {
+    var dietOrders = allOrders.filter(function(o) {
       return o.patientId === patientId && o.type === 'Diet' && o.status !== 'Cancelled' && o.status !== 'Completed';
     });
-    if (orders.length > 0 && orders[0].detail && orders[0].detail.dietType) {
-      badges.diet = orders[0].detail.dietType;
+    if (dietOrders.length > 0 && dietOrders[0].detail && dietOrders[0].detail.dietType) {
+      badges.diet = dietOrders[0].detail.dietType;
     }
   } catch(e) { /* no-op */ }
 
-  // Unacknowledged orders count
+  // Unacknowledged orders count — use cached orders
   badges.unackedOrders = 0;
   try {
-    var allOrders = getOrders().filter(function(o) {
+    var unackedOrders = allOrders.filter(function(o) {
       return o.patientId === patientId && !o.acknowledgedBy && o.status !== 'Cancelled';
     });
-    badges.unackedOrders = allOrders.length;
+    badges.unackedOrders = unackedOrders.length;
   } catch(e) { /* no-op */ }
 
   // Vitals overdue (last vitals > 4 hours ago)
@@ -256,6 +258,10 @@ function renderBedBoard() {
     return { name: unit.name, prefix: unit.prefix, beds: beds };
   });
 
+  // Cache orders once before iterating beds to avoid repeated getOrders() calls
+  var _bbCachedOrders = [];
+  try { _bbCachedOrders = (typeof getOrders === 'function') ? getOrders() : []; } catch(e) { /* no-op */ }
+
   var totalBeds = 0, occupied = 0, available = 0, cleaning = 0, blocked = 0;
   units.forEach(function(u) {
     u.beds.forEach(function(b) {
@@ -299,10 +305,10 @@ function renderBedBoard() {
         html += '<div class="bb-bed-patient">';
         html += '<strong>' + esc(bed.patient.lastName + ', ' + bed.patient.firstName) + '</strong>';
         /* 4h: Acuity badge is clickable for in-place edit */
-        if (bed.acuity) html += '<span class="bb-acuity bb-acuity-' + bed.acuity + ' bb-acuity-edit" data-bed="' + esc(bed.number) + '" data-acuity="' + bed.acuity + '">Acuity ' + bed.acuity + '</span>';
+        if (bed.acuity) html += '<span class="bb-acuity bb-acuity-' + bed.acuity + ' bb-acuity-edit" data-bed="' + esc(bed.number) + '" data-acuity="' + bed.acuity + '" tabindex="0" role="button" aria-haspopup="listbox" aria-label="Acuity ' + bed.acuity + ' for bed ' + esc(bed.number) + '">Acuity ' + bed.acuity + '</span>';
         if (bed.attending) html += '<br><span style="color:var(--text-secondary,#666)">Dr. ' + esc(bed.attending) + '</span>';
         /* 4f: Enhanced bed tile badges */
-        var badges = _bbGetBadgeData(bed.patient, bed.patientId);
+        var badges = _bbGetBadgeData(bed.patient, bed.patientId, _bbCachedOrders);
         html += _bbRenderBadges(badges);
         html += '</div>';
       } else if (bed.status === 'cleaning') {
@@ -323,18 +329,19 @@ function renderBedBoard() {
 
   /* --- 4h: Wire acuity badge clicks for in-place edit --- */
   app.querySelectorAll('.bb-acuity-edit').forEach(function(acuityEl) {
-    acuityEl.addEventListener('click', function(e) {
-      e.stopPropagation();
+    function _openAcuityDropdown(triggerEl) {
       // Remove any existing dropdown
       var existing = document.querySelector('.bb-acuity-dropdown');
       if (existing) existing.remove();
 
-      var bedNum = this.getAttribute('data-bed');
-      var currentAcuity = parseInt(this.getAttribute('data-acuity')) || 2;
-      var rect = this.getBoundingClientRect();
+      var bedNum = triggerEl.getAttribute('data-bed');
+      var currentAcuity = parseInt(triggerEl.getAttribute('data-acuity')) || 2;
+      var rect = triggerEl.getBoundingClientRect();
 
       var dropdown = document.createElement('div');
       dropdown.className = 'bb-acuity-dropdown';
+      dropdown.setAttribute('role', 'listbox');
+      dropdown.setAttribute('aria-label', 'Select acuity level');
       dropdown.style.top = (rect.bottom + 4) + 'px';
       dropdown.style.left = rect.left + 'px';
 
@@ -346,9 +353,13 @@ function renderBedBoard() {
         { val: 5, label: '5 - Critical' }
       ];
 
-      levels.forEach(function(lv) {
+      var items = [];
+      levels.forEach(function(lv, idx) {
         var item = document.createElement('div');
         item.className = 'bb-acuity-dropdown-item' + (lv.val === currentAcuity ? ' active' : '');
+        item.setAttribute('role', 'option');
+        item.setAttribute('tabindex', '-1');
+        item.setAttribute('aria-selected', lv.val === currentAcuity ? 'true' : 'false');
         item.textContent = lv.label;
         item.addEventListener('click', function(ev) {
           ev.stopPropagation();
@@ -362,22 +373,67 @@ function renderBedBoard() {
           }
           saveAll(KEYS.bedAssignments, allAssign);
           dropdown.remove();
+          document.removeEventListener('keydown', _dropdownKeyHandler);
           showToast('Acuity updated to ' + lv.val + ' for bed ' + bedNum, 'success');
           renderBedBoard();
         });
         dropdown.appendChild(item);
+        items.push(item);
       });
 
       document.body.appendChild(dropdown);
+
+      // Focus the active item or first item
+      var activeIdx = currentAcuity - 1;
+      if (activeIdx >= 0 && activeIdx < items.length) items[activeIdx].focus();
+      else if (items.length) items[0].focus();
+
+      // Arrow key navigation and Escape to close
+      function _dropdownKeyHandler(ev) {
+        var focused = document.activeElement;
+        var currentIdx = items.indexOf(focused);
+        if (ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          var nextIdx = currentIdx + 1 < items.length ? currentIdx + 1 : 0;
+          items[nextIdx].focus();
+        } else if (ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          var prevIdx = currentIdx - 1 >= 0 ? currentIdx - 1 : items.length - 1;
+          items[prevIdx].focus();
+        } else if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          if (currentIdx >= 0) items[currentIdx].click();
+        } else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          dropdown.remove();
+          document.removeEventListener('keydown', _dropdownKeyHandler);
+          document.removeEventListener('click', closeDropdown);
+          triggerEl.focus();
+        }
+      }
+      document.addEventListener('keydown', _dropdownKeyHandler);
 
       // Close dropdown on outside click
       var closeDropdown = function(ev) {
         if (!dropdown.contains(ev.target)) {
           dropdown.remove();
           document.removeEventListener('click', closeDropdown);
+          document.removeEventListener('keydown', _dropdownKeyHandler);
         }
       };
       setTimeout(function() { document.addEventListener('click', closeDropdown); }, 0);
+    }
+
+    acuityEl.addEventListener('click', function(e) {
+      e.stopPropagation();
+      _openAcuityDropdown(this);
+    });
+    acuityEl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        _openAcuityDropdown(this);
+      }
     });
   });
 
@@ -438,7 +494,7 @@ function renderBedBoard() {
 
     var pt = bed.patient;
     var pid = bed.patientId;
-    var badges = _bbGetBadgeData(pt, pid);
+    var badges = _bbGetBadgeData(pt, pid, _bbCachedOrders);
 
     // Get latest vitals
     var vitalsHtml = '<dd style="color:var(--text-secondary,#666)">No vitals available</dd>';
@@ -458,19 +514,19 @@ function renderBedBoard() {
       }
     } catch(e) { /* no-op */ }
 
-    // Active medication count
+    // Active medication count — use cached orders
     var activeMedCount = 0;
     try {
-      var meds = getOrders().filter(function(o) {
+      var meds = _bbCachedOrders.filter(function(o) {
         return o.patientId === pid && o.type === 'Medication' && o.status !== 'Cancelled' && o.status !== 'Completed';
       });
       activeMedCount = meds.length;
     } catch(e) { /* no-op */ }
 
-    // Pending orders count
+    // Pending orders count — use cached orders
     var pendingOrders = 0;
     try {
-      var pOrders = getOrders().filter(function(o) {
+      var pOrders = _bbCachedOrders.filter(function(o) {
         return o.patientId === pid && o.status === 'Pending';
       });
       pendingOrders = pOrders.length;
@@ -487,8 +543,11 @@ function renderBedBoard() {
       ageStr = age + ' yo';
     }
 
+    var triggerEl = evt.currentTarget || evt.target;
     var popover = document.createElement('div');
     popover.className = 'bb-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'Patient summary');
 
     var headerHtml = '<div class="bb-popover-header">';
     headerHtml += '<h4>' + esc(pt.lastName + ', ' + pt.firstName) + '</h4>';
@@ -529,24 +588,47 @@ function renderBedBoard() {
     popover.style.left = x + 'px';
     popover.style.top = y + 'px';
 
+    // Focus first interactive element in the popover
+    var firstBtn = popover.querySelector('button, a, [tabindex="0"]');
+    if (firstBtn) setTimeout(function() { firstBtn.focus(); }, 50);
+
+    // Helper to close popover and restore focus
+    function _closeAndRestore() {
+      popover.remove();
+      document.removeEventListener('keydown', popoverEscape);
+      document.removeEventListener('click', closePopover);
+      if (triggerEl && triggerEl.focus) triggerEl.focus();
+    }
+
+    // Escape key to close popover and restore focus
+    function popoverEscape(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        _closeAndRestore();
+      }
+    }
+    document.addEventListener('keydown', popoverEscape);
+
     // Wire close button
     document.getElementById('bb-popover-close').addEventListener('click', function(e) {
       e.stopPropagation();
-      popover.remove();
+      _closeAndRestore();
     });
 
     // Wire "Open Chart" button
     document.getElementById('bb-popover-open-chart').addEventListener('click', function(e) {
       e.stopPropagation();
       popover.remove();
+      document.removeEventListener('keydown', popoverEscape);
+      document.removeEventListener('click', closePopover);
       navigate('#chart/' + pid);
     });
 
     // Close popover on outside click
     var closePopover = function(ev) {
       if (!popover.contains(ev.target)) {
-        popover.remove();
-        document.removeEventListener('click', closePopover);
+        _closeAndRestore();
       }
     };
     setTimeout(function() { document.addEventListener('click', closePopover); }, 0);

@@ -1044,8 +1044,8 @@ function openSuperbillModal(encounterId) {
 
   // Determine place of service
   let pos = '11';
-  if (encounter.visitType === 'Inpatient') pos = '21';
-  else if (encounter.visitType === 'Emergency') pos = '23';
+  if (encounter.visitType === 'Inpatient' || encounter.visitType === 'ICU') pos = '21';
+  else if (encounter.visitType === 'ED' || encounter.visitType === 'Emergency') pos = '23';
 
   // Place of service
   body += '<div class="form-group">';

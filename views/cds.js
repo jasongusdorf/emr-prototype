@@ -462,7 +462,7 @@ function getBPAs(patientId) {
 
   // Check for inpatient encounters
   var openInpatient = encounters.filter(function(e) {
-    return e.status === 'Open' && (e.visitType === 'Inpatient' || e.visitType === 'Emergency');
+    return e.status === 'Open' && (e.visitType === 'Inpatient' || e.visitType === 'ICU' || e.visitType === 'ED' || e.visitType === 'Emergency');
   });
 
   var isAdmitted = openInpatient.length > 0;

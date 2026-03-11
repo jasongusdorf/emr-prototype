@@ -24,7 +24,7 @@ function savePatientUser(data) {
 }
 
 function getPatientUsers() {
-  try { return JSON.parse(localStorage.getItem('emr_patient_users') || '[]'); } catch(e) { return []; }
+  try { return JSON.parse(getStorageAdapter().getItem('emr_patient_users') || '[]'); } catch(e) { return []; }
 }
 
 function getPatientUserByEmail(email) {
@@ -41,6 +41,7 @@ async function patientLogin(email, password) {
 }
 
 function getPatientSession() {
+  // Session key — stays in localStorage (like emr_session)
   try { return JSON.parse(localStorage.getItem('emr_patient_session') || 'null'); } catch(e) { return null; }
 }
 
@@ -49,7 +50,7 @@ function isPatientAuthenticated() {
 }
 
 function patientLogout() {
-  localStorage.removeItem('emr_patient_session');
+  localStorage.removeItem('emr_patient_session'); // Session key — stays in localStorage
 }
 
 /* ---------- Portal UI ---------- */

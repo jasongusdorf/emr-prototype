@@ -36,7 +36,7 @@ function renderSettings() {
   toggleBtn.addEventListener('click', () => {
     const nowDark = document.body.classList.toggle('dark-mode');
     document.body.classList.toggle('light-mode', !nowDark);
-    localStorage.setItem('emr_dark_mode', nowDark ? 'dark' : 'light');
+    localStorage.setItem('emr_dark_mode', nowDark ? 'dark' : 'light'); // UI preference — stays in localStorage
     toggleBtn.textContent = nowDark ? ' Dark' : ' Light';
     // Sync login screen toggle
     const loginBtn = document.getElementById('login-dark-toggle');
@@ -64,13 +64,13 @@ function renderSettings() {
   clinicInput.className = 'form-control';
   clinicInput.style.width = '260px';
   clinicInput.placeholder = 'e.g. Advanced Heart Failure Clinic, BIDMC';
-  clinicInput.value = localStorage.getItem('emr_clinic_location') || '';
+  clinicInput.value = localStorage.getItem('emr_clinic_location') || ''; // UI preference — stays in localStorage
 
   const clinicSave = document.createElement('button');
   clinicSave.className = 'btn btn-primary btn-sm';
   clinicSave.textContent = 'Save';
   clinicSave.addEventListener('click', () => {
-    localStorage.setItem('emr_clinic_location', clinicInput.value.trim());
+    localStorage.setItem('emr_clinic_location', clinicInput.value.trim()); // UI preference — stays in localStorage
     showToast('Clinic location saved.', 'success');
   });
 
@@ -104,7 +104,7 @@ function renderKeybindsSection(container) {
   resetBtn.className = 'btn btn-secondary btn-sm';
   resetBtn.textContent = 'Reset Defaults';
   resetBtn.addEventListener('click', () => {
-    localStorage.removeItem('emr_keybinds');
+    localStorage.removeItem('emr_keybinds'); // UI preference — stays in localStorage
     renderKeybindsSection(container);
     if (typeof showToast === 'function') showToast('Keybinds reset to defaults', 'success');
   });

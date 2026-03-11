@@ -230,30 +230,49 @@ async function handleAdminResetPassword(targetUserId) {
     onConfirm: async () => {
       const tempPw = await resetPasswordForUser(targetUserId, admin.id);
       if (tempPw) {
-        openModal({
-          title: 'Temporary Password',
-          bodyHTML: `
-            <p>A temporary password has been generated for <strong>${esc(target.email)}</strong>.</p>
-            <div id="temp-pw-box" style="margin:16px 0;padding:12px 16px;background:var(--success-light);border-radius:6px;font-size:18px;letter-spacing:1.5px;text-align:center;font-family:monospace;color:var(--success);">
-              ${esc(tempPw)}
-            </div>
-            <div style="text-align:center;margin-bottom:8px;">
-              <button class="btn btn-secondary btn-sm" id="copy-temp-pw">Copy to Clipboard</button>
-            </div>
-            <p style="font-size:12px;color:var(--text-muted);">Share this password securely. The user will be required to change it on next login.</p>
-          `,
-          footerHTML: '<button class="btn btn-primary" onclick="closeModal()">Done</button>',
-        });
-        document.getElementById('copy-temp-pw')?.addEventListener('click', () => {
-          navigator.clipboard.writeText(tempPw).then(() => {
-            showToast('Password copied to clipboard.', 'success');
-          }).catch(() => {
-            // Fallback: select text
-            const box = document.getElementById('temp-pw-box');
-            if (box) { const sel = window.getSelection(); sel.selectAllChildren(box); }
-            showToast('Select and copy the password manually.', 'default');
+        // Attempt to copy password to clipboard without displaying it in the DOM
+        var clipboardSuccess = false;
+        if (navigator.clipboard) {
+          try {
+            await navigator.clipboard.writeText(tempPw);
+            clipboardSuccess = true;
+            showToast('Temporary password copied to clipboard.', 'success');
+          } catch(clipErr) {
+            clipboardSuccess = false;
+          }
+        }
+
+        if (clipboardSuccess) {
+          openModal({
+            title: 'Temporary Password',
+            bodyHTML:
+              '<p>A temporary password has been generated for <strong>' + esc(target.email) + '</strong>.</p>' +
+              '<p>The password has been <strong>copied to your clipboard</strong>.</p>' +
+              '<p style="font-size:12px;color:var(--text-muted);">Share this password securely. The user will be required to change it on next login.</p>',
+            footerHTML: '<button class="btn btn-primary" onclick="closeModal()">Done</button>',
           });
-        });
+        } else {
+          // Clipboard unavailable — show password briefly, then auto-clear after 10 seconds
+          openModal({
+            title: 'Temporary Password',
+            bodyHTML:
+              '<p>A temporary password has been generated for <strong>' + esc(target.email) + '</strong>.</p>' +
+              '<div id="temp-pw-box" style="margin:16px 0;padding:12px 16px;background:var(--success-light);border-radius:6px;font-size:18px;letter-spacing:1.5px;text-align:center;font-family:monospace;color:var(--success);">' +
+                esc(tempPw) +
+              '</div>' +
+              '<p style="font-size:12px;color:var(--text-muted);">This password will be hidden in 10 seconds. Share it securely. The user will be required to change it on next login.</p>',
+            footerHTML: '<button class="btn btn-primary" onclick="closeModal()">Done</button>',
+          });
+          // Auto-clear the displayed password after 10 seconds
+          setTimeout(function() {
+            var box = document.getElementById('temp-pw-box');
+            if (box) {
+              box.textContent = '(hidden)';
+              box.style.color = 'var(--text-muted)';
+              box.style.background = 'var(--surface-2,#f0f0f0)';
+            }
+          }, 10000);
+        }
         renderUsersTab(document.getElementById('admin-content'));
       }
     }

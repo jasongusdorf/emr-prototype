@@ -91,8 +91,8 @@ function renderMAR() {
     var scheduled = meds.filter(function(m) { return m.frequency !== 'PRN'; });
     var prns = meds.filter(function(m) { return m.frequency === 'PRN'; });
 
-    html += '<div style="overflow-x:auto"><table class="mar-grid"><thead><tr><th class="mar-med-name">Medication</th><th>Freq</th>';
-    hours.forEach(function(h) { html += '<th>' + String(h).padStart(2,'0') + ':00</th>'; });
+    html += '<div style="overflow-x:auto"><table class="mar-grid" role="grid"><thead><tr><th scope="col" class="mar-med-name">Medication</th><th scope="col">Freq</th>';
+    hours.forEach(function(h) { html += '<th scope="col">' + String(h).padStart(2,'0') + ':00</th>'; });
     html += '</tr></thead><tbody>';
 
     scheduled.forEach(function(med) {
@@ -104,6 +104,7 @@ function renderMAR() {
       if (matchingOrder) rxBadge = ' <span class="mar-rx-badge">Rx &#10003;</span>';
       html += '<tr><td class="mar-med-name">' + esc(med.name || med.drug || 'Unknown') + ' ' + esc(med.dose || '') + rxBadge + '</td>';
       html += '<td>' + esc(freq) + '</td>';
+      var medDisplayName = med.name || med.drug || 'Unknown';
       hours.forEach(function(h) {
         var isDue = schedHours.indexOf(h) >= 0;
         var entry = entries.find(function(e) { return e.medId === med.id && e.hour === h && e.date === _marDate; });
@@ -116,14 +117,15 @@ function renderMAR() {
           cls += 'mar-not-due';
           label = '\u2014';
         }
-        html += '<td class="' + cls + '" data-med="' + med.id + '" data-hour="' + h + '">' + label + '</td>';
+        var ariaLabel = esc(medDisplayName) + ' at ' + String(h).padStart(2,'0') + ':00';
+        html += '<td class="' + cls + '" data-med="' + med.id + '" data-hour="' + h + '" tabindex="0" role="button" aria-label="Administer ' + ariaLabel + '">' + label + '</td>';
       });
       html += '</tr>';
     });
     html += '</tbody></table></div>';
 
     if (prns.length) {
-      html += '<div class="mar-prn-section"><h3>PRN Medications</h3><table class="mar-grid"><thead><tr><th class="mar-med-name">Medication</th><th>Indication</th><th>Last Given</th><th>Action</th></tr></thead><tbody>';
+      html += '<div class="mar-prn-section"><h3>PRN Medications</h3><table class="mar-grid"><thead><tr><th scope="col" class="mar-med-name">Medication</th><th scope="col">Indication</th><th scope="col">Last Given</th><th scope="col">Action</th></tr></thead><tbody>';
       prns.forEach(function(med) {
         var lastEntry = entries.filter(function(e) { return e.medId === med.id && e.status === 'given'; }).sort(function(a,b) { return b.recordedAt > a.recordedAt ? 1 : -1; })[0];
         // 3e: Pharmacy verification badge for PRN
@@ -164,6 +166,12 @@ function renderMAR() {
 
     // 3c: Scheduled medication administration with 5 Rights verification
     app.querySelectorAll('.mar-cell[data-med]').forEach(function(cell) {
+      cell.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          cell.click();
+        }
+      });
       cell.addEventListener('click', function() {
         var medId = this.getAttribute('data-med');
         var hour = parseInt(this.getAttribute('data-hour'));
@@ -189,8 +197,8 @@ function renderMAR() {
         bodyHTML += '</div>';
 
         bodyHTML += '<div style="display:flex;flex-direction:column;gap:12px">';
-        bodyHTML += '<label>Status:<select id="mar-status" class="form-control"><option value="given">Given</option><option value="held">Held</option><option value="refused">Refused</option></select></label>';
-        bodyHTML += '<label>Notes:<input id="mar-notes" class="form-control" placeholder="Optional notes"></label>';
+        bodyHTML += '<label for="mar-status">Status:</label><select id="mar-status" class="form-control"><option value="given">Given</option><option value="held">Held</option><option value="refused">Refused</option></select>';
+        bodyHTML += '<label for="mar-notes">Notes:</label><input id="mar-notes" class="form-control" placeholder="Optional notes">';
         bodyHTML += '</div>';
 
         // 5 Rights verification checkbox
@@ -246,25 +254,25 @@ function renderMAR() {
         bodyHTML += '<div style="display:flex;flex-direction:column;gap:12px">';
 
         // Pain score
-        bodyHTML += '<label>Pain Score (0-10):<select id="mar-prn-pain" class="form-control">';
+        bodyHTML += '<label for="mar-prn-pain">Pain Score (0-10):</label><select id="mar-prn-pain" class="form-control">';
         for (var ps = 0; ps <= 10; ps++) { bodyHTML += '<option value="' + ps + '">' + ps + '</option>'; }
-        bodyHTML += '</select></label>';
+        bodyHTML += '</select>';
 
         // Indication
-        bodyHTML += '<label>Indication:<input id="mar-prn-indication" class="form-control" placeholder="Reason for PRN administration" value="' + esc(med ? (med.indication || '') : '') + '"></label>';
+        bodyHTML += '<label for="mar-prn-indication">Indication:</label><input id="mar-prn-indication" class="form-control" placeholder="Reason for PRN administration" value="' + esc(med ? (med.indication || '') : '') + '">';
 
         // Dose given (allow range if applicable)
-        bodyHTML += '<label>Dose Given:<input id="mar-prn-dose" class="form-control" value="' + esc(medDose) + '" placeholder="e.g. 5mg"></label>';
+        bodyHTML += '<label for="mar-prn-dose">Dose Given:</label><input id="mar-prn-dose" class="form-control" value="' + esc(medDose) + '" placeholder="e.g. 5mg">';
 
         // Reassessment timer
-        bodyHTML += '<label>Reassessment Timer:<select id="mar-prn-reassess" class="form-control">';
+        bodyHTML += '<label for="mar-prn-reassess">Reassessment Timer:</label><select id="mar-prn-reassess" class="form-control">';
         bodyHTML += '<option value="15">15 minutes</option>';
         bodyHTML += '<option value="30" selected>30 minutes</option>';
         bodyHTML += '<option value="60">60 minutes</option>';
-        bodyHTML += '</select></label>';
+        bodyHTML += '</select>';
 
         // Notes
-        bodyHTML += '<label>Notes:<input id="mar-prn-notes" class="form-control" placeholder="Optional notes"></label>';
+        bodyHTML += '<label for="mar-prn-notes">Notes:</label><input id="mar-prn-notes" class="form-control" placeholder="Optional notes">';
 
         bodyHTML += '</div>';
 

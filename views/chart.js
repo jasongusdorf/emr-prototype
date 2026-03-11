@@ -4,20 +4,18 @@
 
 /* ---------- Module-level state ---------- */
 let _currentChartPatientId = null;
-let _currentChartTab       = 'overview';
 let _notesSortDir          = 'desc';   // 'desc' | 'asc' | 'provider'
 let _notesView             = 'grouped'; // 'grouped' | 'timeline'
 let _searchOpen            = false;
 let _pendingScrollSection  = null;
 let _currentOverviewSubTab = 'profile';
-let _currentEncSubTab      = 'notes';  // 'profile' | 'notes'
 
 /* ---------- Constants ---------- */
 const VISIT_TYPES = {
   'Outpatient': ['Primary Care', 'Specialty', 'Urgent Care', 'Telehealth'],
-  'Inpatient':  ['General Ward', 'ICU', 'Step-Down'],
-  'Emergency':  [],
-  'Other':      [],
+  'ED':         [],
+  'Inpatient':  ['General Ward', 'Step-Down'],
+  'ICU':        [],
 };
 
 const VITALS_FLAGS = {
@@ -54,6 +52,7 @@ const DEGREE_LABEL = {
 
 const OVERVIEW_SUBTABS = [
   { key: 'profile',       label: 'Profile',        color: 'profile' },
+  { key: 'encounters',    label: 'Encounters',      color: 'orders' },
   { key: 'notes',         label: 'Notes',           color: 'notes' },
   { key: 'medications',   label: 'Medications',     color: 'medications' },
   { key: 'results',       label: 'Results',         color: 'results' },
@@ -64,6 +63,7 @@ const OVERVIEW_SUBTABS = [
   { key: 'communication', label: 'Communication',   color: 'notes' },
   { key: 'pt',            label: 'PT',              color: 'notes' },
   { key: 'slp',           label: 'SLP',             color: 'notes' },
+  { key: 'discharge',     label: 'Discharge',       color: 'medications' },
 ];
 
 const PROFILE_SECTIONS = [
@@ -78,7 +78,6 @@ const PROFILE_SECTIONS = [
   { id: 'section-family-history',  label: 'Family Hx' },
   { id: 'section-surgeries',       label: 'Surgeries' },
   { id: 'section-immunizations',   label: 'Immunizations' },
-  { id: 'section-encounters',      label: 'Encounters' },
 ];
 
 /* ============================================================
@@ -105,7 +104,7 @@ function renderChart(patientId) {
   }
   const sessionUser = getSessionUser();
   const userRole = sessionUser ? (sessionUser.role || '').toLowerCase() : '';
-  const isOnPanel = patient.panelProviders && patient.panelProviders.indexOf(sessionUser.id) !== -1;
+  const isOnPanel = (patient.panelProviders || []).indexOf(sessionUser.id) !== -1;
   const hasOverride = userRole === 'admin' || userRole === 'attending';
   if (!isOnPanel && !hasOverride) {
     const app = document.getElementById('app');
@@ -120,7 +119,6 @@ function renderChart(patientId) {
   }
 
   _currentChartPatientId = patientId;
-  _currentChartTab       = 'overview';
   _searchOpen            = false;
 
   const app = document.getElementById('app');
@@ -162,7 +160,27 @@ function renderChart(patientId) {
   searchPanel.style.zIndex = '40';
   app.appendChild(searchPanel);
 
-  // Always render overview content (no tab bar)
+  // Welcome banner — chart review vs new encounter
+  const welcomeBanner = document.createElement('div');
+  welcomeBanner.id = 'chart-welcome-banner';
+  welcomeBanner.className = 'chart-welcome-banner';
+  welcomeBanner.innerHTML = '<div class="welcome-banner-inner">' +
+    '<span class="welcome-banner-text">What would you like to do?</span>' +
+    '<div class="welcome-banner-actions">' +
+    '<button class="btn btn-secondary" id="wb-review">Chart Review</button>' +
+    '<button class="btn btn-primary" id="wb-new-enc">+ New Encounter</button>' +
+    '</div></div>';
+  app.appendChild(welcomeBanner);
+
+  document.getElementById('wb-review').addEventListener('click', function() {
+    welcomeBanner.remove();
+  });
+  document.getElementById('wb-new-enc').addEventListener('click', function() {
+    welcomeBanner.remove();
+    openNewEncounterModal(patientId);
+  });
+
+  // Overview content
   buildOverviewContent(app, patient, patientId);
 
   // Print Summary button
@@ -184,6 +202,25 @@ function renderChart(patientId) {
       if (inp) setTimeout(() => inp.focus(), 50);
     }
   });
+
+  // Cleanup: reset module-level state and remove injected chart-header-bars on route change
+  if (typeof registerCleanup === 'function') {
+    registerCleanup(function() {
+      _currentChartPatientId = null;
+          _notesSortDir          = 'desc';
+      _notesView             = 'grouped';
+      _searchOpen            = false;
+      _pendingScrollSection  = null;
+      _currentOverviewSubTab = 'profile';
+      var hdr = document.getElementById('chart-header-bars');
+      if (hdr) hdr.remove();
+      var appEl = document.getElementById('app');
+      if (appEl) appEl.classList.remove('chart-view');
+      // Remove aria-live announce region if present
+      var liveRegion = document.getElementById('chart-live-announce');
+      if (liveRegion) liveRegion.remove();
+    });
+  }
 }
 
 function refreshChart(patientId) {
@@ -197,48 +234,18 @@ function _capitalizeFirst(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-/* ============================================================
-   TAB BAR
-   ============================================================ */
-function buildTabBar(patientId, activeTab) {
-  const bar = document.createElement('div');
-  bar.className = 'chart-tab-bar';
-  bar.setAttribute('role', 'tablist');
-  bar.setAttribute('aria-label', 'Chart sections');
-
-  const tabs = [
-    { key: 'overview',   label: 'Overview' },
-    { key: 'outpatient', label: 'Outpatient' },
-    { key: 'inpatient',  label: 'Inpatient' },
-    { key: 'emergency',  label: 'Emergency' },
-  ];
-
-  const allEncs = getEncountersByPatient(patientId);
-
-  tabs.forEach(({ key, label }) => {
-    const btn = document.createElement('button');
-    btn.className = 'chart-tab' + (activeTab === key ? ' active' : '');
-    btn.setAttribute('data-omr-color', key);
-    btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', String(activeTab === key));
-    btn.textContent = label;
-
-    if (key !== 'overview') {
-      const visitType = _capitalizeFirst(key);
-      const count = allEncs.filter(e => e.visitType === visitType).length;
-      if (count > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'tab-count';
-        badge.textContent = count;
-        btn.appendChild(badge);
-      }
-    }
-
-    btn.addEventListener('click', () => navigate('#chart/' + patientId + '/' + key));
-    bar.appendChild(btn);
-  });
-
-  return bar;
+/* ---------- Aria-live announcements for tab changes ---------- */
+function _announceTabChange(tabName) {
+  var liveRegion = document.getElementById('chart-live-announce');
+  if (!liveRegion) {
+    liveRegion = document.createElement('div');
+    liveRegion.id = 'chart-live-announce';
+    liveRegion.setAttribute('aria-live', 'polite');
+    liveRegion.setAttribute('aria-atomic', 'true');
+    liveRegion.className = 'sr-only';
+    document.body.appendChild(liveRegion);
+  }
+  liveRegion.textContent = 'Showing ' + tabName + ' tab';
 }
 
 /* ============================================================
@@ -256,16 +263,34 @@ function buildSubTabBar(patientId) {
     btn.setAttribute('data-omr-color', color);
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', String(_currentOverviewSubTab === key));
+    btn.setAttribute('tabindex', _currentOverviewSubTab === key ? '0' : '-1');
     btn.textContent = label;
     btn.addEventListener('click', () => {
       _currentOverviewSubTab = key;
       bar.querySelectorAll('.chart-subtab').forEach(b => {
         b.classList.remove('active');
         b.setAttribute('aria-selected', 'false');
+        b.setAttribute('tabindex', '-1');
       });
       btn.classList.add('active');
       btn.setAttribute('aria-selected', 'true');
+      btn.setAttribute('tabindex', '0');
       _applySubTabFilter();
+      // Announce tab change to screen readers
+      _announceTabChange(label);
+    });
+    btn.addEventListener('keydown', function(e) {
+      var allTabs = Array.from(bar.querySelectorAll('.chart-subtab'));
+      var idx = allTabs.indexOf(btn);
+      if (e.key === 'ArrowRight' && idx < allTabs.length - 1) {
+        e.preventDefault();
+        allTabs[idx + 1].focus();
+        allTabs[idx + 1].click();
+      } else if (e.key === 'ArrowLeft' && idx > 0) {
+        e.preventDefault();
+        allTabs[idx - 1].focus();
+        allTabs[idx - 1].click();
+      }
     });
     bar.appendChild(btn);
   });
@@ -539,11 +564,6 @@ function _renderSearchResults(container, patientId, q) {
 }
 
 function _scrollToSection(sectionId, patientId) {
-  if (_currentChartTab !== 'overview') {
-    _pendingScrollSection = sectionId;
-    navigate('#chart/' + patientId);
-    return;
-  }
   // Auto-switch to the correct subtab if the target is hidden
   const el = document.getElementById(sectionId);
   if (el && el.offsetParent === null) {
@@ -610,12 +630,14 @@ function buildOverviewContent(app, patient, patientId) {
   wrap('profile', buildFamilyHistoryCard(patientId));
   wrap('profile', buildSurgeriesCard(patientId));
   wrap('profile', buildImmunizationsCard(patientId));
-  wrap('profile', buildEncountersCard(patientId));
 
   // AI Review section (if available)
   if (typeof buildAIReviewChartSection === 'function') {
     wrap('profile', buildAIReviewChartSection(patientId));
   }
+
+  // Encounters category
+  wrap('encounters', buildEncountersCard(patientId));
 
   // Medications category
   wrap('medications', buildMedicationsSection(patientId));
@@ -660,12 +682,6 @@ function buildOverviewContent(app, patient, patientId) {
   handoffBtnWrap.style.cssText = 'display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap';
   handoffBtnWrap.appendChild(makeBtn('Shift Handoff (SBAR)', 'btn btn-secondary btn-sm', function() {
     openShiftHandoffModal(patientId);
-  }));
-  // 7f: Discharge Planning
-  handoffBtnWrap.appendChild(makeBtn('Discharge Planning', 'btn btn-secondary btn-sm', function() {
-    var encs = getEncountersByPatient(patientId).filter(function(e) { return e.status === 'Open'; });
-    var encId = encs.length > 0 ? encs[0].id : null;
-    openDischargeModal(encId, patientId);
   }));
   // 7g: Restraint Documentation
   handoffBtnWrap.appendChild(makeBtn('Restraint Documentation', 'btn btn-secondary btn-sm', function() {
@@ -718,6 +734,12 @@ function buildOverviewContent(app, patient, patientId) {
   buildSLPSubTabContent(patientId, slpContainer);
   wrap('slp', slpContainer);
 
+  // Discharge tab
+  const dischargeContainer = document.createElement('div');
+  dischargeContainer.id = 'section-discharge';
+  _buildDischargeContent(dischargeContainer, patientId);
+  wrap('discharge', dischargeContainer);
+
   app.appendChild(container);
 
   // Apply current sub-tab filter
@@ -746,180 +768,16 @@ function buildOverviewContent(app, patient, patientId) {
   }
 }
 
-/* ============================================================
-   ENCOUNTER TAB CONTENT (Outpatient / Inpatient / Emergency)
-   ============================================================ */
-function buildEncounterTabContent(container, patientId, visitType) {
-  // Sub-tab bar: Profile | Notes | Discharge (inpatient only)
-  const subBar = document.createElement('div');
-  subBar.className = 'chart-subtab-bar';
-
-  const encSubTabs = [
-    { key: 'profile', label: 'Profile' },
-    { key: 'notes',   label: 'Notes' },
-  ];
-  // Add discharge tab for inpatient encounters
-  if (visitType === 'Inpatient') {
-    encSubTabs.push({ key: 'discharge', label: 'Discharge' });
-  }
-
-  encSubTabs.forEach(({ key, label }) => {
-    const btn = document.createElement('button');
-    btn.className = 'chart-subtab' + (_currentEncSubTab === key ? ' active' : '');
-    btn.setAttribute('data-omr-color', key === 'profile' ? 'profile' : key === 'discharge' ? 'medications' : 'orders');
-    btn.textContent = label;
-
-    // Badge count for notes
-    if (key === 'notes') {
-      const count = getEncountersByPatient(patientId).filter(e => e.visitType === visitType).length;
-      if (count > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'tab-count';
-        badge.textContent = count;
-        btn.appendChild(badge);
-      }
-    }
-
-    btn.addEventListener('click', () => {
-      _currentEncSubTab = key;
-      subBar.querySelectorAll('.chart-subtab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const contentArea = document.getElementById('enc-tab-content');
-      if (contentArea) {
-        contentArea.innerHTML = '';
-        if (key === 'profile') {
-          _buildEncProfileContent(contentArea, patientId);
-        } else if (key === 'discharge') {
-          _buildDischargeContent(contentArea, patientId);
-        } else {
-          _buildEncNotesContent(contentArea, patientId, visitType);
-        }
-      }
-    });
-    subBar.appendChild(btn);
-  });
-
-  container.appendChild(subBar);
-
-  // Content area
-  const contentArea = document.createElement('div');
-  contentArea.id = 'enc-tab-content';
-  container.appendChild(contentArea);
-
-  if (_currentEncSubTab === 'profile') {
-    _buildEncProfileContent(contentArea, patientId);
-  } else if (_currentEncSubTab === 'discharge' && visitType === 'Inpatient') {
-    _buildDischargeContent(contentArea, patientId);
-  } else {
-    _buildEncNotesContent(contentArea, patientId, visitType);
-  }
-}
-
-/* ---------- Encounter tab → Profile sub-tab ---------- */
-function _buildEncProfileContent(container, patientId) {
-  const patient = getPatient(patientId);
-  if (!patient) return;
-  container.appendChild(buildDemographicsCard(patient, patientId));
-  container.appendChild(buildVitalsTrendCard(patientId));
-  container.appendChild(buildAllergiesCard(patientId));
-  container.appendChild(buildProblemsCard(patientId));
-  container.appendChild(buildMedicationsCard(patientId));
-}
-
-/* ---------- Encounter tab → Notes sub-tab ---------- */
-function _buildEncNotesContent(container, patientId, visitType) {
-  const allEncs = getEncountersByPatient(patientId)
-    .filter(e => e.visitType === visitType)
-    .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
-
-  const headerWrap = document.createElement('div');
-  headerWrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:20px 20px 12px';
-
-  const h3 = document.createElement('h3');
-  h3.style.cssText = 'margin:0;font-size:16px;font-weight:600;color:var(--text-primary)';
-  h3.textContent = visitType + ' Encounters';
-
-  const newBtn = makeBtn('+ New ' + visitType + ' Encounter', 'btn btn-primary btn-sm',
-    () => openNewEncounterModal(patientId, visitType));
-
-  headerWrap.appendChild(h3);
-  headerWrap.appendChild(newBtn);
-  container.appendChild(headerWrap);
-
-  if (allEncs.length === 0) {
-    container.appendChild(buildEmptyState('',
-      'No ' + visitType.toLowerCase() + ' encounters',
-      'Create a new ' + visitType.toLowerCase() + ' encounter to get started.'));
-    return;
-  }
-
-  const card = document.createElement('div');
-  card.className = 'card';
-  card.style.marginBottom = '20px';
-
-  allEncs.forEach(enc => {
-    const note = getNoteByEncounter(enc.id);
-    const prov = getProvider(enc.providerId);
-    const provStr = prov ? prov.lastName + ', ' + prov.firstName + ' ' + prov.degree : '[Removed Provider]';
-    const cc = note && note.chiefComplaint ? note.chiefComplaint : '(chief complaint not documented)';
-
-    const item = document.createElement('div');
-    item.className = 'enc-tab-item';
-    item.addEventListener('click', () => navigate('#encounter/' + enc.id));
-
-    const dateEl = document.createElement('div');
-    dateEl.className = 'et-date';
-    dateEl.textContent = formatDateTime(enc.dateTime);
-
-    const visitEl = document.createElement('div');
-    visitEl.className = 'et-visit';
-    visitEl.textContent = enc.visitType + (enc.visitSubtype ? ' — ' + enc.visitSubtype : '');
-
-    const provEl = document.createElement('div');
-    provEl.className = 'et-provider';
-    provEl.textContent = provStr;
-
-    const statusBadge = document.createElement('span');
-    statusBadge.className = 'badge badge-' + enc.status.toLowerCase();
-    statusBadge.textContent = enc.status;
-
-    const ccEl = document.createElement('div');
-    ccEl.className = 'et-cc';
-    ccEl.title = cc;
-    ccEl.textContent = cc;
-
-    const actionsEl = document.createElement('div');
-    actionsEl.className = 'et-actions';
-
-    const noteLabel = note && note.signed ? 'Review / Addend' : 'Edit Note';
-    actionsEl.appendChild(makeBtn(noteLabel, 'btn btn-secondary btn-sm',
-      e => { e.stopPropagation(); navigate('#encounter/' + enc.id); }));
-    actionsEl.appendChild(makeBtn('Orders', 'btn btn-secondary btn-sm',
-      e => { e.stopPropagation(); navigate('#orders/' + enc.id); }));
-    actionsEl.appendChild(makeBtn('Delete', 'btn btn-danger btn-sm',
-      e => { e.stopPropagation(); confirmDeleteEncounter(enc.id, patientId); }));
-
-    item.appendChild(dateEl);
-    item.appendChild(visitEl);
-    item.appendChild(provEl);
-    item.appendChild(statusBadge);
-    item.appendChild(ccEl);
-    item.appendChild(actionsEl);
-    card.appendChild(item);
-  });
-
-  container.appendChild(card);
-}
-
-/* ---------- Encounter tab → Discharge sub-tab ---------- */
+/* ---------- Discharge sub-tab ---------- */
 function _buildDischargeContent(container, patientId) {
-  // Find the most recent open inpatient encounter
+  // Find the most recent open inpatient/ICU encounter
+  var _dcVisitTypes = ['inpatient', 'icu'];
   const inpatientEncs = getEncountersByPatient(patientId)
-    .filter(e => (e.visitType || '').toLowerCase() === 'inpatient' && e.status !== 'Cancelled')
+    .filter(e => _dcVisitTypes.indexOf((e.visitType || '').toLowerCase()) >= 0 && e.status !== 'Cancelled')
     .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
 
   if (inpatientEncs.length === 0) {
-    container.appendChild(buildEmptyState('', 'No inpatient encounters', 'Create an inpatient encounter to use discharge.'));
+    container.appendChild(buildEmptyState('', 'No inpatient or ICU encounters', 'Create an inpatient or ICU encounter to use discharge.'));
     return;
   }
 
@@ -1019,7 +877,12 @@ function _buildDischargeContent(container, patientId) {
   // Actions
   if (!isFinalized) {
     const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:10px;margin-top:16px;';
+    actions.style.cssText = 'display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;';
+
+    const planBtn = document.createElement('button');
+    planBtn.className = 'btn btn-secondary';
+    planBtn.textContent = 'Discharge Planning';
+    planBtn.addEventListener('click', () => openDischargeModal(encId, patientId));
 
     const saveBtn = document.createElement('button');
     saveBtn.className = 'btn btn-secondary';
@@ -1050,6 +913,7 @@ function _buildDischargeContent(container, patientId) {
       }
     });
 
+    actions.appendChild(planBtn);
     actions.appendChild(saveBtn);
     actions.appendChild(finalizeBtn);
     body.appendChild(actions);
@@ -3442,13 +3306,16 @@ function getChartOrderName(order) {
 function buildEncountersCard(patientId) {
   const encounters = getEncountersByPatient(patientId)
     .sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
-  const card = chartCard('Encounters');
+
+  const newEncBtn = makeBtn('+ New Encounter', 'btn btn-primary btn-sm', () => openNewEncounterModal(patientId));
+  const card = chartCard('Encounters', newEncBtn);
   card.id = 'section-encounters';
 
   const countEl = document.createElement('span');
   countEl.className = 'text-muted text-sm';
+  countEl.style.marginLeft = '8px';
   countEl.textContent = encounters.length + ' encounter' + (encounters.length !== 1 ? 's' : '');
-  card.querySelector('.card-header').appendChild(countEl);
+  card.querySelector('.card-header .card-title').after(countEl);
 
   if (encounters.length === 0) {
     card.appendChild(buildEmptyState('', 'No encounters',
@@ -3456,51 +3323,138 @@ function buildEncountersCard(patientId) {
     return card;
   }
 
+  // Group by visit type
+  const groups = {};
+  var typeOrder = ['Outpatient', 'ED', 'Inpatient', 'ICU'];
+  encounters.forEach(enc => {
+    var t = enc.visitType || 'Other';
+    if (!groups[t]) groups[t] = [];
+    groups[t].push(enc);
+  });
+
+  // Render in type order, then any remaining types
+  var allTypes = typeOrder.slice();
+  Object.keys(groups).forEach(t => { if (allTypes.indexOf(t) < 0) allTypes.push(t); });
+
   const list = document.createElement('div');
 
-  encounters.forEach(enc => {
-    const provider  = getProvider(enc.providerId);
-    const provName  = provider
-      ? provider.lastName + ', ' + provider.firstName + ' ' + provider.degree
-      : '[Removed Provider]';
-    const visitLabel = enc.visitType + (enc.visitSubtype ? ' — ' + enc.visitSubtype : '');
+  allTypes.forEach(type => {
+    var encs = groups[type];
+    if (!encs || encs.length === 0) return;
 
-    const item = document.createElement('div');
-    item.className = 'encounter-list-item';
+    // Section header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:8px 16px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);background:var(--surface-2,#f8fafc);border-bottom:1px solid var(--border);';
+    hdr.textContent = type + ' (' + encs.length + ')';
+    list.appendChild(hdr);
 
-    const dateEl = document.createElement('div');
-    dateEl.className = 'enc-date';
-    dateEl.textContent = formatDateTime(enc.dateTime);
+    encs.forEach(enc => {
+      var provider  = getProvider(enc.providerId);
+      var provName  = provider
+        ? provider.lastName + ', ' + provider.firstName + ' ' + provider.degree
+        : '[Removed Provider]';
+      var visitLabel = enc.visitType + (enc.visitSubtype ? ' — ' + enc.visitSubtype : '');
 
-    const visitEl = document.createElement('div');
-    visitEl.className = 'enc-visit';
-    visitEl.textContent = visitLabel;
+      var item = document.createElement('div');
+      item.className = 'encounter-list-item';
 
-    const provEl = document.createElement('div');
-    provEl.className = 'enc-provider';
-    provEl.textContent = provName;
+      var dateEl = document.createElement('div');
+      dateEl.className = 'enc-date';
+      dateEl.textContent = formatDateTime(enc.dateTime);
 
-    const badgeEl = document.createElement('span');
-    badgeEl.className = 'badge badge-' + enc.status.toLowerCase();
-    badgeEl.textContent = enc.status;
+      var visitEl = document.createElement('div');
+      visitEl.className = 'enc-visit';
+      visitEl.textContent = visitLabel;
 
-    const actionsEl = document.createElement('div');
-    actionsEl.className = 'enc-actions';
-    actionsEl.appendChild(makeBtn('Note', 'btn btn-secondary btn-sm',
-      e => { e.stopPropagation(); navigate('#encounter/' + enc.id); }));
-    actionsEl.appendChild(makeBtn('Orders', 'btn btn-secondary btn-sm',
-      e => { e.stopPropagation(); navigate('#orders/' + enc.id); }));
-    actionsEl.appendChild(makeBtn('Delete', 'btn btn-danger btn-sm',
-      e => { e.stopPropagation(); confirmDeleteEncounter(enc.id, patientId); }));
+      var provEl = document.createElement('div');
+      provEl.className = 'enc-provider';
+      provEl.textContent = provName;
 
-    item.appendChild(dateEl); item.appendChild(visitEl); item.appendChild(provEl);
-    item.appendChild(badgeEl); item.appendChild(actionsEl);
-    item.addEventListener('click', () => navigate('#encounter/' + enc.id));
-    list.appendChild(item);
+      // Reason + location line
+      var metaEl = document.createElement('div');
+      metaEl.className = 'enc-meta';
+      metaEl.style.cssText = 'font-size:12px;color:var(--text-secondary);';
+      var metaParts = [];
+      if (enc.reason) metaParts.push(esc(enc.reason));
+      if (enc.location) metaParts.push(esc(enc.location));
+      metaEl.textContent = metaParts.join(' | ') || '';
+
+      var badgeEl = document.createElement('span');
+      badgeEl.className = 'badge badge-' + enc.status.toLowerCase();
+      badgeEl.textContent = enc.status;
+
+      item.appendChild(dateEl);
+      item.appendChild(visitEl);
+      item.appendChild(provEl);
+      if (metaParts.length > 0) item.appendChild(metaEl);
+      item.appendChild(badgeEl);
+
+      // Right-click context menu
+      item.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        _showEncounterContextMenu(e, enc, patientId);
+      });
+
+      list.appendChild(item);
+    });
   });
 
   card.appendChild(list);
   return card;
+}
+
+/* ---------- Encounter right-click context menu ---------- */
+function _showEncounterContextMenu(e, enc, patientId) {
+  // Remove any existing context menu
+  var old = document.getElementById('enc-context-menu');
+  if (old) old.remove();
+
+  var menu = document.createElement('div');
+  menu.id = 'enc-context-menu';
+  menu.setAttribute('role', 'menu');
+  menu.style.cssText = 'position:fixed;z-index:9999;background:var(--surface-1,#fff);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15);padding:4px 0;min-width:160px;font-size:13px;';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+
+  var items = [
+    { label: 'Enter Encounter', action: function() { navigate('#encounter/' + enc.id); } },
+    { label: 'View Note', action: function() { navigate('#encounter/' + enc.id); } },
+    { label: 'Orders', action: function() { navigate('#orders/' + enc.id); } },
+    { label: 'Delete', danger: true, action: function() { confirmDeleteEncounter(enc.id, patientId); } },
+  ];
+
+  items.forEach(function(it) {
+    var btn = document.createElement('button');
+    btn.setAttribute('role', 'menuitem');
+    btn.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 16px;border:none;background:none;cursor:pointer;color:' + (it.danger ? 'var(--danger,#dc2626)' : 'var(--text-primary)') + ';';
+    btn.textContent = it.label;
+    btn.addEventListener('mouseenter', function() { btn.style.background = 'var(--surface-2,#f1f5f9)'; });
+    btn.addEventListener('mouseleave', function() { btn.style.background = 'none'; });
+    btn.addEventListener('click', function() {
+      menu.remove();
+      it.action();
+    });
+    menu.appendChild(btn);
+  });
+
+  document.body.appendChild(menu);
+
+  // Keep menu within viewport
+  var rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+
+  // Close on click outside or Escape
+  function closeMenu(ev) {
+    if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', closeMenu); document.removeEventListener('keydown', escMenu); }
+  }
+  function escMenu(ev) {
+    if (ev.key === 'Escape') { menu.remove(); document.removeEventListener('click', closeMenu); document.removeEventListener('keydown', escMenu); }
+  }
+  setTimeout(function() {
+    document.addEventListener('click', closeMenu);
+    document.addEventListener('keydown', escMenu);
+  }, 0);
 }
 
 /* ============================================================
@@ -5069,6 +5023,14 @@ function openNewEncounterModal(patientId, prefillType) {
       </div>
     </div>
     <div class="form-group">
+      <label class="form-label">Reason for Encounter *</label>
+      <input class="form-control" id="ne-reason" placeholder="e.g. Chest pain, Annual physical, Post-op follow-up" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Location *</label>
+      <input class="form-control" id="ne-location" placeholder="e.g. Room 302, Clinic A, Bay 5" />
+    </div>
+    <div class="form-group">
       <label class="form-label">Date &amp; Time</label>
       <input class="form-control" id="ne-datetime" type="datetime-local"
         value="${toLocalDateTimeValue(new Date())}" />
@@ -5094,9 +5056,13 @@ function openNewEncounterModal(patientId, prefillType) {
     const providerId   = currentProvider.id;
     const visitType    = document.getElementById('ne-type').value;
     const visitSubtype = document.getElementById('ne-subtype').value;
+    const reason       = document.getElementById('ne-reason').value.trim();
+    const location     = document.getElementById('ne-location').value.trim();
     const dtVal        = document.getElementById('ne-datetime').value;
+    if (!reason) { showToast('Reason for encounter is required.', 'error'); return; }
+    if (!location) { showToast('Location is required.', 'error'); return; }
     const dateTime = dtVal ? new Date(dtVal).toISOString() : new Date().toISOString();
-    const encounter = saveEncounter({ patientId, providerId, visitType, visitSubtype, dateTime, status: 'Open' });
+    const encounter = saveEncounter({ patientId, providerId, visitType, visitSubtype, reason, location, dateTime, status: 'Open' });
     saveNote({ encounterId: encounter.id });
     closeModal();
     showToast('Encounter created.', 'success');

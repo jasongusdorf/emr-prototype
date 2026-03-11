@@ -2,6 +2,10 @@
    views/encounter.js — Clinical note form + vitals + autosave + sign + addenda
    ============================================================ */
 
+/* ---------- Constants ---------- */
+var AUTOSAVE_INTERVAL_MS = 30000;
+var AUTOSAVE_DISPLAY_MS = 10000;
+
 let _autosaveTimers = {};
 let _encSmartPhraseTextareas = [];
 let _apMode = null; // 'narrative' | 'problem-oriented' — persisted per user
@@ -16,17 +20,21 @@ const NOTE_SECTIONS = [
 ];
 
 function _getEditorMode() {
+  // UI preference — stays in localStorage
   try { return localStorage.getItem('emr_note_editor_mode') || 'freeform'; } catch(e) { return 'freeform'; }
 }
 function _setEditorMode(mode) {
-  try { localStorage.setItem('emr_note_editor_mode', mode); } catch(e) {}
+  // UI preference — stays in localStorage
+  try { localStorage.setItem('emr_note_editor_mode', mode); } catch(e) { console.warn('[EMR] Storage write failed:', e.message); }
 }
 
 function _getAPMode() {
+  // UI preference — stays in localStorage
   try { return localStorage.getItem('emr_ap_mode') || 'narrative'; } catch(e) { return 'narrative'; }
 }
 function _setAPMode(mode) {
-  try { localStorage.setItem('emr_ap_mode', mode); } catch(e) {}
+  // UI preference — stays in localStorage
+  try { localStorage.setItem('emr_ap_mode', mode); } catch(e) { console.warn('[EMR] Storage write failed:', e.message); }
 }
 
 function _parseFreeformToSections(text) {
@@ -141,7 +149,7 @@ function calcNoteQuality(textareas) {
 
 function _startAutosave(encounterId, saveFn) {
   _stopAutosave(encounterId);
-  _autosaveTimers[encounterId] = setInterval(saveFn, 30000);
+  _autosaveTimers[encounterId] = setInterval(saveFn, AUTOSAVE_INTERVAL_MS);
 }
 
 function _stopAutosave(encounterId) {
@@ -157,7 +165,13 @@ function renderEncounter(encounterId) {
 
   if (typeof registerCleanup === 'function') {
     registerCleanup(function() {
-      Object.keys(_autosaveTimers).forEach(function(k) { _stopAutosave(k); });
+      // Clear all autosave timers
+      Object.keys(_autosaveTimers).forEach(function(key) {
+        clearInterval(_autosaveTimers[key]);
+        delete _autosaveTimers[key];
+      });
+      // Reset module-level state
+      _apMode = null;
       // Destroy SmartPhrase listeners for all textareas
       if (typeof _encSmartPhraseTextareas !== 'undefined') {
         _encSmartPhraseTextareas.forEach(function(ta) { destroySmartPhraseListener(ta); });
@@ -214,10 +228,15 @@ function renderEncounter(encounterId) {
     ];
     const encTabBar = document.createElement('div');
     encTabBar.className = 'chart-subtab-bar enc-chart-tabs';
+    encTabBar.setAttribute('role', 'tablist');
+    encTabBar.setAttribute('aria-label', 'Encounter chart sections');
     chartTabs.forEach(function(tab) {
       const btn = document.createElement('button');
       btn.className = 'chart-subtab' + (tab.key === 'notes' ? ' active' : '');
       btn.setAttribute('data-omr-color', tab.key === 'communication' ? 'notes' : tab.key);
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', String(tab.key === 'notes'));
+      btn.setAttribute('tabindex', tab.key === 'notes' ? '0' : '-1');
       btn.textContent = tab.label;
       btn.addEventListener('click', function() {
         if (tab.href) {
@@ -226,6 +245,19 @@ function renderEncounter(encounterId) {
             if (typeof _currentOverviewSubTab !== 'undefined') _currentOverviewSubTab = tab.key;
           }
           navigate(tab.href);
+        }
+      });
+      btn.addEventListener('keydown', function(e) {
+        var allTabs = Array.from(encTabBar.querySelectorAll('.chart-subtab'));
+        var idx = allTabs.indexOf(btn);
+        if (e.key === 'ArrowRight' && idx < allTabs.length - 1) {
+          e.preventDefault();
+          allTabs[idx + 1].focus();
+          allTabs[idx + 1].click();
+        } else if (e.key === 'ArrowLeft' && idx > 0) {
+          e.preventDefault();
+          allTabs[idx - 1].focus();
+          allTabs[idx - 1].click();
         }
       });
       encTabBar.appendChild(btn);
@@ -721,8 +753,7 @@ function renderEncounter(encounterId) {
                         signedAt.getFullYear() + ' ' +
                         signedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
         noteFields.noteBody = (noteFields.noteBody || '') + '\n\n---\nElectronically signed by: ' + sigName + '\nDate: ' + sigDate;
-        saveNote({ ...noteFields, encounterId, signed: false });
-        saveNote({ encounterId, signed: true, signedBy: providerId, signedAt: signedAt.toISOString() });
+        saveNote({ ...noteFields, encounterId, signed: true, signedBy: providerId, signedAt: signedAt.toISOString() });
         saveEncounter({ id: encounterId, status: 'Signed' });
         _stopAutosave(encounterId);
         closeModal();
@@ -784,6 +815,12 @@ function renderEncounter(encounterId) {
     }
 
     const signBtn = makeEncBtn('Sign Note', 'btn btn-success', () => {
+      // Guard: prevent re-signing an already signed note
+      var latestNote = getNoteByEncounter(encounterId);
+      if (latestNote && latestNote.signed) {
+        showToast('This note is already signed. Use addendum to make changes.', 'warning');
+        return;
+      }
       if (!canSignNotes()) { showToast('Only attending physicians can sign notes.', 'error'); return; }
       if (!getProviders().length) { showToast('Add a provider first.', 'error'); return; }
       const quality = calcNoteQuality(textareas);
@@ -844,7 +881,7 @@ function renderEncounter(encounterId) {
           ind.innerHTML = '<span class="autosave-dot"></span> Saved just now';
         }
         clearInterval(_autosaveAgoTimer);
-        _autosaveAgoTimer = setInterval(_updateAutosaveText, 10000);
+        _autosaveAgoTimer = setInterval(_updateAutosaveText, AUTOSAVE_DISPLAY_MS);
         _autosaveDebounce = null;
       }, 1000);
     }
@@ -852,7 +889,19 @@ function renderEncounter(encounterId) {
     Object.values(textareas).forEach(ta => ta.addEventListener('input', triggerAutosave));
 
     if (typeof registerCleanup === 'function') {
-      registerCleanup(function() { clearInterval(_autosaveAgoTimer); });
+      registerCleanup(function() {
+        // Clear the "ago" display timer
+        if (_autosaveAgoTimer) {
+          clearInterval(_autosaveAgoTimer);
+          _autosaveAgoTimer = null;
+        }
+        // Clear any pending debounce
+        clearTimeout(_autosaveDebounce);
+        // Remove input listeners to avoid closure leaks
+        Object.values(textareas).forEach(function(ta) {
+          ta.removeEventListener('input', triggerAutosave);
+        });
+      });
     }
 
   } else {
@@ -872,6 +921,7 @@ function renderEncounter(encounterId) {
   app.appendChild(buildQuickOrdersPanel(encounterId, encounter.patientId));
 
   // 8a: Save problem-oriented data on autosave if in problem mode
+  var _probDebounce = null;
   if (!isSigned && _getAPMode() === 'problem-oriented') {
     const origTriggerAutosave = () => {
       _serializeProblemsToNote(note, encounterId);
@@ -881,11 +931,17 @@ function renderEncounter(encounterId) {
       const probContainer = document.getElementById('problems-container');
       if (probContainer) {
         probContainer.addEventListener('input', () => {
-          clearTimeout(probContainer._debounce);
-          probContainer._debounce = setTimeout(origTriggerAutosave, 1500);
+          clearTimeout(_probDebounce);
+          _probDebounce = setTimeout(origTriggerAutosave, 1500);
         });
       }
     }, 100);
+
+    if (typeof registerCleanup === 'function') {
+      registerCleanup(function() {
+        clearTimeout(_probDebounce);
+      });
+    }
   }
 
   // Patient Summary button
@@ -1397,7 +1453,7 @@ function buildMedRecBanner(encounter, note) {
   });
   const dismissBtn = makeEncBtn('Dismiss', 'btn btn-ghost btn-sm', () => {
     // Persist dismissal so banner doesn't reappear on reload
-    saveMedRec({ encounterId: encounter.id, medName: '__dismissed__', action: 'Dismissed', notes: '' });
+    saveMedRec(encounter.id, patientId, [{ medName: '__dismissed__', action: 'Dismissed', notes: '' }]);
     banner.remove();
   });
 
@@ -1450,7 +1506,7 @@ function buildMedRecBanner(encounter, note) {
       notes:    notesInp.value.trim(),
       patientId,
     }));
-    saveMedRec(encounterId, records);
+    saveMedRec(encounterId, patientId, records);
 
     // Create inpatient medication orders for continued medications
     const currentUser = getSessionUser();
@@ -1907,6 +1963,8 @@ function _buildProblemRow(prob, idx) {
   nameInput.placeholder = 'Problem name…';
   nameInput.value = prob.name || '';
   nameInput.style.flex = '1';
+  nameInput.required = true;
+  nameInput.setAttribute('aria-required', 'true');
 
   const removeBtn = document.createElement('button');
   removeBtn.className = 'btn btn-danger btn-sm';
@@ -2079,6 +2137,7 @@ function _showQuickOrderForm(container, encounterId, patientId, orderType) {
     panelLbl.className = 'form-label'; panelLbl.textContent = 'Lab Panel/Test';
     const panelInp = document.createElement('input');
     panelInp.className = 'form-control'; panelInp.id = 'qo-lab-panel'; panelInp.placeholder = 'e.g., CBC, BMP, Lipid Panel';
+    panelInp.required = true; panelInp.setAttribute('aria-required', 'true');
     form.appendChild(panelLbl); form.appendChild(panelInp);
     detailFields = { getDetail: () => ({ panel: panelInp.value }) };
   } else if (orderType === 'Medication') {
@@ -2086,11 +2145,13 @@ function _showQuickOrderForm(container, encounterId, patientId, orderType) {
     drugLbl.className = 'form-label'; drugLbl.textContent = 'Drug';
     const drugInp = document.createElement('input');
     drugInp.className = 'form-control'; drugInp.id = 'qo-med-drug'; drugInp.placeholder = 'Drug name';
+    drugInp.required = true; drugInp.setAttribute('aria-required', 'true');
     const doseLbl = document.createElement('label');
     doseLbl.className = 'form-label'; doseLbl.textContent = 'Dose';
     doseLbl.style.marginTop = '6px';
     const doseInp = document.createElement('input');
     doseInp.className = 'form-control'; doseInp.id = 'qo-med-dose'; doseInp.placeholder = 'e.g., 500mg PO BID';
+    doseInp.required = true; doseInp.setAttribute('aria-required', 'true');
     form.appendChild(drugLbl); form.appendChild(drugInp);
     form.appendChild(doseLbl); form.appendChild(doseInp);
     detailFields = { getDetail: () => ({ drug: drugInp.value, dose: doseInp.value }) };
@@ -2099,6 +2160,7 @@ function _showQuickOrderForm(container, encounterId, patientId, orderType) {
     studyLbl.className = 'form-label'; studyLbl.textContent = 'Study';
     const studyInp = document.createElement('input');
     studyInp.className = 'form-control'; studyInp.id = 'qo-img-study'; studyInp.placeholder = 'e.g., Chest X-Ray, CT Abdomen';
+    studyInp.required = true; studyInp.setAttribute('aria-required', 'true');
     form.appendChild(studyLbl); form.appendChild(studyInp);
     detailFields = { getDetail: () => ({ study: studyInp.value }) };
   }
